@@ -74,7 +74,7 @@ const WritingInterface = () => {
             <textarea ref={textareaRef} value={content} onChange={handleContentChange} placeholder="Start writing your thoughts..." style={{
             fontFamily: 'Helvetica, Arial, sans-serif',
             lineHeight: '1.8'
-          }} className="w-full h-96 border-none outline-none resize-none text-lg leading-relaxed text-black placeholder:text-slate-300 font-light tracking-wide bg-gray-200" />
+          }} className="w-full h-96 border-none outline-none resize-none text-lg leading-relaxed text-black" />
             
             {/* Typing indicator */}
             {isTyping && <div className="absolute bottom-4 right-4 w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />}
