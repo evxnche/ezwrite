@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Keyboard } from 'lucide-react';
-
 const WritingInterface = () => {
   const [content, setContent] = useState('');
   const [wordCount, setWordCount] = useState(0);
@@ -52,7 +51,7 @@ const WritingInterface = () => {
       <div className="flex justify-between items-center p-6 opacity-60 hover:opacity-100 transition-opacity duration-300">
         <div className="flex items-center gap-2 text-slate-600">
           
-          <span className="text-4xl font-extrabold text-zinc-900 text-left">wRITE</span>
+          <span className="text-7xl text-zinc-800 text-left font-extrabold">WRITE</span>
         </div>
         
         {/* Stats toggle */}
