@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Keyboard } from 'lucide-react';
 
@@ -92,7 +91,7 @@ const WritingInterface = () => {
               placeholder="Start writing your thoughts..."
               className="w-full h-96 bg-transparent border-none outline-none resize-none text-lg leading-relaxed text-slate-800 placeholder:text-slate-300 font-light tracking-wide"
               style={{
-                fontFamily: 'Georgia, "Times New Roman", serif',
+                fontFamily: 'Helvetica, Arial, sans-serif',
                 lineHeight: '1.8',
               }}
             />
