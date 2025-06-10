@@ -48,10 +48,10 @@ const WritingInterface = () => {
   };
   return <div className="min-h-screen bg-gradient-to-br from-slate-50 to-stone-50 flex flex-col">
       {/* Header with minimal branding */}
-      <div className="flex justify-between items-center p-6 opacity-60 hover:opacity-100 transition-opacity duration-300 bg-zinc-700">
+      <div className="flex justify-between items-center p-6 opacity-60 hover:opacity-100 transition-opacity duration-300 bg-zinc-800">
         <div className="flex items-center gap-2 text-slate-600">
           
-          <span className="text-7xl text-left font-extrabold text-orange-500">WRITE</span>
+          <span className="text-left text-orange-500 font-extrabold text-2xl">WRITE</span>
         </div>
         
         {/* Stats toggle */}
