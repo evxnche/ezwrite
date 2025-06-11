@@ -1,34 +1,47 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Timer, Play, Pause, RotateCcw } from 'lucide-react';
+import { Timer, Play, Pause, RotateCcw, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
 const WritingInterface = () => {
   const [content, setContent] = useState('');
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
   const [showStats, setShowStats] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+  const [logo, setLogo] = useState<string | null>(null);
 
   // Timer state
-  const [timeLeft, setTimeLeft] = useState(15 * 60); // 15 minutes in seconds
+  const [timerDuration, setTimerDuration] = useState(15); // in minutes
+  const [timeLeft, setTimeLeft] = useState(15 * 60); // in seconds
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [showTimer, setShowTimer] = useState(false);
+  
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
   const timerRef = useRef<NodeJS.Timeout>();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     const words = content.trim() ? content.trim().split(/\s+/).length : 0;
     setWordCount(words);
     setCharCount(content.length);
   }, [content]);
+
   useEffect(() => {
     // Auto-save to localStorage
     localStorage.setItem('zen-writing-content', content);
   }, [content]);
+
   useEffect(() => {
-    // Load saved content
+    // Load saved content and logo
     const savedContent = localStorage.getItem('zen-writing-content');
+    const savedLogo = localStorage.getItem('zen-writing-logo');
     if (savedContent) {
       setContent(savedContent);
+    }
+    if (savedLogo) {
+      setLogo(savedLogo);
     }
 
     // Focus the textarea on mount
@@ -37,7 +50,7 @@ const WritingInterface = () => {
     }
   }, []);
 
-  // Timer effect
+  // Timer effect - update when timeLeft changes
   useEffect(() => {
     if (isTimerRunning && timeLeft > 0) {
       timerRef.current = setTimeout(() => {
@@ -52,6 +65,14 @@ const WritingInterface = () => {
       }
     };
   }, [isTimerRunning, timeLeft]);
+
+  // Update timeLeft when timer duration changes
+  useEffect(() => {
+    if (!isTimerRunning) {
+      setTimeLeft(timerDuration * 60);
+    }
+  }, [timerDuration, isTimerRunning]);
+
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setContent(e.target.value);
     setIsTyping(true);
@@ -66,42 +87,86 @@ const WritingInterface = () => {
       setIsTyping(false);
     }, 1000);
   };
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const logoUrl = event.target?.result as string;
+        setLogo(logoUrl);
+        localStorage.setItem('zen-writing-logo', logoUrl);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const toggleStats = () => {
     setShowStats(!showStats);
   };
+
   const toggleTimer = () => {
     setShowTimer(!showTimer);
   };
+
   const startTimer = () => {
     setIsTimerRunning(true);
   };
+
   const stopTimer = () => {
     setIsTimerRunning(false);
   };
+
   const resetTimer = () => {
     setIsTimerRunning(false);
-    setTimeLeft(15 * 60);
+    setTimeLeft(timerDuration * 60);
   };
+
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
     return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
-  return <div className="min-h-screen bg-gradient-to-br from-slate-50 to-stone-50 flex flex-col">
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-stone-50 flex flex-col">
       {/* Header with minimal branding */}
       <div className="flex justify-between items-center p-6 opacity-60 hover:opacity-100 transition-opacity duration-300 bg-gray-200">
-        <div className="flex items-center gap-2 text-slate-600">
-          <span className="text-left font-extrabold text-3xl text-gray-700 ">WRITE</span>
+        <div className="flex items-center gap-4 text-slate-600">
+          {logo ? (
+            <img 
+              src={logo} 
+              alt="Logo" 
+              className="h-8 w-auto cursor-pointer"
+              onClick={() => fileInputRef.current?.click()}
+            />
+          ) : (
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-2 text-slate-500 hover:text-slate-700 transition-colors duration-200"
+            >
+              <Upload size={16} />
+              <span className="text-xs">Add Logo</span>
+            </button>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleLogoUpload}
+            className="hidden"
+          />
+          <span className="text-left font-extrabold text-3xl text-gray-700">WRITE</span>
         </div>
         
         {/* Controls */}
         <div className="flex items-center gap-4">
           <button onClick={toggleTimer} className="text-xs text-slate-500 hover:text-slate-700 transition-colors duration-200 flex items-center gap-1">
             <Timer size={16} />
-            {showTimer ? 'hide timer' : 'show timer'}
+            {showTimer ? 'hide focus timer' : 'focus timer'}
           </button>
           <button onClick={toggleStats} className="text-xs text-slate-500 hover:text-slate-700 transition-colors duration-200">
-            {showStats ? 'hide stats' : 'show stats'}
+            {showStats ? 'hide word count' : 'word count'}
           </button>
         </div>
       </div>
@@ -110,7 +175,26 @@ const WritingInterface = () => {
       <div className="flex-1 flex flex-col items-center justify-center px-6 pb-20 bg-gray-200">
         <div className="w-full max-w-4xl">
           {/* Timer controls */}
-          {showTimer && <div className="flex flex-col items-center gap-4 mb-8 opacity-0 animate-fade-in">
+          {showTimer && (
+            <div className="flex flex-col items-center gap-4 mb-8 opacity-0 animate-fade-in">
+              <div className="flex items-center gap-4 mb-2">
+                <span className="text-sm text-slate-600">Timer Duration:</span>
+                <Select value={timerDuration.toString()} onValueChange={(value) => setTimerDuration(parseInt(value))}>
+                  <SelectTrigger className="w-24">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="5">5 min</SelectItem>
+                    <SelectItem value="10">10 min</SelectItem>
+                    <SelectItem value="15">15 min</SelectItem>
+                    <SelectItem value="20">20 min</SelectItem>
+                    <SelectItem value="25">25 min</SelectItem>
+                    <SelectItem value="30">30 min</SelectItem>
+                    <SelectItem value="45">45 min</SelectItem>
+                    <SelectItem value="60">60 min</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="text-3xl font-mono text-slate-700">
                 {formatTime(timeLeft)}
               </div>
@@ -128,20 +212,30 @@ const WritingInterface = () => {
                   Reset
                 </Button>
               </div>
-            </div>}
+            </div>
+          )}
 
           {/* Stats bar */}
-          {showStats && <div className="flex justify-center gap-8 mb-8 text-xs text-slate-400 opacity-0 animate-fade-in">
+          {showStats && (
+            <div className="flex justify-center gap-8 mb-8 text-xs text-slate-400 opacity-0 animate-fade-in">
               <span>{wordCount} words</span>
               <span>{charCount} characters</span>
-            </div>}
+            </div>
+          )}
 
           {/* Writing area */}
           <div className="relative">
-            <textarea ref={textareaRef} value={content} onChange={handleContentChange} placeholder="Start writing your thoughts..." style={{
-            fontFamily: 'Helvetica, Arial, sans-serif',
-            lineHeight: '1.8'
-          }} className="w-full h-96 border-none outline-none resize-none text-lg leading-relaxed text-black placeholder:text-slate-300 font-light tracking-wide bg-gray-200" />
+            <textarea 
+              ref={textareaRef} 
+              value={content} 
+              onChange={handleContentChange} 
+              placeholder="Start writing your thoughts..." 
+              style={{
+                fontFamily: 'Helvetica, Arial, sans-serif',
+                lineHeight: '1.8'
+              }} 
+              className="w-full h-96 border-none outline-none resize-none text-lg leading-relaxed text-black placeholder:text-slate-300 font-light tracking-wide bg-gray-200" 
+            />
             
             {/* Typing indicator */}
             {isTyping && <div className="absolute bottom-4 right-4 w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />}
@@ -155,6 +249,8 @@ const WritingInterface = () => {
           Your work is automatically saved
         </p>
       </div>
-    </div>;
+    </div>
+  );
 };
+
 export default WritingInterface;
