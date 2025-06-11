@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { Timer, Play, Pause, RotateCcw, Upload } from 'lucide-react';
+import { Timer, Play, Pause, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
@@ -20,7 +21,6 @@ const WritingInterface = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
   const timerRef = useRef<NodeJS.Timeout>();
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const words = content.trim() ? content.trim().split(/\s+/).length : 0;
@@ -88,19 +88,6 @@ const WritingInterface = () => {
     }, 1000);
   };
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const logoUrl = event.target?.result as string;
-        setLogo(logoUrl);
-        localStorage.setItem('zen-writing-logo', logoUrl);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
   const toggleStats = () => {
     setShowStats(!showStats);
   };
@@ -133,29 +120,13 @@ const WritingInterface = () => {
       {/* Header with minimal branding */}
       <div className="flex justify-between items-center p-6 opacity-60 hover:opacity-100 transition-opacity duration-300 bg-gray-200">
         <div className="flex items-center gap-4 text-slate-600">
-          {logo ? (
+          {logo && (
             <img 
               src={logo} 
               alt="Logo" 
-              className="h-8 w-auto cursor-pointer"
-              onClick={() => fileInputRef.current?.click()}
+              className="h-8 w-auto"
             />
-          ) : (
-            <button 
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-2 text-slate-500 hover:text-slate-700 transition-colors duration-200"
-            >
-              <Upload size={16} />
-              <span className="text-xs">Add Logo</span>
-            </button>
           )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleLogoUpload}
-            className="hidden"
-          />
           <span className="text-left font-extrabold text-3xl text-gray-700">write.</span>
         </div>
         
