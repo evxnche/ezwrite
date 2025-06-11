@@ -156,7 +156,7 @@ const WritingInterface = () => {
             onChange={handleLogoUpload}
             className="hidden"
           />
-          <span className="text-left font-extrabold text-3xl text-gray-700">WRITE</span>
+          <span className="text-left font-extrabold text-3xl text-gray-700">write.</span>
         </div>
         
         {/* Controls */}
