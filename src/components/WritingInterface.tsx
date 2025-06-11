@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Timer, Play, Pause, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -37,11 +36,17 @@ const WritingInterface = () => {
     // Load saved content and logo
     const savedContent = localStorage.getItem('zen-writing-content');
     const savedLogo = localStorage.getItem('zen-writing-logo');
+    
+    console.log('Checking for saved logo:', savedLogo);
+    
     if (savedContent) {
       setContent(savedContent);
     }
     if (savedLogo) {
+      console.log('Logo found in localStorage, setting logo state');
       setLogo(savedLogo);
+    } else {
+      console.log('No logo found in localStorage');
     }
 
     // Focus the textarea on mount
@@ -125,6 +130,8 @@ const WritingInterface = () => {
               src={logo} 
               alt="Logo" 
               className="h-8 w-auto"
+              onLoad={() => console.log('Logo image loaded successfully')}
+              onError={() => console.log('Logo image failed to load')}
             />
           )}
           <span className="text-left font-extrabold text-3xl text-gray-700">write.</span>
