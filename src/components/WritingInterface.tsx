@@ -207,7 +207,6 @@ const WritingInterface = () => {
               ref={textareaRef} 
               value={content} 
               onChange={handleContentChange} 
-              placeholder="Start writing your thoughts..." 
               style={{
                 fontFamily: 'Helvetica, Arial, sans-serif',
                 lineHeight: '1.8'
