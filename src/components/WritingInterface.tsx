@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Timer, Play, Pause, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import ezwriteLogo from '@/assets/ezwrite-logo.png';
+import ezwriteLogo from '/lovable-uploads/ebee81c8-358f-4e12-b5c6-72ed4348114f.png';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const WritingInterface = () => {
@@ -71,6 +71,7 @@ const WritingInterface = () => {
   }, [timerDuration, isTimerRunning]);
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    console.log('Content change detected:', e.target.value);
     setContent(e.target.value);
     setIsTyping(true);
 
