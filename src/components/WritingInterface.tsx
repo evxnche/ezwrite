@@ -150,8 +150,8 @@ const WritingInterface = () => {
       </div>
 
       {/* Main writing area */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6 pb-20 bg-gray-200">
-        <div className="w-full max-w-4xl">
+      <div className="flex-1 flex flex-col px-6 bg-gray-200">
+        <div className="w-full max-w-4xl mx-auto flex flex-col h-full">
           {/* Timer controls */}
           {showTimer && (
             <div className="flex flex-col items-center gap-4 mb-8 opacity-0 animate-fade-in">
@@ -202,7 +202,7 @@ const WritingInterface = () => {
           )}
 
           {/* Writing area */}
-          <div className="relative">
+          <div className="relative flex-1 flex flex-col min-h-0">
             <textarea 
               ref={textareaRef} 
               value={content} 
@@ -211,7 +211,7 @@ const WritingInterface = () => {
                 fontFamily: 'Helvetica, Arial, sans-serif',
                 lineHeight: '1.8'
               }} 
-              className="w-full h-96 border-none outline-none resize-none text-lg leading-relaxed text-black placeholder:text-slate-300 font-light tracking-wide bg-gray-200" 
+              className="w-full h-full flex-1 border-none outline-none resize-none text-lg leading-relaxed text-black placeholder:text-slate-300 font-light tracking-wide bg-gray-200" 
             />
             
             {/* Typing indicator */}
@@ -220,10 +220,13 @@ const WritingInterface = () => {
         </div>
       </div>
 
-      {/* Footer with auto-save indicator */}
+      {/* Footer with auto-save indicator and watermark */}
       <div className="text-center pb-6 opacity-40">
         <p className="text-xs text-slate-400">
           Your work is automatically saved
+        </p>
+        <p className="text-xs text-slate-400 mt-2">
+          built by evan, for the sake of it.
         </p>
       </div>
     </div>
