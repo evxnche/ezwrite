@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Timer, Play, Pause, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import ezwriteLogo from '@/assets/ezwrite-logo.png';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const WritingInterface = () => {
@@ -9,7 +10,7 @@ const WritingInterface = () => {
   const [charCount, setCharCount] = useState(0);
   const [showStats, setShowStats] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
-  const [logo, setLogo] = useState<string | null>(null);
+  
 
   // Timer state
   const [timerDuration, setTimerDuration] = useState(15); // in minutes
@@ -33,20 +34,11 @@ const WritingInterface = () => {
   }, [content]);
 
   useEffect(() => {
-    // Load saved content and logo
+    // Load saved content
     const savedContent = localStorage.getItem('zen-writing-content');
-    const savedLogo = localStorage.getItem('zen-writing-logo');
-    
-    console.log('Checking for saved logo:', savedLogo);
     
     if (savedContent) {
       setContent(savedContent);
-    }
-    if (savedLogo) {
-      console.log('Logo found in localStorage, setting logo state');
-      setLogo(savedLogo);
-    } else {
-      console.log('No logo found in localStorage');
     }
 
     // Focus the textarea on mount
@@ -125,16 +117,12 @@ const WritingInterface = () => {
       {/* Header with minimal branding */}
       <div className="flex justify-between items-center p-6 opacity-60 hover:opacity-100 transition-opacity duration-300 bg-gray-200">
         <div className="flex items-center gap-4 text-slate-600">
-          {logo && (
-            <img 
-              src={logo} 
-              alt="Logo" 
-              className="h-8 w-auto"
-              onLoad={() => console.log('Logo image loaded successfully')}
-              onError={() => console.log('Logo image failed to load')}
-            />
-          )}
-          <span className="text-left font-extrabold text-3xl text-gray-700">write.</span>
+          <img 
+            src={ezwriteLogo} 
+            alt="ezwrite Logo" 
+            className="h-8 w-auto"
+          />
+          <span className="text-left font-extrabold text-3xl text-gray-700">ezwrite.</span>
         </div>
         
         {/* Controls */}
