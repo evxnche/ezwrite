@@ -139,8 +139,8 @@ const WritingInterface = () => {
       </div>
 
       {/* Main writing area */}
-      <div className="flex-1 flex flex-col px-6 bg-gray-200 min-h-0">
-        <div className="w-full max-w-4xl mx-auto flex flex-col flex-1 min-h-0">
+      <div className="flex-1 px-6 bg-gray-200" style={{ display: 'flex', flexDirection: 'column' }}>
+        <div className="w-full max-w-4xl mx-auto" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
           {/* Timer controls */}
           {showTimer && (
             <div className="flex flex-col items-center gap-4 mb-8 opacity-0 animate-fade-in">
@@ -191,16 +191,19 @@ const WritingInterface = () => {
           )}
 
           {/* Writing area */}
-          <div className="relative flex-1">
+          <div className="relative">
             <textarea 
               ref={textareaRef} 
               value={content} 
               onChange={handleContentChange} 
               style={{
                 fontFamily: 'Helvetica, Arial, sans-serif',
-                lineHeight: '1.8'
+                lineHeight: '1.8',
+                width: '100%',
+                height: 'calc(100vh - 200px)',
+                minHeight: '500px'
               }} 
-              className="w-full h-full border-none outline-none resize-none text-lg leading-relaxed text-black placeholder:text-slate-300 font-light tracking-wide bg-gray-200" 
+              className="border-none outline-none resize-none text-lg leading-relaxed text-black placeholder:text-slate-300 font-light tracking-wide bg-gray-200" 
             />
             
             {/* Typing indicator */}
