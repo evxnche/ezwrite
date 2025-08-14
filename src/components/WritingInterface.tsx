@@ -117,6 +117,9 @@ const WritingInterface = () => {
   const saveAsTxt = () => {
     if (!content.trim()) return;
     
+    console.log('Saving content length:', content.length);
+    console.log('Content preview:', content.substring(0, 100) + '...');
+    
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -131,12 +134,34 @@ const WritingInterface = () => {
   const saveAsPdf = () => {
     if (!content.trim()) return;
 
+    console.log('Saving PDF content length:', content.length);
+    
     const pdf = new jsPDF();
+    
+    // Handle long content with multiple pages
+    const pageHeight = pdf.internal.pageSize.height;
+    const lineHeight = 7;
+    const margin = 15;
+    const maxLinesPerPage = Math.floor((pageHeight - 2 * margin) / lineHeight);
+    
     const lines = pdf.splitTextToSize(content, 180);
     
     pdf.setFont('helvetica', 'normal');
     pdf.setFontSize(12);
-    pdf.text(lines, 15, 15);
+    
+    let currentPage = 1;
+    let currentLine = 0;
+    
+    for (let i = 0; i < lines.length; i++) {
+      if (currentLine >= maxLinesPerPage) {
+        pdf.addPage();
+        currentPage++;
+        currentLine = 0;
+      }
+      
+      pdf.text(lines[i], margin, margin + (currentLine * lineHeight));
+      currentLine++;
+    }
     
     pdf.save(`ezwrite-${new Date().toISOString().split('T')[0]}.pdf`);
   };
