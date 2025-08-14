@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Timer, Play, Pause, RotateCcw } from 'lucide-react';
+import { Timer, Play, Pause, RotateCcw, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ezwriteLogo from '/lovable-uploads/ebee81c8-358f-4e12-b5c6-72ed4348114f.png';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import jsPDF from 'jspdf';
 
 const WritingInterface = () => {
   const [content, setContent] = useState('');
@@ -113,6 +114,33 @@ const WritingInterface = () => {
     return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
+  const saveAsTxt = () => {
+    if (!content.trim()) return;
+    
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `ezwrite-${new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const saveAsPdf = () => {
+    if (!content.trim()) return;
+
+    const pdf = new jsPDF();
+    const lines = pdf.splitTextToSize(content, 180);
+    
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(12);
+    pdf.text(lines, 15, 15);
+    
+    pdf.save(`ezwrite-${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-stone-50 flex flex-col">
       {/* Header with minimal branding */}
@@ -128,6 +156,16 @@ const WritingInterface = () => {
         
         {/* Controls */}
         <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={saveAsTxt} disabled={!content.trim()} className="flex items-center gap-1">
+              <Download size={14} />
+              TXT
+            </Button>
+            <Button variant="outline" size="sm" onClick={saveAsPdf} disabled={!content.trim()} className="flex items-center gap-1">
+              <Download size={14} />
+              PDF
+            </Button>
+          </div>
           <button onClick={toggleTimer} className="text-xs text-slate-500 hover:text-slate-700 transition-colors duration-200 flex items-center gap-1">
             <Timer size={16} />
             {showTimer ? 'hide focus timer' : 'focus timer'}
