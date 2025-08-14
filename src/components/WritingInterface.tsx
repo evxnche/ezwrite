@@ -134,35 +134,58 @@ const WritingInterface = () => {
   const saveAsPdf = () => {
     if (!content.trim()) return;
 
-    console.log('Saving PDF content length:', content.length);
+    console.log('Full content length:', content.length);
+    console.log('Content sample:', content.substring(0, 200));
     
     const pdf = new jsPDF();
     
-    // Handle long content with multiple pages
-    const pageHeight = pdf.internal.pageSize.height;
-    const lineHeight = 7;
-    const margin = 15;
-    const maxLinesPerPage = Math.floor((pageHeight - 2 * margin) / lineHeight);
+    // Split content into paragraphs first
+    const paragraphs = content.split('\n');
+    console.log('Number of paragraphs:', paragraphs.length);
     
-    const lines = pdf.splitTextToSize(content, 180);
+    const pageHeight = pdf.internal.pageSize.height;
+    const pageWidth = pdf.internal.pageSize.width;
+    const margin = 20;
+    const lineHeight = 6;
+    const maxWidth = pageWidth - (2 * margin);
     
     pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(12);
+    pdf.setFontSize(11);
     
-    let currentPage = 1;
-    let currentLine = 0;
+    let yPosition = margin;
     
-    for (let i = 0; i < lines.length; i++) {
-      if (currentLine >= maxLinesPerPage) {
-        pdf.addPage();
-        currentPage++;
-        currentLine = 0;
+    for (let i = 0; i < paragraphs.length; i++) {
+      const paragraph = paragraphs[i];
+      
+      if (paragraph.trim() === '') {
+        // Empty line
+        yPosition += lineHeight;
+        if (yPosition > pageHeight - margin) {
+          pdf.addPage();
+          yPosition = margin;
+        }
+        continue;
       }
       
-      pdf.text(lines[i], margin, margin + (currentLine * lineHeight));
-      currentLine++;
+      // Split long paragraphs into multiple lines
+      const lines = pdf.splitTextToSize(paragraph, maxWidth);
+      console.log(`Paragraph ${i} split into ${lines.length} lines`);
+      
+      for (let j = 0; j < lines.length; j++) {
+        if (yPosition > pageHeight - margin) {
+          pdf.addPage();
+          yPosition = margin;
+        }
+        
+        pdf.text(lines[j], margin, yPosition);
+        yPosition += lineHeight;
+      }
+      
+      // Add space between paragraphs
+      yPosition += lineHeight * 0.5;
     }
     
+    console.log('PDF generated successfully');
     pdf.save(`ezwrite-${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
