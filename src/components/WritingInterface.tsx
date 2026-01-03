@@ -120,7 +120,7 @@ const WritingInterface = () => {
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header with minimal branding */}
       <div className="flex justify-between items-center p-6 opacity-60 hover:opacity-100 transition-opacity duration-300 bg-background">
-        <span className="font-serif text-2xl text-foreground tracking-wide">ezwrite.</span>
+        <span className="font-serif text-2xl text-foreground tracking-wide">ez.</span>
         
         {/* Controls */}
         <DropdownMenu>
