@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import jsPDF from 'jspdf';
 
 const WritingInterface = () => {
@@ -113,20 +119,25 @@ const WritingInterface = () => {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header with minimal branding */}
-      <div className="flex justify-between items-center p-6 opacity-60 hover:opacity-100 transition-opacity duration-300 bg-background border-b border-border">
+      <div className="flex justify-between items-center p-6 opacity-60 hover:opacity-100 transition-opacity duration-300 bg-background">
         <span className="font-serif text-2xl text-foreground tracking-wide">ezwrite.</span>
         
         {/* Controls */}
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={saveAsTxt} disabled={!content.trim()} className="flex items-center gap-1">
-            <Download size={14} />
-            TXT
-          </Button>
-          <Button variant="outline" size="sm" onClick={saveAsPdf} disabled={!content.trim()} className="flex items-center gap-1">
-            <Download size={14} />
-            PDF
-          </Button>
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" disabled={!content.trim()} className="text-muted-foreground hover:text-foreground">
+              <Download size={18} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="bg-popover">
+            <DropdownMenuItem onClick={saveAsTxt} className="cursor-pointer">
+              Download as TXT
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={saveAsPdf} className="cursor-pointer">
+              Download as PDF
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Main writing area */}
