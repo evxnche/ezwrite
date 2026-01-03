@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Timer, Play, Pause, RotateCcw, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import ezwriteLogo from '/lovable-uploads/ebee81c8-358f-4e12-b5c6-72ed4348114f.png';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import jsPDF from 'jspdf';
 
@@ -190,17 +189,10 @@ const WritingInterface = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-stone-50 flex flex-col">
+    <div className="min-h-screen bg-background flex flex-col">
       {/* Header with minimal branding */}
-      <div className="flex justify-between items-center p-6 opacity-60 hover:opacity-100 transition-opacity duration-300 bg-gray-200">
-        <div className="flex items-center gap-4 text-slate-600">
-          <img 
-            src={ezwriteLogo} 
-            alt="ezwrite Logo" 
-            className="h-8 w-auto"
-          />
-          <span className="text-left font-extrabold text-3xl text-gray-700">ezwrite.</span>
-        </div>
+      <div className="flex justify-between items-center p-6 opacity-60 hover:opacity-100 transition-opacity duration-300 bg-background border-b border-border">
+        <span className="font-serif text-2xl text-foreground tracking-wide">ezwrite.</span>
         
         {/* Controls */}
         <div className="flex items-center gap-4">
@@ -214,24 +206,24 @@ const WritingInterface = () => {
               PDF
             </Button>
           </div>
-          <button onClick={toggleTimer} className="text-xs text-slate-500 hover:text-slate-700 transition-colors duration-200 flex items-center gap-1">
+          <button onClick={toggleTimer} className="text-xs text-muted-foreground hover:text-foreground transition-colors duration-200 flex items-center gap-1">
             <Timer size={16} />
             {showTimer ? 'hide focus timer' : 'focus timer'}
           </button>
-          <button onClick={toggleStats} className="text-xs text-slate-500 hover:text-slate-700 transition-colors duration-200">
+          <button onClick={toggleStats} className="text-xs text-muted-foreground hover:text-foreground transition-colors duration-200">
             {showStats ? 'hide word count' : 'word count'}
           </button>
         </div>
       </div>
 
       {/* Main writing area */}
-      <div className="flex-1 px-6 bg-gray-200" style={{ display: 'flex', flexDirection: 'column' }}>
+      <div className="flex-1 px-6 bg-background" style={{ display: 'flex', flexDirection: 'column' }}>
         <div className="w-full max-w-4xl mx-auto" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
           {/* Timer controls */}
           {showTimer && (
-            <div className="flex flex-col items-center gap-4 mb-8 opacity-0 animate-fade-in">
+            <div className="flex flex-col items-center gap-4 mb-8 opacity-0 animate-fade-in pt-6">
               <div className="flex items-center gap-4 mb-2">
-                <span className="text-sm text-slate-600">Timer Duration:</span>
+                <span className="text-sm text-muted-foreground">Timer Duration:</span>
                 <Select value={timerDuration.toString()} onValueChange={(value) => setTimerDuration(parseInt(value))}>
                   <SelectTrigger className="w-24">
                     <SelectValue />
@@ -248,7 +240,7 @@ const WritingInterface = () => {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="text-3xl font-mono text-slate-700">
+              <div className="text-3xl font-mono text-foreground">
                 {formatTime(timeLeft)}
               </div>
               <div className="flex items-center gap-2">
@@ -270,18 +262,19 @@ const WritingInterface = () => {
 
           {/* Stats bar */}
           {showStats && (
-            <div className="flex justify-center gap-8 mb-8 text-xs text-slate-400 opacity-0 animate-fade-in">
+            <div className="flex justify-center gap-8 mb-8 text-xs text-muted-foreground opacity-0 animate-fade-in pt-6">
               <span>{wordCount} words</span>
               <span>{charCount} characters</span>
             </div>
           )}
 
           {/* Writing area */}
-          <div className="relative">
+          <div className="relative pt-6">
             <textarea 
               ref={textareaRef} 
               value={content} 
               onChange={handleContentChange} 
+              placeholder="Start writing..."
               style={{
                 fontFamily: 'Helvetica, Arial, sans-serif',
                 lineHeight: '1.8',
@@ -289,7 +282,7 @@ const WritingInterface = () => {
                 height: 'calc(100vh - 200px)',
                 minHeight: '500px'
               }} 
-              className="border-none outline-none resize-none text-lg leading-relaxed text-black placeholder:text-slate-300 font-light tracking-wide bg-gray-200" 
+              className="border-none outline-none resize-none text-lg leading-relaxed text-foreground placeholder:text-muted-foreground font-light tracking-wide bg-background" 
             />
             
             {/* Typing indicator */}
@@ -300,10 +293,10 @@ const WritingInterface = () => {
 
       {/* Footer with auto-save indicator and watermark */}
       <div className="text-center pb-6 opacity-40">
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-muted-foreground">
           Your work is automatically saved
         </p>
-        <p className="text-xs text-slate-400 mt-2">
+        <p className="text-xs text-muted-foreground mt-2">
           built by evan, for the sake of it.
         </p>
       </div>
