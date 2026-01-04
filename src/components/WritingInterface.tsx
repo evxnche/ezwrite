@@ -141,10 +141,23 @@ const WritingInterface = () => {
       </div>
 
       {/* Main writing area */}
-      <div className="flex-1 px-6 bg-background flex flex-col">
-        <div className="w-full max-w-4xl mx-auto flex flex-col h-full">
+      <div className="flex-1 px-4 bg-background flex flex-col">
+        <div className="w-full max-w-4xl flex flex-col h-full">
           {/* Writing area */}
           <div className="relative pt-6 flex-1">
+            {/* Glowing cursor overlay - visible when empty and not focused */}
+            {!content && (
+              <div 
+                className="absolute top-6 left-0 pointer-events-none"
+                style={{
+                  width: '2px',
+                  height: '24px',
+                  background: 'hsl(40 60% 85%)',
+                  boxShadow: '0 0 10px hsl(40 60% 70% / 0.9), 0 0 20px hsl(40 60% 70% / 0.7), 0 0 40px hsl(35 50% 60% / 0.5)',
+                  animation: 'blink 1s ease-in-out infinite'
+                }}
+              />
+            )}
             <textarea 
               ref={textareaRef} 
               value={content} 
@@ -154,7 +167,7 @@ const WritingInterface = () => {
                 width: '100%',
                 height: 'calc(100vh - 120px)',
                 minHeight: '500px',
-                caretColor: 'hsl(var(--foreground))',
+                caretColor: 'hsl(40 60% 85%)',
                 textShadow: '0 0 15px hsl(40 60% 70% / 0.5), 0 0 35px hsl(35 50% 60% / 0.3)'
               }} 
               className="font-playfair border-none outline-none resize-none text-lg leading-relaxed text-foreground font-light tracking-wide bg-background" 
