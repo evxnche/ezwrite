@@ -120,7 +120,7 @@ const WritingInterface = () => {
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header with minimal branding */}
       <div className="flex justify-between items-center p-6 opacity-60 hover:opacity-100 transition-opacity duration-300 bg-background">
-        <span className="font-playfair text-2xl text-foreground tracking-wide" style={{ textShadow: '0 0 30px hsl(var(--foreground) / 0.5), 0 0 60px hsl(var(--foreground) / 0.3)' }}>ez.</span>
+        <span className="font-playfair text-2xl text-foreground tracking-wide" style={{ textShadow: '0 0 30px hsl(40 60% 70% / 0.5), 0 0 60px hsl(35 50% 60% / 0.3)' }}>ez.</span>
         
         {/* Controls */}
         <DropdownMenu>
@@ -155,7 +155,7 @@ const WritingInterface = () => {
                 height: 'calc(100vh - 120px)',
                 minHeight: '500px',
                 caretColor: 'hsl(var(--foreground))',
-                textShadow: '0 0 30px hsl(var(--foreground) / 0.4), 0 0 60px hsl(var(--foreground) / 0.2)'
+                textShadow: '0 0 30px hsl(40 60% 70% / 0.4), 0 0 60px hsl(35 50% 60% / 0.2)'
               }} 
               className="font-playfair border-none outline-none resize-none text-lg leading-relaxed text-foreground font-light tracking-wide bg-background" 
             />
