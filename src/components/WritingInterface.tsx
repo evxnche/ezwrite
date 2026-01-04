@@ -141,11 +141,11 @@ const WritingInterface = () => {
       </div>
 
       {/* Main writing area */}
-      <div className="flex-1 px-4 bg-background flex flex-col">
-        <div className="w-full max-w-4xl flex flex-col h-full">
+      <div className="flex-1 px-6 bg-background flex flex-col">
+        <div className="w-full max-w-4xl mx-auto flex flex-col h-full">
           {/* Writing area */}
           <div className="relative pt-6 flex-1">
-            {/* Glowing cursor overlay - visible when empty and not focused */}
+            {/* Glowing cursor overlay - visible when empty */}
             {!content && (
               <div 
                 className="absolute top-6 left-0 pointer-events-none"
@@ -167,7 +167,7 @@ const WritingInterface = () => {
                 width: '100%',
                 height: 'calc(100vh - 120px)',
                 minHeight: '500px',
-                caretColor: 'hsl(40 60% 85%)',
+                caretColor: content ? 'hsl(40 60% 85%)' : 'transparent',
                 textShadow: '0 0 15px hsl(40 60% 70% / 0.5), 0 0 35px hsl(35 50% 60% / 0.3)'
               }} 
               className="font-playfair border-none outline-none resize-none text-lg leading-relaxed text-foreground font-light tracking-wide bg-background" 
