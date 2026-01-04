@@ -155,7 +155,7 @@ const WritingInterface = () => {
                 height: 'calc(100vh - 120px)',
                 minHeight: '500px',
                 caretColor: 'hsl(var(--foreground))',
-                textShadow: '0 0 30px hsl(40 60% 70% / 0.4), 0 0 60px hsl(35 50% 60% / 0.2)'
+                textShadow: '0 0 20px hsl(40 60% 70% / 0.8), 0 0 40px hsl(35 50% 60% / 0.6), 0 0 80px hsl(35 50% 60% / 0.4)'
               }} 
               className="font-playfair border-none outline-none resize-none text-lg leading-relaxed text-foreground font-light tracking-wide bg-background" 
             />
