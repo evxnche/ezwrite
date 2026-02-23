@@ -288,7 +288,7 @@ const WritingInterface = () => {
       </div>
 
       {/* Main writing area */}
-      <div className="flex-1 px-6 bg-background flex flex-col">
+      <div className="flex-1 px-3 bg-background flex flex-col">
         <div className="w-full max-w-4xl mx-auto flex flex-col h-full">
           <div className="relative pt-6 flex-1">
             {/* Glowing cursor overlay - visible when empty */}
@@ -335,9 +335,9 @@ const WritingInterface = () => {
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="py-4 text-center opacity-40 hover:opacity-70 transition-opacity duration-300">
-        <span className="font-playfair text-sm text-foreground tracking-wide" style={{ textShadow: '0 0 30px hsl(40 60% 70% / 0.5), 0 0 60px hsl(35 50% 60% / 0.3)' }}>built by evan :)</span>
+      {/* Floating Footer */}
+      <div className="fixed bottom-4 left-0 right-0 text-center pointer-events-none opacity-40 hover:opacity-70 transition-opacity duration-300">
+        <span className="font-playfair text-sm text-foreground tracking-wide pointer-events-auto" style={{ textShadow: '0 0 30px hsl(40 60% 70% / 0.5), 0 0 60px hsl(35 50% 60% / 0.3)' }}>built by evan :)</span>
       </div>
     </div>
   );
