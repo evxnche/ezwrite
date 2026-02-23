@@ -334,6 +334,11 @@ const WritingInterface = () => {
           </div>
         </div>
       </div>
+
+      {/* Footer */}
+      <div className="py-4 text-center opacity-40 hover:opacity-70 transition-opacity duration-300">
+        <span className="font-playfair text-sm text-foreground tracking-wide" style={{ textShadow: '0 0 30px hsl(40 60% 70% / 0.5), 0 0 60px hsl(35 50% 60% / 0.3)' }}>built by evan :)</span>
+      </div>
     </div>
   );
 };
