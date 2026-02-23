@@ -404,7 +404,7 @@ const WritingInterface = () => {
 
             {useSimpleMode ? (
               <textarea
-                ref={editorRef as React.RefObject<HTMLTextAreaElement>}
+                ref={editorRef}
                 value={content}
                 onChange={handleTextareaChange}
                 style={{
