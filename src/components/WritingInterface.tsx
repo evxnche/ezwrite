@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Download, Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -10,6 +10,9 @@ import {
 import { useTheme } from 'next-themes';
 import jsPDF from 'jspdf';
 
+// Hidden marker for struck-through items (zero-width space + special prefix)
+const STRUCK_MARKER = '\u200B\u2713';
+
 const WritingInterface = () => {
   const [content, setContent] = useState(() => {
     return localStorage.getItem('zen-writing-content') || '';
@@ -18,14 +21,14 @@ const WritingInterface = () => {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
   const hasLoadedRef = useRef(false);
 
   useEffect(() => {
     setMounted(true);
-    if (textareaRef.current) {
-      textareaRef.current.focus();
+    if (editorRef.current) {
+      editorRef.current.focus();
     }
   }, []);
 
@@ -37,67 +40,15 @@ const WritingInterface = () => {
     localStorage.setItem('zen-writing-content', content);
   }, [content]);
 
-  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newValue = e.target.value;
-    const cursorPos = e.target.selectionStart;
-
-    // Check if user just typed /x at the end of a line
-    const processed = processSlashX(newValue, cursorPos);
-    setContent(processed);
-    setIsTyping(true);
-
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current);
-    }
-    typingTimeoutRef.current = setTimeout(() => {
-      setIsTyping(false);
-    }, 1000);
-  };
-
-  const processSlashX = (text: string, cursorPos: number): string => {
-    const lines = text.split('\n');
-    let charCount = 0;
-    let targetLineIndex = -1;
-
-    // Find which line the cursor is on
-    for (let i = 0; i < lines.length; i++) {
-      charCount += lines[i].length + 1; // +1 for \n
-      if (charCount >= cursorPos) {
-        targetLineIndex = i;
-        break;
-      }
-    }
-
-    if (targetLineIndex === -1) return text;
-
-    const line = lines[targetLineIndex];
-
-    // Check if line ends with /x
-    if (line.trimEnd().endsWith('/x')) {
-      // Check if this line is within a list context
-      const isInList = isLineInListContext(lines, targetLineIndex);
-      if (isInList) {
-        // Remove /x and prepend ~~strikethrough~~ marker
-        const cleanLine = line.replace(/\/x\s*$/, '').trimEnd();
-        // Toggle: if already struck, unstrike
-        if (cleanLine.startsWith('~~') && cleanLine.endsWith('~~')) {
-          lines[targetLineIndex] = cleanLine.slice(2, -2);
-        } else {
-          lines[targetLineIndex] = '~~' + cleanLine + '~~';
-        }
-        return lines.join('\n');
-      }
-    }
-
-    return text;
-  };
+  const isLineStruck = (line: string) => line.startsWith(STRUCK_MARKER);
+  const getCleanLine = (line: string) => isLineStruck(line) ? line.slice(STRUCK_MARKER.length) : line;
 
   const isLineInListContext = (lines: string[], lineIndex: number): boolean => {
-    // Walk backwards to find if there's a "list" keyword before this line
     for (let i = lineIndex - 1; i >= 0; i--) {
       const trimmed = lines[i].trim().toLowerCase();
-      if (trimmed === 'list') return true;
-      // If we hit an empty line, stop looking
+      // Skip struck marker for comparison
+      const clean = getCleanLine(trimmed);
+      if (clean === 'list') return true;
       if (trimmed === '') return false;
     }
     return false;
@@ -106,20 +57,75 @@ const WritingInterface = () => {
   const handleCheckboxToggle = (lineIndex: number) => {
     const lines = content.split('\n');
     const line = lines[lineIndex];
-    const isStruck = line.startsWith('~~') && line.endsWith('~~');
 
-    if (isStruck) {
-      lines[lineIndex] = line.slice(2, -2);
+    if (isLineStruck(line)) {
+      lines[lineIndex] = getCleanLine(line);
     } else {
-      lines[lineIndex] = '~~' + line + '~~';
+      lines[lineIndex] = STRUCK_MARKER + line;
     }
 
     setContent(lines.join('\n'));
   };
 
+  const handleLineChange = (lineIndex: number, newText: string) => {
+    const lines = content.split('\n');
+    const wasStruck = isLineStruck(lines[lineIndex]);
+    // Preserve struck state
+    lines[lineIndex] = wasStruck ? STRUCK_MARKER + newText : newText;
+    setContent(lines.join('\n'));
+
+    setIsTyping(true);
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 1000);
+  };
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    let newValue = e.target.value;
+    const cursorPos = e.target.selectionStart;
+
+    // Check for /x at end of current line
+    const lines = newValue.split('\n');
+    let charCount = 0;
+    let targetLineIndex = -1;
+
+    for (let i = 0; i < lines.length; i++) {
+      charCount += lines[i].length + 1;
+      if (charCount >= cursorPos) {
+        targetLineIndex = i;
+        break;
+      }
+    }
+
+    if (targetLineIndex !== -1) {
+      const line = lines[targetLineIndex];
+      if (line.trimEnd().endsWith('/x')) {
+        const inList = isLineInListContext(lines, targetLineIndex);
+        if (inList) {
+          const cleanLine = line.replace(/\/x\s*$/, '').trimEnd();
+          if (isLineStruck(cleanLine)) {
+            lines[targetLineIndex] = getCleanLine(cleanLine);
+          } else {
+            lines[targetLineIndex] = STRUCK_MARKER + cleanLine;
+          }
+          newValue = lines.join('\n');
+        }
+      }
+    }
+
+    setContent(newValue);
+    setIsTyping(true);
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 1000);
+  };
+
   const saveAsTxt = () => {
     if (!content.trim()) return;
-    const blob = new Blob([content], { type: 'text/plain' });
+    // Clean markers for export
+    const cleanContent = content.split('\n').map(line => {
+      if (isLineStruck(line)) return '[x] ' + getCleanLine(line);
+      return line;
+    }).join('\n');
+    const blob = new Blob([cleanContent], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -146,7 +152,10 @@ const WritingInterface = () => {
     let yPosition = margin;
 
     for (let i = 0; i < paragraphs.length; i++) {
-      const paragraph = paragraphs[i];
+      let paragraph = paragraphs[i];
+      if (isLineStruck(paragraph)) {
+        paragraph = '[x] ' + getCleanLine(paragraph);
+      }
       if (paragraph.trim() === '') {
         yPosition += lineHeight;
         if (yPosition > pageHeight - margin) {
@@ -170,89 +179,179 @@ const WritingInterface = () => {
     pdf.save(`ezwrite-${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
-  // Parse content into renderable lines with list context
-  const renderContent = () => {
+  const toggleTheme = () => {
+    setTheme(theme === 'dark' ? 'light' : 'dark');
+  };
+
+  // Determine if content has any list sections
+  const hasListSections = content.toLowerCase().includes('\nlist\n') || content.toLowerCase().startsWith('list\n') || content.toLowerCase() === 'list';
+
+  // Render the content with checkboxes for list items
+  const renderMixedContent = () => {
     const lines = content.split('\n');
     let inList = false;
-    const elements: React.ReactNode[] = [];
+    const segments: { type: 'text'; startIndex: number; endIndex: number }[] | { type: 'list-header'; index: number }[] | { type: 'list-item'; index: number; text: string; struck: boolean }[] = [];
+
+    // Build segments
+    const allSegments: Array<
+      | { type: 'text'; lines: { index: number; text: string }[] }
+      | { type: 'list-header'; index: number }
+      | { type: 'list-item'; index: number; text: string; struck: boolean }
+    > = [];
+
+    let currentTextLines: { index: number; text: string }[] = [];
+
+    const flushText = () => {
+      if (currentTextLines.length > 0) {
+        allSegments.push({ type: 'text', lines: [...currentTextLines] });
+        currentTextLines = [];
+      }
+    };
 
     lines.forEach((line, index) => {
-      const trimmed = line.trim().toLowerCase();
+      const trimmed = getCleanLine(line).trim().toLowerCase();
 
-      if (trimmed === 'list') {
+      if (trimmed === 'list' && !isLineStruck(line)) {
+        flushText();
         inList = true;
-        elements.push(
-          <div key={index} className="font-playfair text-lg text-muted-foreground/60 font-light tracking-wide py-0.5">
-            {line}
+        allSegments.push({ type: 'list-header', index });
+        return;
+      }
+
+      if (inList && line.trim() === '') {
+        inList = false;
+        currentTextLines.push({ index, text: line });
+        return;
+      }
+
+      if (inList) {
+        flushText();
+        const struck = isLineStruck(line);
+        const displayText = getCleanLine(line);
+        allSegments.push({ type: 'list-item', index, text: displayText, struck });
+        return;
+      }
+
+      currentTextLines.push({ index, text: line });
+    });
+
+    flushText();
+
+    return allSegments.map((segment, segIdx) => {
+      if (segment.type === 'text') {
+        // Render as a textarea block for these lines
+        const textValue = segment.lines.map(l => l.text).join('\n');
+        const startLineIndex = segment.lines[0].index;
+        const endLineIndex = segment.lines[segment.lines.length - 1].index;
+
+        return (
+          <textarea
+            key={`text-${segIdx}`}
+            value={textValue}
+            onChange={(e) => {
+              const newLines = content.split('\n');
+              const replacementLines = e.target.value.split('\n');
+              newLines.splice(startLineIndex, endLineIndex - startLineIndex + 1, ...replacementLines);
+              const newContent = newLines.join('\n');
+
+              // Process /x
+              const cursorPos = e.target.selectionStart;
+              const subLines = e.target.value.split('\n');
+              let charCount = 0;
+              let targetSubLine = -1;
+              for (let i = 0; i < subLines.length; i++) {
+                charCount += subLines[i].length + 1;
+                if (charCount >= cursorPos) { targetSubLine = i; break; }
+              }
+
+              if (targetSubLine !== -1) {
+                const actualLineIndex = startLineIndex + targetSubLine;
+                const allLines = newContent.split('\n');
+                const theLine = allLines[actualLineIndex];
+                if (theLine && theLine.trimEnd().endsWith('/x')) {
+                  const inListCtx = isLineInListContext(allLines, actualLineIndex);
+                  if (inListCtx) {
+                    const clean = theLine.replace(/\/x\s*$/, '').trimEnd();
+                    if (isLineStruck(clean)) {
+                      allLines[actualLineIndex] = getCleanLine(clean);
+                    } else {
+                      allLines[actualLineIndex] = STRUCK_MARKER + clean;
+                    }
+                    setContent(allLines.join('\n'));
+                    setIsTyping(true);
+                    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+                    typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 1000);
+                    return;
+                  }
+                }
+              }
+
+              setContent(newContent);
+              setIsTyping(true);
+              if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+              typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 1000);
+            }}
+            style={{
+              lineHeight: '1.8',
+              width: '100%',
+              height: `${Math.max(segment.lines.length * 1.8, 1.8)}em`,
+              caretColor: 'hsl(40 60% 85%)',
+              textShadow: '0 0 15px hsl(40 60% 70% / 0.5), 0 0 35px hsl(35 50% 60% / 0.3)',
+            }}
+            className="font-playfair border-none outline-none resize-none text-lg leading-relaxed text-foreground font-light tracking-wide bg-background block w-full"
+          />
+        );
+      }
+
+      if (segment.type === 'list-header') {
+        return (
+          <div key={`lh-${segIdx}`} className="font-playfair text-lg text-muted-foreground/40 font-light tracking-wide" style={{ lineHeight: '1.8' }}>
+            list
           </div>
         );
-        return;
       }
 
-      if (inList && trimmed === '') {
-        inList = false;
-        elements.push(<div key={index} className="h-[1.8em]" />);
-        return;
-      }
-
-      if (inList && trimmed !== '') {
-        const isStruck = line.startsWith('~~') && line.endsWith('~~');
-        const displayText = isStruck ? line.slice(2, -2) : line;
-
-        elements.push(
-          <div key={index} className="flex items-start gap-3 py-0.5 group">
+      if (segment.type === 'list-item') {
+        return (
+          <div key={`li-${segIdx}`} className="flex items-start gap-3" style={{ lineHeight: '1.8' }}>
             <button
-              onClick={() => handleCheckboxToggle(index)}
+              onClick={() => handleCheckboxToggle(segment.index)}
               className={`mt-1.5 w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
-                isStruck
+                segment.struck
                   ? 'bg-primary/80 border-primary/80'
                   : 'border-muted-foreground/40 hover:border-primary/60'
               }`}
             >
-              {isStruck && (
+              {segment.struck && (
                 <svg width="10" height="10" viewBox="0 0 10 10" className="text-primary-foreground">
                   <path d="M2 5L4 7L8 3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               )}
             </button>
-            <span
-              className={`font-playfair text-lg font-light tracking-wide ${
-                isStruck ? 'line-through text-muted-foreground/40' : 'text-foreground'
+            <input
+              type="text"
+              value={segment.text}
+              onChange={(e) => handleLineChange(segment.index, e.target.value)}
+              className={`flex-1 font-playfair text-lg font-light tracking-wide bg-transparent border-none outline-none ${
+                segment.struck ? 'line-through text-muted-foreground/40' : 'text-foreground'
               }`}
-              style={!isStruck ? {
-                textShadow: '0 0 15px hsl(40 60% 70% / 0.5), 0 0 35px hsl(35 50% 60% / 0.3)'
-              } : undefined}
-            >
-              {displayText}
-            </span>
+              style={{
+                caretColor: 'hsl(40 60% 85%)',
+                ...(segment.struck ? {} : {
+                  textShadow: '0 0 15px hsl(40 60% 70% / 0.5), 0 0 35px hsl(35 50% 60% / 0.3)'
+                })
+              }}
+            />
           </div>
         );
-        return;
       }
 
-      if (trimmed === '') {
-        elements.push(<div key={index} className="h-[1.8em]" />);
-      } else {
-        elements.push(
-          <div
-            key={index}
-            className="font-playfair text-lg text-foreground font-light tracking-wide py-0.5"
-            style={{
-              textShadow: '0 0 15px hsl(40 60% 70% / 0.5), 0 0 35px hsl(35 50% 60% / 0.3)'
-            }}
-          >
-            {line}
-          </div>
-        );
-      }
+      return null;
     });
-
-    return elements;
   };
 
-  const toggleTheme = () => {
-    setTheme(theme === 'dark' ? 'light' : 'dark');
-  };
+  // Simple mode: no list sections, use plain textarea
+  const useSimpleMode = !hasListSections;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -261,14 +360,12 @@ const WritingInterface = () => {
         <span className="font-playfair text-2xl text-foreground tracking-wide" style={{ textShadow: '0 0 30px hsl(40 60% 70% / 0.5), 0 0 60px hsl(35 50% 60% / 0.3)' }}>ez.</span>
 
         <div className="flex items-center gap-1">
-          {/* Theme toggle */}
           {mounted && (
             <Button variant="ghost" size="icon" onClick={toggleTheme} className="text-muted-foreground hover:text-foreground">
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </Button>
           )}
 
-          {/* Export */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" disabled={!content.trim()} className="text-muted-foreground hover:text-foreground">
@@ -305,29 +402,29 @@ const WritingInterface = () => {
               />
             )}
 
-            {/* Overlay for rendered list items */}
-            {content.toLowerCase().includes('list') && (
-              <div className="absolute top-6 left-0 right-0 pointer-events-none z-10">
-                <div className="pointer-events-auto">
-                  {/* This is rendered below the textarea */}
-                </div>
+            {useSimpleMode ? (
+              <textarea
+                ref={editorRef as React.RefObject<HTMLTextAreaElement>}
+                value={content}
+                onChange={handleTextareaChange}
+                style={{
+                  lineHeight: '1.8',
+                  width: '100%',
+                  height: 'calc(100vh - 120px)',
+                  minHeight: '500px',
+                  caretColor: content ? 'hsl(40 60% 85%)' : 'transparent',
+                  textShadow: '0 0 15px hsl(40 60% 70% / 0.5), 0 0 35px hsl(35 50% 60% / 0.3)'
+                }}
+                className="font-playfair border-none outline-none resize-none text-lg leading-relaxed text-foreground font-light tracking-wide bg-background"
+              />
+            ) : (
+              <div
+                className="min-h-[500px]"
+                style={{ minHeight: 'calc(100vh - 120px)' }}
+              >
+                {renderMixedContent()}
               </div>
             )}
-
-            <textarea
-              ref={textareaRef}
-              value={content}
-              onChange={handleContentChange}
-              style={{
-                lineHeight: '1.8',
-                width: '100%',
-                height: 'calc(100vh - 120px)',
-                minHeight: '500px',
-                caretColor: content ? 'hsl(40 60% 85%)' : 'transparent',
-                textShadow: '0 0 15px hsl(40 60% 70% / 0.5), 0 0 35px hsl(35 50% 60% / 0.3)'
-              }}
-              className="font-playfair border-none outline-none resize-none text-lg leading-relaxed text-foreground font-light tracking-wide bg-background"
-            />
 
             {/* Typing indicator */}
             {isTyping && <div className="absolute bottom-4 right-4 w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />}
