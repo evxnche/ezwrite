@@ -11,31 +11,31 @@ import { useTheme } from 'next-themes';
 import jsPDF from 'jspdf';
 
 const WritingInterface = () => {
-  const [content, setContent] = useState('');
+  const [content, setContent] = useState(() => {
+    return localStorage.getItem('zen-writing-content') || '';
+  });
   const [isTyping, setIsTyping] = useState(false);
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
+  const hasLoadedRef = useRef(false);
 
   useEffect(() => {
     setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem('zen-writing-content', content);
-  }, [content]);
-
-  useEffect(() => {
-    const savedContent = localStorage.getItem('zen-writing-content');
-    if (savedContent) {
-      setContent(savedContent);
-    }
     if (textareaRef.current) {
       textareaRef.current.focus();
     }
   }, []);
+
+  useEffect(() => {
+    if (!hasLoadedRef.current) {
+      hasLoadedRef.current = true;
+      return;
+    }
+    localStorage.setItem('zen-writing-content', content);
+  }, [content]);
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
