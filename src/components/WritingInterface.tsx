@@ -288,7 +288,7 @@ const WritingInterface = () => {
       </div>
 
       {/* Main writing area */}
-      <div className="flex-1 px-6 bg-background flex flex-col">
+      <div className="flex-1 px-3 bg-background flex flex-col">
         <div className="w-full max-w-4xl mx-auto flex flex-col h-full">
           <div className="relative pt-6 flex-1">
             {/* Glowing cursor overlay - visible when empty */}
