@@ -599,7 +599,7 @@ const WritingInterface = () => {
 
             {lines.map((line, index) => renderLine(line, index, getLineType(lines, index)))}
 
-            {isTyping && <div className="absolute bottom-4 right-4 w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />}
+            {isTyping && <div className="absolute bottom-4 right-4 w-2 h-2 bg-primary rounded-full animate-pulse" />}
           </div>
         </div>
       </div>
