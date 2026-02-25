@@ -30,8 +30,8 @@
     --muted: 0 0% 63%;
     --muted-foreground: 0 0% 9%;
 
-    --accent: 47 100% 96%;
-    --accent-foreground: 37 92% 50%;
+    --accent: 270 60% 96%;
+    --accent-foreground: 270 50% 45%;
 
     --destructive: 0 72% 50%;
     --destructive-foreground: 0 85% 97%;
@@ -90,8 +90,8 @@
     --muted: 0 0% 45%;
     --muted-foreground: 0 0% 98%;
 
-    --accent: 20 91% 14%;
-    --accent-foreground: 43 96% 56%;
+    --accent: 270 40% 20%;
+    --accent-foreground: 270 60% 75%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 85% 97%;
@@ -173,5 +173,20 @@
   }
   50% {
     opacity: 0;
+  }
+}
+
+@keyframes timer-glow {
+  0%, 100% {
+    box-shadow: inset 0 0 60px 15px hsl(270 80% 60% / 0.3),
+                inset 0 0 120px 40px hsl(270 80% 60% / 0.1);
+  }
+  33% {
+    box-shadow: inset 0 0 70px 20px hsl(300 70% 55% / 0.35),
+                inset 0 0 140px 50px hsl(300 70% 55% / 0.12);
+  }
+  66% {
+    box-shadow: inset 0 0 65px 18px hsl(240 75% 60% / 0.32),
+                inset 0 0 130px 45px hsl(240 75% 60% / 0.11);
   }
 }
