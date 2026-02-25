@@ -11,6 +11,7 @@ interface TimerWidgetProps {
   config: string;
   onRegister?: (controls: TimerControls) => void;
   onRemove?: () => void;
+  onComplete?: () => void;
 }
 
 type PomoPhase = 'work' | 'break';
@@ -45,7 +46,7 @@ function formatTime(s: number): string {
   return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 }
 
-const TimerWidget: React.FC<TimerWidgetProps> = ({ config, onRegister, onRemove }) => {
+const TimerWidget: React.FC<TimerWidgetProps> = ({ config, onRegister, onRemove, onComplete }) => {
   const parsed = useMemo(() => parseConfig(config), [config]);
   const [seconds, setSeconds] = useState(parsed.initial);
   const [running, setRunning] = useState(true);
@@ -72,17 +73,19 @@ const TimerWidget: React.FC<TimerWidgetProps> = ({ config, onRegister, onRemove 
             const np: PomoPhase = phaseRef.current === 'work' ? 'break' : 'work';
             phaseRef.current = np;
             setPhase(np);
+            onComplete?.();
             return np === 'work' ? (parsed as any).work : (parsed as any).break;
           }
           setDone(true);
           setRunning(false);
+          onComplete?.();
           return 0;
         }
         return next;
       });
     }, 1000);
     return () => clearInterval(id);
-  }, [running, done, parsed]);
+  }, [running, done, parsed, onComplete]);
 
   const toggle = () => { if (done) { setSeconds(parsed.initial); setDone(false); setRunning(true); } else setRunning(r => !r); };
   const restart = () => { setSeconds(parsed.mode === 'stopwatch' ? 0 : parsed.initial); phaseRef.current = 'work'; setPhase('work'); setDone(false); setRunning(true); };
@@ -92,9 +95,9 @@ const TimerWidget: React.FC<TimerWidgetProps> = ({ config, onRegister, onRemove 
 
   return (
     <div className="flex items-center gap-3 py-1.5 select-none">
-      <Timer size={14} className="text-primary flex-shrink-0" />
+      <Timer size={14} className="text-accent-foreground flex-shrink-0" />
       <span className="text-muted-foreground text-xs uppercase tracking-wider font-mono">{label}</span>
-      <span className={`font-mono font-medium tabular-nums ${done ? 'text-primary animate-pulse' : 'text-foreground'}`}>
+      <span className={`font-mono font-medium tabular-nums ${done ? 'text-accent-foreground animate-pulse' : 'text-foreground'}`}>
         {done ? '00:00 ✓' : formatTime(seconds)}
       </span>
       <div className="flex items-center gap-0.5">

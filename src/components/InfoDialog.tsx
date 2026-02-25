@@ -9,13 +9,13 @@ interface Props {
 const InfoDialog: React.FC<Props> = ({ open, onOpenChange }) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md bg-popover text-popover-foreground">
+      <DialogContent className="max-w-[90vw] sm:max-w-md bg-popover text-popover-foreground rounded-xl">
         <DialogHeader>
-          <DialogTitle className="font-playfair text-lg">Shortcuts &amp; Commands</DialogTitle>
+          <DialogTitle className="font-playfair text-base sm:text-lg truncate">Shortcuts &amp; Commands</DialogTitle>
         </DialogHeader>
-        <div className="space-y-5 text-sm leading-relaxed">
+        <div className="space-y-5 text-sm leading-relaxed overflow-y-auto max-h-[70vh]">
           <section>
-            <h3 className="font-semibold mb-1.5 text-foreground">/ Commands</h3>
+            <h3 className="font-semibold mb-1.5 text-accent-foreground">/ Commands</h3>
             <p className="text-muted-foreground mb-1">Type <kbd className="px-1 py-0.5 bg-background rounded text-xs font-mono">/</kbd> at the start of a line:</p>
             <ul className="space-y-1 text-muted-foreground ml-3">
               <li><span className="font-mono text-foreground">/list</span> — checklist with checkboxes</li>
@@ -25,33 +25,35 @@ const InfoDialog: React.FC<Props> = ({ open, onOpenChange }) => {
           </section>
 
           <section>
-            <h3 className="font-semibold mb-1.5 text-foreground">Timer Options</h3>
+            <h3 className="font-semibold mb-1.5 text-accent-foreground">Timer Options</h3>
             <ul className="space-y-1 text-muted-foreground ml-3">
               <li><span className="font-mono text-foreground">/timer</span> — stopwatch</li>
-              <li><span className="font-mono text-foreground">/timer 5</span> — 5 min countdown</li>
-              <li><span className="font-mono text-foreground">/timer 3:30</span> — countdown to 3:30</li>
+              <li><span className="font-mono text-foreground">/timer 5</span> — five min countdown</li>
+              <li><span className="font-mono text-foreground">/timer 15:30</span> — countdown to 15:30</li>
               <li><span className="font-mono text-foreground">/timer pomo</span> — 25+5 pomodoro</li>
               <li><span className="font-mono text-foreground">/timer 57 11</span> — custom pomodoro</li>
             </ul>
-            <p className="text-muted-foreground mt-1.5 ml-3">
-              Controls: <span className="font-mono text-foreground">timer p</span> pause/resume · <span className="font-mono text-foreground">timer r</span> restart · <span className="font-mono text-foreground">timer s</span> stop
-            </p>
+            <div className="text-muted-foreground mt-2 ml-3 space-y-1">
+              <p className="text-xs uppercase tracking-wider text-accent-foreground font-medium">Controls</p>
+              <p><span className="font-mono text-foreground">timer p</span> — pause / resume</p>
+              <p><span className="font-mono text-foreground">timer r</span> — restart</p>
+              <p><span className="font-mono text-foreground">timer s</span> — stop</p>
+            </div>
           </section>
 
           <section>
-            <h3 className="font-semibold mb-1.5 text-foreground">Keyboard Shortcuts</h3>
+            <h3 className="font-semibold mb-1.5 text-accent-foreground">Keyboard Shortcuts</h3>
             <ul className="space-y-1 text-muted-foreground ml-3">
-              <li><kbd className="font-mono text-foreground">Ctrl+B</kbd> — bold text (**text**)</li>
+              <li><kbd className="font-mono text-foreground">Ctrl+B</kbd> — bold</li>
               <li><kbd className="font-mono text-foreground">Ctrl+Z</kbd> — undo</li>
               <li><kbd className="font-mono text-foreground">Ctrl+Shift+Z</kbd> — redo</li>
               <li><kbd className="font-mono text-foreground">Tab</kbd> — indent</li>
-              <li><kbd className="font-mono text-foreground">Shift+Tab</kbd> — unindent</li>
               <li><kbd className="font-mono text-foreground">Alt+↑/↓</kbd> — move line up/down</li>
             </ul>
           </section>
 
           <section>
-            <h3 className="font-semibold mb-1.5 text-foreground">List Features</h3>
+            <h3 className="font-semibold mb-1.5 text-accent-foreground">List Features</h3>
             <ul className="space-y-1 text-muted-foreground ml-3">
               <li>Click checkboxes to mark items done</li>
               <li>Type <span className="font-mono text-foreground">/x</span> at end of a list item to toggle strikethrough</li>

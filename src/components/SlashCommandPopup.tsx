@@ -31,7 +31,7 @@ const SlashCommandPopup: React.FC<Props> = ({ commands, highlightIndex, onSelect
   return (
     <div
       ref={ref}
-      className="fixed z-50 bg-popover border border-border rounded-lg shadow-lg py-1 min-w-[180px]"
+      className="fixed z-50 bg-popover border border-border rounded-xl shadow-lg py-1 min-w-[180px]"
       style={{ top: rect.bottom + 4, left: rect.left }}
     >
       {commands.map((cmd, i) => (

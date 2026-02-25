@@ -17,6 +17,25 @@ import {
   getTimerArgs, SLASH_COMMANDS, INDENT, autoResize, LineType,
 } from './writing-helpers';
 
+const playChime = () => {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    [880, 1108.73, 1318.51].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = freq;
+      osc.type = 'sine';
+      const start = ctx.currentTime + i * 0.15;
+      gain.gain.setValueAtTime(0.15, start);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 1.2);
+      osc.start(start);
+      osc.stop(start + 1.2);
+    });
+  } catch {}
+};
+
 const WritingInterface = () => {
   const [content, setContentState] = useState(() => localStorage.getItem('zen-writing-content') || '');
   const contentRef = useRef(content);
@@ -26,8 +45,10 @@ const WritingInterface = () => {
   const [mounted, setMounted] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+  const [timerAlert, setTimerAlert] = useState(false);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
   const hasLoadedRef = useRef(false);
+  const editorRef = useRef<HTMLDivElement>(null);
 
   // Undo / Redo
   const undoStack = useRef<string[]>([]);
@@ -64,8 +85,17 @@ const WritingInterface = () => {
   const [editingTimerLine, setEditingTimerLine] = useState<number | null>(null);
   const timerControls = useRef<Map<number, { toggle: () => void; restart: () => void; stop: () => void }>>(new Map());
 
-  // Mount
-  useEffect(() => { setMounted(true); requestAnimationFrame(() => lineRefs.current.get(0)?.focus()); }, []);
+  const isDark = mounted && theme === 'dark';
+
+  // Mount + auto-focus
+  useEffect(() => {
+    setMounted(true);
+    const t = setTimeout(() => {
+      const el = lineRefs.current.get(0);
+      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    }, 150);
+    return () => clearTimeout(t);
+  }, []);
 
   // Save
   useEffect(() => {
@@ -110,6 +140,35 @@ const WritingInterface = () => {
     typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 1000);
   };
 
+  const scrollToLine = (lineIndex: number) => {
+    requestAnimationFrame(() => {
+      const el = lineRefs.current.get(lineIndex);
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 32;
+      const bottomTarget = rect.bottom + lineHeight * 3;
+      if (bottomTarget > window.innerHeight) {
+        window.scrollBy({ top: bottomTarget - window.innerHeight + 16, behavior: 'smooth' });
+      }
+    });
+  };
+
+  // Click anywhere to focus
+  const handleEditorClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target === editorRef.current || target.dataset?.editorBg === 'true') {
+      const lastIndex = lines.length - 1;
+      const el = lineRefs.current.get(lastIndex);
+      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    }
+  };
+
+  // Timer completion
+  const handleTimerComplete = useCallback(() => {
+    playChime();
+    setTimerAlert(true);
+  }, []);
+
   // Slash select
   const handleSlashSelect = useCallback((command: string) => {
     if (!slashPopup) return;
@@ -137,6 +196,7 @@ const WritingInterface = () => {
     ls[index] = value;
     setContent(ls.join('\n'));
     triggerTyping();
+    scrollToLine(index);
     const trimmed = value.trim();
     if (/^\/\w{0,10}$/.test(trimmed)) {
       const filter = trimmed.slice(1);
@@ -162,6 +222,7 @@ const WritingInterface = () => {
     ls[index] = wasStruck ? STRUCK_MARKER + inputValue : inputValue;
     setContent(ls.join('\n'));
     triggerTyping();
+    scrollToLine(index);
   };
 
   const toggleStrike = (index: number) => {
@@ -195,6 +256,13 @@ const WritingInterface = () => {
       if (e.key === 'Escape') { e.preventDefault(); setSlashPopup(null); return; }
     }
 
+    // Ctrl+A - select all in current textarea
+    if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+      e.preventDefault();
+      input.setSelectionRange(0, input.value.length);
+      return;
+    }
+
     // Ctrl+Z
     if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
     // Ctrl+Shift+Z / Ctrl+Y
@@ -225,21 +293,13 @@ const WritingInterface = () => {
       return;
     }
 
-    // Tab
+    // Tab - indent only
     if (e.key === 'Tab') {
       e.preventDefault();
       pushUndo(true);
-      if (e.shiftKey) {
-        if (ls[lineIndex].startsWith(INDENT)) {
-          ls[lineIndex] = ls[lineIndex].slice(INDENT.length);
-          setContent(ls.join('\n'));
-          pendingCursorRef.current = { line: lineIndex, pos: Math.max(0, pos - INDENT.length) };
-        }
-      } else {
-        ls[lineIndex] = INDENT + ls[lineIndex];
-        setContent(ls.join('\n'));
-        pendingCursorRef.current = { line: lineIndex, pos: pos + INDENT.length };
-      }
+      ls[lineIndex] = INDENT + ls[lineIndex];
+      setContent(ls.join('\n'));
+      pendingCursorRef.current = { line: lineIndex, pos: pos + INDENT.length };
       return;
     }
 
@@ -268,7 +328,6 @@ const WritingInterface = () => {
     // Enter
     if (e.key === 'Enter') {
       e.preventDefault();
-      // Timer editing
       if (editingTimerLine === lineIndex) {
         const timerArgs = getTimerArgs(ls[lineIndex]);
         if (['p', 'r', 's'].includes(timerArgs.toLowerCase())) {
@@ -297,11 +356,21 @@ const WritingInterface = () => {
       ls.splice(lineIndex + 1, 0, line.slice(pos));
       setContent(ls.join('\n'));
       pendingCursorRef.current = { line: lineIndex + 1, pos: 0 };
+      scrollToLine(lineIndex + 1);
       return;
     }
 
     // Backspace at pos 0
     if (e.key === 'Backspace' && pos === 0 && end === 0) {
+      // Unindent if line is indented
+      if (ls[lineIndex].startsWith(INDENT)) {
+        e.preventDefault();
+        pushUndo(true);
+        ls[lineIndex] = ls[lineIndex].slice(INDENT.length);
+        setContent(ls.join('\n'));
+        pendingCursorRef.current = { line: lineIndex, pos: 0 };
+        return;
+      }
       if (lineIndex === 0) return;
       e.preventDefault();
       pushUndo(true);
@@ -388,8 +457,8 @@ const WritingInterface = () => {
 
   const saveAsTxt = () => {
     if (!content.trim()) return;
-    const exported = lines.map(line => {
-      const type = getLineType(lines, lines.indexOf(line));
+    const exported = lines.map((line, i) => {
+      const type = getLineType(lines, i);
       if (type === 'divider') return '---';
       if (type === 'timer') return `⏱ ${getTimerArgs(line) || 'stopwatch'}`;
       return cleanForExport(line);
@@ -444,10 +513,10 @@ const WritingInterface = () => {
 
   // Render line
   const renderLine = (line: string, index: number, type: LineType) => {
-    const textStyle = {
+    const textStyle: React.CSSProperties = {
       lineHeight: '1.8',
-      caretColor: 'hsl(40 60% 85%)',
-      textShadow: '0 0 15px hsl(40 60% 70% / 0.5), 0 0 35px hsl(35 50% 60% / 0.3)',
+      caretColor: isDark ? 'hsl(40 60% 85%)' : 'hsl(0 0% 25%)',
+      ...(isDark ? { textShadow: '0 0 8px hsl(40 60% 70% / 0.3), 0 0 20px hsl(35 50% 60% / 0.15)' } : {}),
     };
 
     const refCb = (el: HTMLTextAreaElement | null) => {
@@ -467,7 +536,7 @@ const WritingInterface = () => {
     if (type === 'divider') {
       return (
         <div key={`div-${index}`} className="py-2 relative group">
-          <hr className="border-border/40" />
+          <hr className="border-t border-border" />
           <button onClick={() => deleteLine(index)} className="absolute right-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-destructive text-xs transition-opacity">✕</button>
         </div>
       );
@@ -483,7 +552,7 @@ const WritingInterface = () => {
               rows={1}
               onChange={(e) => { const ls = contentRef.current.split('\n'); ls[index] = e.target.value; setContent(ls.join('\n')); autoResize(e.target); }}
               onKeyDown={(e) => handleKeyDown(e, index)}
-              className="w-full font-playfair text-lg font-light tracking-wide bg-transparent border-none outline-none resize-none overflow-hidden text-foreground"
+              className="w-full font-playfair text-base sm:text-lg font-light tracking-wide bg-transparent border-none outline-none resize-none overflow-hidden text-foreground"
               style={textStyle}
             />
           </div>
@@ -495,6 +564,7 @@ const WritingInterface = () => {
             config={getTimerArgs(line)}
             onRegister={(ctrls) => timerControls.current.set(index, ctrls)}
             onRemove={() => deleteLine(index)}
+            onComplete={handleTimerComplete}
           />
         </div>
       );
@@ -508,11 +578,11 @@ const WritingInterface = () => {
           <button
             onClick={() => toggleStrike(index)}
             className={`mt-2 w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
-              struck ? 'bg-primary/80 border-primary/80' : 'border-muted-foreground/40 hover:border-primary/60'
+              struck ? 'bg-accent-foreground/80 border-accent-foreground/80' : 'border-muted-foreground/40 hover:border-accent-foreground/60'
             }`}
           >
             {struck && (
-              <svg width="10" height="10" viewBox="0 0 10 10" className="text-primary-foreground">
+              <svg width="10" height="10" viewBox="0 0 10 10" className="text-background">
                 <path d="M2 5L4 7L8 3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             )}
@@ -523,13 +593,13 @@ const WritingInterface = () => {
             rows={1}
             onChange={(e) => { handleListItemChange(index, e.target.value); autoResize(e.target); }}
             onKeyDown={(e) => handleKeyDown(e, index)}
-            className={`flex-1 font-playfair text-lg font-light tracking-wide bg-transparent border-none outline-none resize-none overflow-hidden ${
+            className={`flex-1 font-playfair text-base sm:text-lg font-light tracking-wide bg-transparent border-none outline-none resize-none overflow-hidden ${
               struck ? 'line-through text-muted-foreground/40' : 'text-foreground'
             }`}
             style={{
               lineHeight: '1.8',
-              caretColor: 'hsl(40 60% 85%)',
-              ...(struck ? {} : { textShadow: '0 0 15px hsl(40 60% 70% / 0.5), 0 0 35px hsl(35 50% 60% / 0.3)' }),
+              caretColor: isDark ? 'hsl(40 60% 85%)' : 'hsl(0 0% 25%)',
+              ...(struck ? {} : isDark ? { textShadow: '0 0 8px hsl(40 60% 70% / 0.3), 0 0 20px hsl(35 50% 60% / 0.15)' } : {}),
             }}
           />
         </div>
@@ -545,7 +615,7 @@ const WritingInterface = () => {
           rows={1}
           onChange={(e) => { handleTextChange(index, e.target.value); autoResize(e.target); }}
           onKeyDown={(e) => handleKeyDown(e, index)}
-          className="w-full font-playfair text-lg font-light tracking-wide bg-transparent border-none outline-none resize-none overflow-hidden text-foreground"
+          className="w-full font-playfair text-base sm:text-lg font-light tracking-wide bg-transparent border-none outline-none resize-none overflow-hidden text-foreground"
           style={textStyle}
         />
       </div>
@@ -554,44 +624,65 @@ const WritingInterface = () => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
+      {/* Timer alert glow overlay */}
+      {timerAlert && (
+        <div
+          className="fixed inset-0 z-[100] cursor-pointer"
+          onClick={() => setTimerAlert(false)}
+          style={{ animation: 'timer-glow 3s ease-in-out infinite' }}
+        />
+      )}
+
       {/* Header */}
-      <div className="flex justify-between items-center p-6 opacity-60 hover:opacity-100 transition-opacity duration-300 bg-background">
-        <span className="font-playfair text-2xl text-foreground tracking-wide" style={{ textShadow: '0 0 30px hsl(40 60% 70% / 0.5), 0 0 60px hsl(35 50% 60% / 0.3)' }}>ez.</span>
+      <div className="flex justify-between items-center p-4 sm:p-6 opacity-60 hover:opacity-100 transition-opacity duration-300 bg-background">
+        <span
+          className="font-playfair text-xl sm:text-2xl text-foreground tracking-wide"
+          style={isDark ? { textShadow: '0 0 20px hsl(40 60% 70% / 0.3), 0 0 40px hsl(35 50% 60% / 0.15)' } : {}}
+        >
+          ez.
+        </span>
         <div className="flex items-center gap-1">
           {mounted && (
-            <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="text-muted-foreground hover:text-foreground">
+            <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="text-muted-foreground hover:text-accent-foreground">
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </Button>
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" disabled={!content.trim()} className="text-muted-foreground hover:text-foreground">
+              <Button variant="ghost" size="icon" disabled={!content.trim()} className="text-muted-foreground hover:text-accent-foreground">
                 <Download size={18} />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="bg-popover">
+            <DropdownMenuContent align="end" className="bg-popover rounded-xl">
               <DropdownMenuItem onClick={saveAsTxt} className="cursor-pointer">Download as TXT</DropdownMenuItem>
               <DropdownMenuItem onClick={saveAsPdf} className="cursor-pointer">Download as PDF</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button variant="ghost" size="icon" onClick={() => setInfoOpen(true)} className="text-muted-foreground hover:text-foreground">
+          <Button variant="ghost" size="icon" onClick={() => setInfoOpen(true)} className="text-muted-foreground hover:text-accent-foreground">
             <Info size={18} />
           </Button>
         </div>
       </div>
 
       {/* Editor */}
-      <div className="flex-1 px-8 bg-background flex flex-col">
-        <div className="w-full max-w-none mx-auto flex flex-col h-full">
-          <div className="relative pt-6 flex-1">
+      <div
+        ref={editorRef}
+        data-editor-bg="true"
+        className="flex-1 px-4 sm:px-8 bg-background flex flex-col cursor-text"
+        onClick={handleEditorClick}
+      >
+        <div className="w-full max-w-none mx-auto flex flex-col h-full" data-editor-bg="true">
+          <div className="relative pt-4 sm:pt-6 flex-1 pb-[200px]" data-editor-bg="true">
             {/* Glowing cursor when empty */}
             {!content && (
               <div
-                className="absolute top-6 left-0 pointer-events-none"
+                className="absolute top-4 sm:top-6 left-0 pointer-events-none"
                 style={{
                   width: '2px', height: '24px',
-                  background: 'hsl(40 60% 85%)',
-                  boxShadow: '0 0 10px hsl(40 60% 70% / 0.9), 0 0 20px hsl(40 60% 70% / 0.7), 0 0 40px hsl(35 50% 60% / 0.5)',
+                  background: isDark ? 'hsl(40 60% 85%)' : 'hsl(0 0% 30%)',
+                  boxShadow: isDark
+                    ? '0 0 6px hsl(40 60% 70% / 0.6), 0 0 12px hsl(40 60% 70% / 0.3)'
+                    : '0 0 3px hsl(0 0% 30% / 0.3)',
                   animation: 'blink 1s ease-in-out infinite',
                 }}
               />
@@ -599,14 +690,19 @@ const WritingInterface = () => {
 
             {lines.map((line, index) => renderLine(line, index, getLineType(lines, index)))}
 
-            {isTyping && <div className="absolute bottom-4 right-4 w-2 h-2 bg-primary rounded-full animate-pulse" />}
+            {isTyping && <div className="absolute bottom-4 right-4 w-2 h-2 bg-accent-foreground rounded-full animate-pulse" />}
           </div>
         </div>
       </div>
 
       {/* Footer */}
       <div className="fixed bottom-4 left-0 right-0 text-center pointer-events-none opacity-40 hover:opacity-70 transition-opacity duration-300">
-        <span className="font-playfair text-sm text-foreground tracking-wide pointer-events-auto" style={{ textShadow: '0 0 30px hsl(40 60% 70% / 0.5), 0 0 60px hsl(35 50% 60% / 0.3)' }}>built by evan :)</span>
+        <span
+          className="font-playfair text-xs sm:text-sm text-foreground tracking-wide pointer-events-auto"
+          style={isDark ? { textShadow: '0 0 20px hsl(40 60% 70% / 0.3), 0 0 40px hsl(35 50% 60% / 0.15)' } : {}}
+        >
+          built by evan :)
+        </span>
       </div>
 
       {/* Slash popup */}
