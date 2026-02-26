@@ -29,7 +29,7 @@ const InfoDialog: React.FC<Props> = ({ open, onOpenChange }) => {
             <ul className="space-y-1 text-muted-foreground ml-3">
               <li><span className="font-mono text-foreground">/timer</span> — stopwatch</li>
               <li><span className="font-mono text-foreground">/timer 5</span> — five min countdown</li>
-              <li><span className="font-mono text-foreground">/timer 15:30</span> — countdown to 15:30</li>
+              <li><span className="font-mono text-foreground">/timer 15:30</span> — countdown to 3:30pm</li>
               <li><span className="font-mono text-foreground">/timer pomo</span> — 25+5 pomodoro</li>
               <li><span className="font-mono text-foreground">/timer 57 11</span> — custom pomodoro</li>
             </ul>

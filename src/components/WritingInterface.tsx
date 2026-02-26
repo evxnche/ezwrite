@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Download, Sun, Moon, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,7 +15,9 @@ import InfoDialog from './InfoDialog';
 import TimerWidget from './TimerWidget';
 import {
   STRUCK_MARKER, getCleanLine, isLineStruck, getLineType,
-  getTimerArgs, SLASH_COMMANDS, INDENT, autoResize, LineType,
+  getTimerArgs, SLASH_COMMANDS, INDENT, LineType,
+  contentToHTML, extractContent, getCurrentLineInfo, setCursorPosition,
+  escapeHTML, boldifyHTML,
 } from './writing-helpers';
 
 const playChime = () => {
@@ -37,18 +40,20 @@ const playChime = () => {
 };
 
 const WritingInterface = () => {
-  const [content, setContentState] = useState(() => localStorage.getItem('zen-writing-content') || '');
-  const contentRef = useRef(content);
-  const setContent = useCallback((val: string) => { contentRef.current = val; setContentState(val); }, []);
-
+  const contentRef = useRef(localStorage.getItem('zen-writing-content') || '');
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [timerAlert, setTimerAlert] = useState(false);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
-  const hasLoadedRef = useRef(false);
   const editorRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Track timers for portal rendering
+  const [timerSlots, setTimerSlots] = useState<Array<{ lineIndex: number; config: string }>>([]);
+  const [timerPortalNodes, setTimerPortalNodes] = useState<Map<number, HTMLElement>>(new Map());
+  const timerControls = useRef<Map<number, { toggle: () => void; restart: () => void; stop: () => void }>>(new Map());
 
   // Undo / Redo
   const undoStack = useRef<string[]>([]);
@@ -62,77 +67,64 @@ const WritingInterface = () => {
     redoStack.current = [];
     lastUndoTime.current = now;
   }, []);
-  const undo = useCallback(() => {
-    if (!undoStack.current.length) return;
-    redoStack.current.push(contentRef.current);
-    setContent(undoStack.current.pop()!);
-  }, [setContent]);
-  const redo = useCallback(() => {
-    if (!redoStack.current.length) return;
-    undoStack.current.push(contentRef.current);
-    setContent(redoStack.current.pop()!);
-  }, [setContent]);
-
-  // Refs
-  const lineRefs = useRef<Map<number, HTMLTextAreaElement>>(new Map());
-  const pendingCursorRef = useRef<{ line: number; pos: number } | null>(null);
 
   // Slash popup
-  const [slashPopup, setSlashPopup] = useState<{ lineIndex: number; filter: string } | null>(null);
+  const [slashPopup, setSlashPopup] = useState<{ rect: DOMRect; filter: string; lineIndex: number } | null>(null);
   const [popupHighlight, setPopupHighlight] = useState(0);
 
-  // Timer editing
+  // Timer editing state
   const [editingTimerLine, setEditingTimerLine] = useState<number | null>(null);
-  const timerControls = useRef<Map<number, { toggle: () => void; restart: () => void; stop: () => void }>>(new Map());
 
   const isDark = mounted && theme === 'dark';
 
-  // Mount + auto-focus
-  useEffect(() => {
-    setMounted(true);
-    const t = setTimeout(() => {
-      const el = lineRefs.current.get(0);
-      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
-    }, 150);
-    return () => clearTimeout(t);
+  // Structural re-render: sets innerHTML and updates timers
+  const structuralUpdate = useCallback((content: string, cursorLine?: number, cursorOffset?: number) => {
+    contentRef.current = content;
+    localStorage.setItem('zen-writing-content', content);
+    if (!editorRef.current) return;
+
+    editorRef.current.innerHTML = contentToHTML(content);
+
+    // Find timer slots
+    const lines = content.split('\n');
+    const timers: Array<{ lineIndex: number; config: string }> = [];
+    const portalNodes = new Map<number, HTMLElement>();
+    lines.forEach((line, i) => {
+      if (getLineType(lines, i) === 'timer') {
+        timers.push({ lineIndex: i, config: getTimerArgs(line) });
+        const el = editorRef.current!.querySelector(`[data-timer-slot="${i}"]`) as HTMLElement;
+        if (el) portalNodes.set(i, el);
+      }
+    });
+    setTimerSlots(timers);
+    setTimerPortalNodes(portalNodes);
+
+    // Restore cursor
+    if (cursorLine !== undefined) {
+      requestAnimationFrame(() => {
+        if (editorRef.current) {
+          editorRef.current.focus();
+          setCursorPosition(editorRef.current, cursorLine, cursorOffset ?? 0);
+        }
+      });
+    }
   }, []);
 
-  // Save
+  // Mount
   useEffect(() => {
-    if (!hasLoadedRef.current) { hasLoadedRef.current = true; return; }
-    localStorage.setItem('zen-writing-content', content);
-  }, [content]);
-
-  // Pending cursor
-  useEffect(() => {
-    if (!pendingCursorRef.current) return;
-    const { line, pos } = pendingCursorRef.current;
-    pendingCursorRef.current = null;
-    requestAnimationFrame(() => {
-      const el = lineRefs.current.get(line);
-      if (el) { el.focus(); const p = Math.min(pos, el.value.length); el.setSelectionRange(p, p); }
-    });
-  });
-
-  const lines = content.split('\n');
-
-  const filteredCommands = slashPopup
-    ? SLASH_COMMANDS.filter(c => c.name.startsWith(slashPopup.filter.toLowerCase()))
-    : [];
-
-  useEffect(() => {
-    if (slashPopup && filteredCommands.length === 0) setSlashPopup(null);
-  }, [slashPopup, filteredCommands.length]);
-
-  const findEditable = (from: number, dir: 1 | -1): number => {
-    let i = from + dir;
-    while (i >= 0 && i < lines.length) {
-      const t = getLineType(lines, i);
-      if (t === 'text' || t === 'list-item') return i;
-      i += dir;
+    setMounted(true);
+    if (editorRef.current) {
+      structuralUpdate(contentRef.current, 0, 0);
+      setTimeout(() => {
+        editorRef.current?.focus();
+        // Place cursor at end of content
+        const lines = contentRef.current.split('\n');
+        const lastLine = lines.length - 1;
+        const lastLen = lines[lastLine]?.length || 0;
+        if (editorRef.current) setCursorPosition(editorRef.current, lastLine, lastLen);
+      }, 100);
     }
-    return from;
-  };
+  }, []);
 
   const triggerTyping = () => {
     setIsTyping(true);
@@ -142,10 +134,11 @@ const WritingInterface = () => {
 
   const scrollToLine = (lineIndex: number) => {
     requestAnimationFrame(() => {
-      const el = lineRefs.current.get(lineIndex);
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 32;
+      if (!editorRef.current) return;
+      const lineNode = editorRef.current.childNodes[lineIndex] as HTMLElement;
+      if (!lineNode) return;
+      const rect = lineNode.getBoundingClientRect();
+      const lineHeight = 32;
       const bottomTarget = rect.bottom + lineHeight * 3;
       if (bottomTarget > window.innerHeight) {
         window.scrollBy({ top: bottomTarget - window.innerHeight + 16, behavior: 'smooth' });
@@ -153,13 +146,41 @@ const WritingInterface = () => {
     });
   };
 
-  // Click anywhere to focus
+  // Click anywhere to focus editor
+  const handleContainerClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target === containerRef.current || target.dataset?.editorBg === 'true') {
+      editorRef.current?.focus();
+      // Place cursor at end
+      const lines = contentRef.current.split('\n');
+      const lastLine = lines.length - 1;
+      setCursorPosition(editorRef.current!, lastLine, lines[lastLine]?.length || 0);
+    }
+  };
+
+  // Handle clicks inside editor (checkboxes, delete buttons)
   const handleEditorClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
-    if (target === editorRef.current || target.dataset?.editorBg === 'true') {
-      const lastIndex = lines.length - 1;
-      const el = lineRefs.current.get(lastIndex);
-      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    const action = target.dataset.action;
+    if (!action) return;
+
+    const lineIndex = parseInt(target.dataset.line || '0');
+    if (action === 'toggle') {
+      e.preventDefault();
+      const lines = contentRef.current.split('\n');
+      lines[lineIndex] = isLineStruck(lines[lineIndex])
+        ? getCleanLine(lines[lineIndex])
+        : STRUCK_MARKER + getCleanLine(lines[lineIndex]);
+      pushUndo(true);
+      structuralUpdate(lines.join('\n'));
+    }
+    if (action === 'delete') {
+      e.preventDefault();
+      pushUndo(true);
+      const lines = contentRef.current.split('\n');
+      lines.splice(lineIndex, 1);
+      if (!lines.length) lines.push('');
+      structuralUpdate(lines.join('\n'), Math.min(lineIndex, lines.length - 1), 0);
     }
   };
 
@@ -169,138 +190,158 @@ const WritingInterface = () => {
     setTimerAlert(true);
   }, []);
 
-  // Slash select
+  // Handle input (text-only changes from user typing)
+  const handleInput = useCallback(() => {
+    if (!editorRef.current) return;
+    const newContent = extractContent(editorRef.current);
+    contentRef.current = newContent;
+    localStorage.setItem('zen-writing-content', newContent);
+    triggerTyping();
+
+    // Check for slash commands
+    const info = getCurrentLineInfo(editorRef.current);
+    if (info) {
+      const lines = newContent.split('\n');
+      const lineText = lines[info.lineIndex] || '';
+      const trimmed = lineText.trim();
+      if (/^\/\w{0,10}$/.test(trimmed)) {
+        const filter = trimmed.slice(1);
+        const matches = SLASH_COMMANDS.filter(c => c.name.startsWith(filter.toLowerCase()));
+        if (matches.length > 0) {
+          const sel = window.getSelection();
+          if (sel && sel.rangeCount) {
+            const range = sel.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            setSlashPopup({ rect, filter, lineIndex: info.lineIndex });
+            setPopupHighlight(0);
+          }
+          return;
+        }
+      }
+      // Check for /x at end of list item line
+      const lineType = getLineType(lines, info.lineIndex);
+      if (lineType === 'list-item' && trimmed.endsWith('/x')) {
+        pushUndo(true);
+        const clean = getCleanLine(lines[info.lineIndex]);
+        const withoutX = clean.replace(/\/x\s*$/, '').trimEnd();
+        const wasStruck = isLineStruck(lines[info.lineIndex]);
+        lines[info.lineIndex] = wasStruck ? withoutX : STRUCK_MARKER + withoutX;
+        structuralUpdate(lines.join('\n'), info.lineIndex, withoutX.length);
+        return;
+      }
+
+      scrollToLine(info.lineIndex);
+    }
+
+    if (slashPopup) setSlashPopup(null);
+  }, [slashPopup, pushUndo, structuralUpdate]);
+
+  // Slash command select
   const handleSlashSelect = useCallback((command: string) => {
     if (!slashPopup) return;
     const { lineIndex } = slashPopup;
-    const ls = contentRef.current.split('\n');
+    const lines = contentRef.current.split('\n');
     pushUndo(true);
     if (command === 'timer') {
-      ls[lineIndex] = 'timer ';
-      setContent(ls.join('\n'));
+      lines[lineIndex] = 'timer ';
+      structuralUpdate(lines.join('\n'), lineIndex, 6);
       setEditingTimerLine(lineIndex);
-      pendingCursorRef.current = { line: lineIndex, pos: 6 };
     } else {
-      ls[lineIndex] = command;
-      if (lineIndex >= ls.length - 1) ls.push('');
-      setContent(ls.join('\n'));
-      pendingCursorRef.current = { line: lineIndex + 1, pos: 0 };
+      lines[lineIndex] = command;
+      if (lineIndex >= lines.length - 1) lines.push('');
+      structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
     }
     setSlashPopup(null);
-  }, [slashPopup, pushUndo, setContent]);
+  }, [slashPopup, pushUndo, structuralUpdate]);
 
-  // Text change
-  const handleTextChange = (index: number, value: string) => {
-    pushUndo();
-    const ls = contentRef.current.split('\n');
-    ls[index] = value;
-    setContent(ls.join('\n'));
-    triggerTyping();
-    scrollToLine(index);
-    const trimmed = value.trim();
-    if (/^\/\w{0,10}$/.test(trimmed)) {
-      const filter = trimmed.slice(1);
-      const matches = SLASH_COMMANDS.filter(c => c.name.startsWith(filter.toLowerCase()));
-      if (matches.length > 0) { setSlashPopup({ lineIndex: index, filter }); setPopupHighlight(0); return; }
-    }
-    if (slashPopup?.lineIndex === index) setSlashPopup(null);
-  };
+  const filteredCommands = slashPopup
+    ? SLASH_COMMANDS.filter(c => c.name.startsWith(slashPopup.filter.toLowerCase()))
+    : [];
 
-  // List item change
-  const handleListItemChange = (index: number, inputValue: string) => {
-    const ls = contentRef.current.split('\n');
-    const wasStruck = isLineStruck(ls[index]);
-    if (inputValue.trimEnd().endsWith('/x')) {
-      pushUndo(true);
-      const clean = inputValue.replace(/\/x\s*$/, '').trimEnd();
-      ls[index] = wasStruck ? clean : STRUCK_MARKER + clean;
-      setContent(ls.join('\n'));
-      pendingCursorRef.current = { line: index, pos: clean.length };
-      return;
-    }
-    pushUndo();
-    ls[index] = wasStruck ? STRUCK_MARKER + inputValue : inputValue;
-    setContent(ls.join('\n'));
-    triggerTyping();
-    scrollToLine(index);
-  };
-
-  const toggleStrike = (index: number) => {
-    pushUndo(true);
-    const ls = contentRef.current.split('\n');
-    ls[index] = isLineStruck(ls[index]) ? getCleanLine(ls[index]) : STRUCK_MARKER + getCleanLine(ls[index]);
-    setContent(ls.join('\n'));
-  };
-
-  const deleteLine = (index: number) => {
-    pushUndo(true);
-    const ls = contentRef.current.split('\n');
-    ls.splice(index, 1);
-    if (!ls.length) ls.push('');
-    setContent(ls.join('\n'));
-    pendingCursorRef.current = { line: Math.min(index, ls.length - 1), pos: 0 };
-  };
+  useEffect(() => {
+    if (slashPopup && filteredCommands.length === 0) setSlashPopup(null);
+  }, [slashPopup, filteredCommands.length]);
 
   // Key handler
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>, lineIndex: number) => {
-    const input = e.currentTarget;
-    const pos = input.selectionStart ?? 0;
-    const end = input.selectionEnd ?? 0;
-    const ls = contentRef.current.split('\n');
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const info = getCurrentLineInfo(editorRef.current!);
+    if (!info) return;
+    const { lineIndex, offset } = info;
+    const lines = contentRef.current.split('\n');
 
     // Popup nav
-    if (slashPopup && slashPopup.lineIndex === lineIndex) {
+    if (slashPopup) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setPopupHighlight(h => Math.min(h + 1, filteredCommands.length - 1)); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); setPopupHighlight(h => Math.max(h - 1, 0)); return; }
       if (e.key === 'Enter') { e.preventDefault(); if (filteredCommands[popupHighlight]) handleSlashSelect(filteredCommands[popupHighlight].name); return; }
       if (e.key === 'Escape') { e.preventDefault(); setSlashPopup(null); return; }
     }
 
-    // Ctrl+A - select all in current textarea
-    if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+    // Ctrl+Z
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
       e.preventDefault();
-      input.setSelectionRange(0, input.value.length);
+      if (undoStack.current.length) {
+        redoStack.current.push(contentRef.current);
+        structuralUpdate(undoStack.current.pop()!, lineIndex, offset);
+      }
+      return;
+    }
+    // Ctrl+Shift+Z / Ctrl+Y
+    if ((e.ctrlKey || e.metaKey) && ((e.key === 'z' && e.shiftKey) || e.key === 'y')) {
+      e.preventDefault();
+      if (redoStack.current.length) {
+        undoStack.current.push(contentRef.current);
+        structuralUpdate(redoStack.current.pop()!, lineIndex, offset);
+      }
       return;
     }
 
-    // Ctrl+Z
-    if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
-    // Ctrl+Shift+Z / Ctrl+Y
-    if ((e.ctrlKey || e.metaKey) && ((e.key === 'z' && e.shiftKey) || e.key === 'y')) { e.preventDefault(); redo(); return; }
-
-    // Ctrl+B
+    // Ctrl+B - use execCommand for bold
     if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
       e.preventDefault();
       pushUndo(true);
-      const lineType = getLineType(ls, lineIndex);
-      const raw = lineType === 'list-item' ? getCleanLine(ls[lineIndex]) : ls[lineIndex];
-      let newText: string;
-      let newPos: number;
-      if (pos !== end) {
-        newText = raw.slice(0, pos) + '**' + raw.slice(pos, end) + '**' + raw.slice(end);
-        newPos = end + 4;
-      } else {
-        newText = raw.slice(0, pos) + '****' + raw.slice(pos);
-        newPos = pos + 2;
-      }
-      if (lineType === 'list-item') {
-        ls[lineIndex] = isLineStruck(ls[lineIndex]) ? STRUCK_MARKER + newText : newText;
-      } else {
-        ls[lineIndex] = newText;
-      }
-      setContent(ls.join('\n'));
-      pendingCursorRef.current = { line: lineIndex, pos: newPos };
+      document.execCommand('bold');
+      // After bold, extract and save content
+      requestAnimationFrame(() => {
+        if (editorRef.current) {
+          contentRef.current = extractContent(editorRef.current);
+          localStorage.setItem('zen-writing-content', contentRef.current);
+        }
+      });
       return;
     }
 
-    // Tab - indent only
-    if (e.key === 'Tab') {
+    // Tab - 8 space indent
+    if (e.key === 'Tab' && !e.shiftKey) {
       e.preventDefault();
       pushUndo(true);
-      ls[lineIndex] = INDENT + ls[lineIndex];
-      setContent(ls.join('\n'));
-      pendingCursorRef.current = { line: lineIndex, pos: pos + INDENT.length };
+      document.execCommand('insertText', false, INDENT);
+      requestAnimationFrame(() => {
+        if (editorRef.current) {
+          contentRef.current = extractContent(editorRef.current);
+          localStorage.setItem('zen-writing-content', contentRef.current);
+        }
+      });
       return;
+    }
+
+    // Backspace at start - unindent if indented
+    if (e.key === 'Backspace' && offset === 0) {
+      const lineText = lines[lineIndex] || '';
+      const cleanLine = getLineType(lines, lineIndex) === 'list-item' ? getCleanLine(lineText) : lineText;
+      if (cleanLine.startsWith(INDENT)) {
+        e.preventDefault();
+        pushUndo(true);
+        if (getLineType(lines, lineIndex) === 'list-item') {
+          const struck = isLineStruck(lineText);
+          const newClean = cleanLine.slice(INDENT.length);
+          lines[lineIndex] = struck ? STRUCK_MARKER + newClean : newClean;
+        } else {
+          lines[lineIndex] = lineText.slice(INDENT.length);
+        }
+        structuralUpdate(lines.join('\n'), lineIndex, 0);
+        return;
+      }
     }
 
     // Alt+Arrow move line
@@ -308,19 +349,22 @@ const WritingInterface = () => {
       e.preventDefault();
       if (lineIndex > 0) {
         pushUndo(true);
-        [ls[lineIndex], ls[lineIndex - 1]] = [ls[lineIndex - 1], ls[lineIndex]];
-        setContent(ls.join('\n'));
-        pendingCursorRef.current = { line: lineIndex - 1, pos };
+        // Extract fresh content first
+        const freshContent = extractContent(editorRef.current!);
+        const freshLines = freshContent.split('\n');
+        [freshLines[lineIndex], freshLines[lineIndex - 1]] = [freshLines[lineIndex - 1], freshLines[lineIndex]];
+        structuralUpdate(freshLines.join('\n'), lineIndex - 1, offset);
       }
       return;
     }
     if (e.altKey && e.key === 'ArrowDown') {
       e.preventDefault();
-      if (lineIndex < ls.length - 1) {
+      if (lineIndex < lines.length - 1) {
         pushUndo(true);
-        [ls[lineIndex], ls[lineIndex + 1]] = [ls[lineIndex + 1], ls[lineIndex]];
-        setContent(ls.join('\n'));
-        pendingCursorRef.current = { line: lineIndex + 1, pos };
+        const freshContent = extractContent(editorRef.current!);
+        const freshLines = freshContent.split('\n');
+        [freshLines[lineIndex], freshLines[lineIndex + 1]] = [freshLines[lineIndex + 1], freshLines[lineIndex]];
+        structuralUpdate(freshLines.join('\n'), lineIndex + 1, offset);
       }
       return;
     }
@@ -328,126 +372,63 @@ const WritingInterface = () => {
     // Enter
     if (e.key === 'Enter') {
       e.preventDefault();
+      pushUndo(true);
+
+      // Timer editing
       if (editingTimerLine === lineIndex) {
-        const timerArgs = getTimerArgs(ls[lineIndex]);
+        const freshContent = extractContent(editorRef.current!);
+        const freshLines = freshContent.split('\n');
+        const timerArgs = getTimerArgs(freshLines[lineIndex]);
         if (['p', 'r', 's'].includes(timerArgs.toLowerCase())) {
           const action = timerArgs.toLowerCase();
           for (let i = lineIndex - 1; i >= 0; i--) {
-            if (getLineType(ls, i) === 'timer' && i !== lineIndex) {
+            if (getLineType(freshLines, i) === 'timer' && i !== lineIndex) {
               const ctrl = timerControls.current.get(i);
-              if (ctrl) { if (action === 'p') ctrl.toggle(); if (action === 'r') ctrl.restart(); if (action === 's') ctrl.stop(); }
+              if (ctrl) {
+                if (action === 'p') ctrl.toggle();
+                if (action === 'r') ctrl.restart();
+                if (action === 's') ctrl.stop();
+              }
               break;
             }
           }
-          ls.splice(lineIndex, 1);
-          setContent(ls.join('\n'));
+          freshLines.splice(lineIndex, 1);
           setEditingTimerLine(null);
-          pendingCursorRef.current = { line: Math.max(0, lineIndex - 1), pos: 0 };
+          structuralUpdate(freshLines.join('\n'), Math.max(0, lineIndex - 1), 0);
           return;
         }
         setEditingTimerLine(null);
-        if (lineIndex >= ls.length - 1) { ls.push(''); setContent(ls.join('\n')); }
-        pendingCursorRef.current = { line: lineIndex + 1, pos: 0 };
+        if (lineIndex >= freshLines.length - 1) freshLines.push('');
+        structuralUpdate(freshLines.join('\n'), lineIndex + 1, 0);
         return;
       }
-      pushUndo(true);
-      const line = ls[lineIndex];
-      ls[lineIndex] = line.slice(0, pos);
-      ls.splice(lineIndex + 1, 0, line.slice(pos));
-      setContent(ls.join('\n'));
-      pendingCursorRef.current = { line: lineIndex + 1, pos: 0 };
+
+      // Normal enter - extract fresh, split line
+      const freshContent = extractContent(editorRef.current!);
+      const freshLines = freshContent.split('\n');
+      const currentLine = freshLines[lineIndex] || '';
+      freshLines[lineIndex] = currentLine.slice(0, offset);
+      freshLines.splice(lineIndex + 1, 0, currentLine.slice(offset));
+      structuralUpdate(freshLines.join('\n'), lineIndex + 1, 0);
       scrollToLine(lineIndex + 1);
       return;
     }
 
-    // Backspace at pos 0
-    if (e.key === 'Backspace' && pos === 0 && end === 0) {
-      // Unindent if line is indented
-      if (ls[lineIndex].startsWith(INDENT)) {
-        e.preventDefault();
-        pushUndo(true);
-        ls[lineIndex] = ls[lineIndex].slice(INDENT.length);
-        setContent(ls.join('\n'));
-        pendingCursorRef.current = { line: lineIndex, pos: 0 };
-        return;
-      }
-      if (lineIndex === 0) return;
-      e.preventDefault();
-      pushUndo(true);
-      const prevType = getLineType(ls, lineIndex - 1);
-      if (['list-header', 'divider', 'timer'].includes(prevType)) {
-        ls.splice(lineIndex - 1, 1);
-        setContent(ls.join('\n'));
-        pendingCursorRef.current = { line: lineIndex - 1, pos: 0 };
-      } else {
-        const prevClean = getLineType(ls, lineIndex - 1) === 'list-item' ? getCleanLine(ls[lineIndex - 1]) : ls[lineIndex - 1];
-        const prevLen = prevClean.length;
-        const curClean = getLineType(ls, lineIndex) === 'list-item' ? getCleanLine(ls[lineIndex]) : ls[lineIndex];
-        if (getLineType(ls, lineIndex - 1) === 'list-item') {
-          const wasStruck = isLineStruck(ls[lineIndex - 1]);
-          ls[lineIndex - 1] = wasStruck ? STRUCK_MARKER + prevClean + curClean : prevClean + curClean;
-        } else {
-          ls[lineIndex - 1] += ls[lineIndex];
-        }
-        ls.splice(lineIndex, 1);
-        setContent(ls.join('\n'));
-        pendingCursorRef.current = { line: lineIndex - 1, pos: prevLen };
-      }
-      return;
-    }
-
-    // Arrow up at pos 0
-    if (e.key === 'ArrowUp' && !e.altKey && pos === 0) {
-      e.preventDefault();
-      const target = findEditable(lineIndex, -1);
-      if (target !== lineIndex) {
-        const el = lineRefs.current.get(target);
-        if (el) { el.focus(); const p = Math.min(pos, el.value.length); el.setSelectionRange(p, p); }
-      }
-      return;
-    }
-
-    // Arrow down at end
-    if (e.key === 'ArrowDown' && !e.altKey && pos === input.value.length) {
-      e.preventDefault();
-      const target = findEditable(lineIndex, 1);
-      if (target !== lineIndex) {
-        const el = lineRefs.current.get(target);
-        if (el) { el.focus(); const p = Math.min(pos, el.value.length); el.setSelectionRange(p, p); }
-      }
-      return;
-    }
-
-    // Arrow left at 0
-    if (e.key === 'ArrowLeft' && pos === 0 && end === 0 && !e.altKey && !e.shiftKey) {
-      const target = findEditable(lineIndex, -1);
-      if (target !== lineIndex) {
-        e.preventDefault();
-        const el = lineRefs.current.get(target);
-        if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
-      }
-    }
-
-    // Arrow right at end
-    if (e.key === 'ArrowRight' && pos === input.value.length && !e.altKey && !e.shiftKey) {
-      const target = findEditable(lineIndex, 1);
-      if (target !== lineIndex) {
-        e.preventDefault();
-        const el = lineRefs.current.get(target);
-        if (el) { el.focus(); el.setSelectionRange(0, 0); }
-      }
-    }
-
-    // Escape timer
+    // Escape timer editing
     if (e.key === 'Escape' && editingTimerLine === lineIndex) {
       e.preventDefault();
-      ls.splice(lineIndex, 1);
-      if (!ls.length) ls.push('');
-      setContent(ls.join('\n'));
+      const freshLines = extractContent(editorRef.current!).split('\n');
+      freshLines.splice(lineIndex, 1);
+      if (!freshLines.length) freshLines.push('');
       setEditingTimerLine(null);
-      pendingCursorRef.current = { line: Math.max(0, lineIndex - 1), pos: 0 };
+      structuralUpdate(freshLines.join('\n'), Math.max(0, lineIndex - 1), 0);
     }
   };
+
+  // Before input: push undo for content changes
+  const handleBeforeInput = useCallback(() => {
+    pushUndo();
+  }, [pushUndo]);
 
   // Exports
   const cleanForExport = (line: string) => {
@@ -456,7 +437,9 @@ const WritingInterface = () => {
   };
 
   const saveAsTxt = () => {
+    const content = contentRef.current;
     if (!content.trim()) return;
+    const lines = content.split('\n');
     const exported = lines.map((line, i) => {
       const type = getLineType(lines, i);
       if (type === 'divider') return '---';
@@ -472,7 +455,9 @@ const WritingInterface = () => {
   };
 
   const saveAsPdf = () => {
+    const content = contentRef.current;
     if (!content.trim()) return;
+    const lines = content.split('\n');
     const pdf = new jsPDF();
     const pageH = pdf.internal.pageSize.height;
     const pageW = pdf.internal.pageSize.width;
@@ -511,115 +496,14 @@ const WritingInterface = () => {
     pdf.save(`ezwrite-${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
-  // Render line
-  const renderLine = (line: string, index: number, type: LineType) => {
-    const textStyle: React.CSSProperties = {
-      lineHeight: '1.8',
-      caretColor: isDark ? 'hsl(40 60% 85%)' : 'hsl(0 0% 25%)',
-      ...(isDark ? { textShadow: '0 0 8px hsl(40 60% 70% / 0.3), 0 0 20px hsl(35 50% 60% / 0.15)' } : {}),
-    };
-
-    const refCb = (el: HTMLTextAreaElement | null) => {
-      if (el) { lineRefs.current.set(index, el); autoResize(el); }
-      else lineRefs.current.delete(index);
-    };
-
-    if (type === 'list-header') {
-      return (
-        <div key={`lh-${index}`} className="relative group" style={{ lineHeight: '1.8' }}>
-          <span className="font-playfair text-lg text-muted-foreground/40 font-light tracking-wide select-none">list</span>
-          <button onClick={() => deleteLine(index)} className="absolute right-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-destructive text-xs transition-opacity">✕</button>
-        </div>
-      );
-    }
-
-    if (type === 'divider') {
-      return (
-        <div key={`div-${index}`} className="py-2 relative group">
-          <hr className="border-t border-border" />
-          <button onClick={() => deleteLine(index)} className="absolute right-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-destructive text-xs transition-opacity">✕</button>
-        </div>
-      );
-    }
-
-    if (type === 'timer') {
-      if (editingTimerLine === index) {
-        return (
-          <div key={`te-${index}`} style={{ lineHeight: '1.8' }}>
-            <textarea
-              ref={refCb}
-              value={line}
-              rows={1}
-              onChange={(e) => { const ls = contentRef.current.split('\n'); ls[index] = e.target.value; setContent(ls.join('\n')); autoResize(e.target); }}
-              onKeyDown={(e) => handleKeyDown(e, index)}
-              className="w-full font-playfair text-base sm:text-lg font-light tracking-wide bg-transparent border-none outline-none resize-none overflow-hidden text-foreground"
-              style={textStyle}
-            />
-          </div>
-        );
-      }
-      return (
-        <div key={`tw-${index}`} className="relative group">
-          <TimerWidget
-            config={getTimerArgs(line)}
-            onRegister={(ctrls) => timerControls.current.set(index, ctrls)}
-            onRemove={() => deleteLine(index)}
-            onComplete={handleTimerComplete}
-          />
-        </div>
-      );
-    }
-
-    if (type === 'list-item') {
-      const struck = isLineStruck(line);
-      const display = getCleanLine(line);
-      return (
-        <div key={`li-${index}`} className="flex items-start gap-3" style={{ lineHeight: '1.8' }}>
-          <button
-            onClick={() => toggleStrike(index)}
-            className={`mt-2 w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
-              struck ? 'bg-accent-foreground/80 border-accent-foreground/80' : 'border-muted-foreground/40 hover:border-accent-foreground/60'
-            }`}
-          >
-            {struck && (
-              <svg width="10" height="10" viewBox="0 0 10 10" className="text-background">
-                <path d="M2 5L4 7L8 3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            )}
-          </button>
-          <textarea
-            ref={refCb}
-            value={display}
-            rows={1}
-            onChange={(e) => { handleListItemChange(index, e.target.value); autoResize(e.target); }}
-            onKeyDown={(e) => handleKeyDown(e, index)}
-            className={`flex-1 font-playfair text-base sm:text-lg font-light tracking-wide bg-transparent border-none outline-none resize-none overflow-hidden ${
-              struck ? 'line-through text-muted-foreground/40' : 'text-foreground'
-            }`}
-            style={{
-              lineHeight: '1.8',
-              caretColor: isDark ? 'hsl(40 60% 85%)' : 'hsl(0 0% 25%)',
-              ...(struck ? {} : isDark ? { textShadow: '0 0 8px hsl(40 60% 70% / 0.3), 0 0 20px hsl(35 50% 60% / 0.15)' } : {}),
-            }}
-          />
-        </div>
-      );
-    }
-
-    // Text
-    return (
-      <div key={`txt-${index}`} style={{ lineHeight: '1.8' }}>
-        <textarea
-          ref={refCb}
-          value={line}
-          rows={1}
-          onChange={(e) => { handleTextChange(index, e.target.value); autoResize(e.target); }}
-          onKeyDown={(e) => handleKeyDown(e, index)}
-          className="w-full font-playfair text-base sm:text-lg font-light tracking-wide bg-transparent border-none outline-none resize-none overflow-hidden text-foreground"
-          style={textStyle}
-        />
-      </div>
-    );
+  // Editor styles
+  const editorStyle: React.CSSProperties = {
+    lineHeight: '1.8',
+    caretColor: isDark ? 'hsl(40 60% 85%)' : 'hsl(0 0% 25%)',
+    outline: 'none',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
+    ...(isDark ? { textShadow: '0 0 10px hsl(40 60% 70% / 0.35), 0 0 25px hsl(35 50% 60% / 0.18)' } : {}),
   };
 
   return (
@@ -649,7 +533,7 @@ const WritingInterface = () => {
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" disabled={!content.trim()} className="text-muted-foreground hover:text-accent-foreground">
+              <Button variant="ghost" size="icon" disabled={!contentRef.current.trim()} className="text-muted-foreground hover:text-accent-foreground">
                 <Download size={18} />
               </Button>
             </DropdownMenuTrigger>
@@ -666,29 +550,25 @@ const WritingInterface = () => {
 
       {/* Editor */}
       <div
-        ref={editorRef}
+        ref={containerRef}
         data-editor-bg="true"
         className="flex-1 px-4 sm:px-8 bg-background flex flex-col cursor-text"
-        onClick={handleEditorClick}
+        onClick={handleContainerClick}
       >
         <div className="w-full max-w-none mx-auto flex flex-col h-full" data-editor-bg="true">
           <div className="relative pt-4 sm:pt-6 flex-1 pb-[200px]" data-editor-bg="true">
-            {/* Glowing cursor when empty */}
-            {!content && (
-              <div
-                className="absolute top-4 sm:top-6 left-0 pointer-events-none"
-                style={{
-                  width: '2px', height: '24px',
-                  background: isDark ? 'hsl(40 60% 85%)' : 'hsl(0 0% 30%)',
-                  boxShadow: isDark
-                    ? '0 0 6px hsl(40 60% 70% / 0.6), 0 0 12px hsl(40 60% 70% / 0.3)'
-                    : '0 0 3px hsl(0 0% 30% / 0.3)',
-                  animation: 'blink 1s ease-in-out infinite',
-                }}
-              />
-            )}
-
-            {lines.map((line, index) => renderLine(line, index, getLineType(lines, index)))}
+            <div
+              ref={editorRef}
+              contentEditable
+              suppressContentEditableWarning
+              onInput={handleInput}
+              onKeyDown={handleKeyDown}
+              onBeforeInput={handleBeforeInput}
+              onClick={handleEditorClick}
+              className="font-playfair text-base sm:text-lg font-light tracking-wide text-foreground ce-editor"
+              style={editorStyle}
+              spellCheck={false}
+            />
 
             {isTyping && <div className="absolute bottom-4 right-4 w-2 h-2 bg-accent-foreground rounded-full animate-pulse" />}
           </div>
@@ -712,9 +592,31 @@ const WritingInterface = () => {
           highlightIndex={popupHighlight}
           onSelect={(name) => handleSlashSelect(name)}
           onClose={() => setSlashPopup(null)}
-          anchorEl={lineRefs.current.get(slashPopup.lineIndex) || null}
+          rect={slashPopup.rect}
         />
       )}
+
+      {/* Timer portals */}
+      {timerSlots.map(({ lineIndex, config }) => {
+        const node = timerPortalNodes.get(lineIndex);
+        if (!node) return null;
+        return createPortal(
+          <TimerWidget
+            key={`timer-${lineIndex}`}
+            config={config}
+            onRegister={(ctrls) => timerControls.current.set(lineIndex, ctrls)}
+            onRemove={() => {
+              pushUndo(true);
+              const ls = contentRef.current.split('\n');
+              ls.splice(lineIndex, 1);
+              if (!ls.length) ls.push('');
+              structuralUpdate(ls.join('\n'), Math.min(lineIndex, ls.length - 1), 0);
+            }}
+            onComplete={handleTimerComplete}
+          />,
+          node
+        );
+      })}
 
       {/* Info dialog */}
       <InfoDialog open={infoOpen} onOpenChange={setInfoOpen} />

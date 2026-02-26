@@ -8,40 +8,28 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. */
-
 @layer base {
   :root {
     --background: 0 0% 96%;
     --foreground: 0 0% 9%;
-
     --card: 0 0% 98%;
     --card-foreground: 0 0% 9%;
-
     --popover: 0 0% 89%;
     --popover-foreground: 0 0% 9%;
-
     --primary: 20 90% 48%;
     --primary-foreground: 33 100% 96%;
-
     --secondary: 0 0% 32%;
     --secondary-foreground: 0 0% 98%;
-
     --muted: 0 0% 63%;
     --muted-foreground: 0 0% 9%;
-
     --accent: 270 60% 96%;
     --accent-foreground: 270 50% 45%;
-
     --destructive: 0 72% 50%;
     --destructive-foreground: 0 85% 97%;
-
     --border: 0 0% 83%;
     --input: 0 0% 83%;
     --ring: 20 90% 48%;
-
     --radius: 0.75rem;
-
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 0 0% 9%;
     --sidebar-primary: 20 90% 48%;
@@ -74,28 +62,20 @@
   .dark {
     --background: 0 0% 9%;
     --foreground: 0 0% 98%;
-
     --card: 0 0% 14%;
     --card-foreground: 0 0% 98%;
-
     --popover: 0 0% 25%;
     --popover-foreground: 0 0% 98%;
-
     --primary: 27 95% 60%;
     --primary-foreground: 12 81% 14%;
-
     --secondary: 0 0% 45%;
     --secondary-foreground: 0 0% 98%;
-
     --muted: 0 0% 45%;
     --muted-foreground: 0 0% 98%;
-
     --accent: 270 40% 20%;
     --accent-foreground: 270 60% 75%;
-
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 85% 97%;
-
     --border: 0 0% 32%;
     --input: 0 0% 32%;
     --ring: 27 95% 60%;
@@ -189,4 +169,125 @@
     box-shadow: inset 0 0 65px 18px hsl(240 75% 60% / 0.32),
                 inset 0 0 130px 45px hsl(240 75% 60% / 0.11);
   }
+}
+
+/* ContentEditable editor styles */
+.ce-editor {
+  min-height: 200px;
+}
+
+.ce-editor > div {
+  min-height: 1.8em;
+}
+
+.ce-editor strong {
+  font-weight: 700;
+}
+
+.ce-list-header {
+  position: relative;
+  font-family: 'Libre Caslon Text', serif;
+  font-size: 1.125rem;
+  color: hsl(var(--muted-foreground));
+  opacity: 0.4;
+  font-weight: 300;
+  letter-spacing: 0.05em;
+  user-select: none;
+  padding: 2px 0;
+}
+
+.ce-delete-btn {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+  transition: opacity 0.15s, color 0.15s;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 4px;
+}
+
+.ce-list-header:hover .ce-delete-btn,
+.ce-divider:hover .ce-delete-btn,
+.ce-timer:hover .ce-delete-btn {
+  opacity: 1;
+}
+
+.ce-delete-btn:hover {
+  color: hsl(var(--destructive));
+}
+
+.ce-divider {
+  position: relative;
+  padding: 8px 0;
+  user-select: none;
+}
+
+.ce-hr {
+  border: none;
+  border-top: 1px solid hsl(var(--border));
+}
+
+.dark .ce-hr {
+  border-top-color: hsl(var(--border));
+}
+
+.ce-timer {
+  padding: 4px 0;
+  user-select: none;
+}
+
+.ce-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ce-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  border-radius: 3px;
+  border: 1.5px solid hsl(var(--muted-foreground) / 0.4);
+  margin-top: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  background: transparent;
+}
+
+.ce-checkbox:hover {
+  border-color: hsl(var(--accent-foreground) / 0.6);
+}
+
+.ce-checkbox.ce-checked {
+  background: hsl(var(--accent-foreground) / 0.8);
+  border-color: hsl(var(--accent-foreground) / 0.8);
+}
+
+.ce-checkbox.ce-checked::after {
+  content: '';
+  display: block;
+  width: 8px;
+  height: 8px;
+  background-image: url("data:image/svg+xml,%3Csvg width='10' height='10' viewBox='0 0 10 10' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M2 5L4 7L8 3' stroke='white' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+.ce-struck .ce-li-text {
+  text-decoration: line-through;
+  opacity: 0.4;
+}
+
+.ce-li-text {
+  flex: 1;
+  min-width: 0;
 }
