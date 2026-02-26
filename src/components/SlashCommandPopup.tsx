@@ -10,10 +10,10 @@ interface Props {
   highlightIndex: number;
   onSelect: (name: string) => void;
   onClose: () => void;
-  anchorEl: HTMLElement | null;
+  rect: DOMRect;
 }
 
-const SlashCommandPopup: React.FC<Props> = ({ commands, highlightIndex, onSelect, onClose, anchorEl }) => {
+const SlashCommandPopup: React.FC<Props> = ({ commands, highlightIndex, onSelect, onClose, rect }) => {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -24,9 +24,7 @@ const SlashCommandPopup: React.FC<Props> = ({ commands, highlightIndex, onSelect
     return () => document.removeEventListener('mousedown', handler);
   }, [onClose]);
 
-  if (!commands.length || !anchorEl) return null;
-
-  const rect = anchorEl.getBoundingClientRect();
+  if (!commands.length) return null;
 
   return (
     <div
