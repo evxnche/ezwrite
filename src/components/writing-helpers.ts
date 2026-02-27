@@ -147,51 +147,6 @@ function extractText(el: Element): string {
 }
 
 // Cursor helpers
-export function getCurrentLineInfo(editor: HTMLElement): { lineIndex: number; offset: number; endOffset: number } | null {
-  const sel = window.getSelection();
-  if (!sel || !sel.rangeCount) return null;
-
-  let node: Node | null = sel.anchorNode;
-  while (node && node.parentNode !== editor) {
-    node = node.parentNode;
-  }
-  if (!node) return null;
-
-  const lineIndex = Array.from(editor.childNodes).indexOf(node as ChildNode);
-  if (lineIndex < 0) return null;
-
-  // For list items, measure offset within the text span
-  const el = node as HTMLElement;
-  let textContainer: Node = node;
-  if (el.dataset?.type === 'list-item') {
-    const textSpan = el.querySelector('.ce-li-text');
-    if (textSpan) textContainer = textSpan;
-  }
-
-  const range = document.createRange();
-  range.selectNodeContents(textContainer);
-  range.setEnd(sel.anchorNode!, sel.anchorOffset);
-  const offset = range.toString().length;
-
-  // End offset for selection range
-  let endNode: Node | null = sel.focusNode;
-  while (endNode && endNode.parentNode !== editor) {
-    endNode = endNode.parentNode;
-  }
-  const endEl = endNode as HTMLElement;
-  let endTextContainer: Node = endNode || node;
-  if (endEl?.dataset?.type === 'list-item') {
-    const ts = endEl.querySelector('.ce-li-text');
-    if (ts) endTextContainer = ts;
-  }
-  const endRange = document.createRange();
-  endRange.selectNodeContents(endTextContainer);
-  endRange.setEnd(sel.focusNode!, sel.focusOffset);
-  const endOffset = endRange.toString().length;
-
-  return { lineIndex, offset, endOffset };
-}
-
 export function setCursorPosition(editor: HTMLElement, lineIndex: number, offset: number) {
   const lineNode = editor.childNodes[lineIndex];
   if (!lineNode) return;
