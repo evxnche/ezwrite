@@ -4,7 +4,7 @@ export const INDENT = '        '; // 8 spaces
 export const getCleanLine = (line: string) => line.startsWith(STRUCK_MARKER) ? line.slice(STRUCK_MARKER.length) : line;
 export const isLineStruck = (line: string) => line.startsWith(STRUCK_MARKER);
 
-export type LineType = 'text' | 'list-header' | 'list-item' | 'divider' | 'timer';
+export type LineType = 'text' | 'heading1' | 'heading2' | 'list-header' | 'list-item' | 'divider' | 'timer';
 
 export const SLASH_COMMANDS = [
   { name: 'list', description: 'Create a checklist' },
@@ -13,16 +13,20 @@ export const SLASH_COMMANDS = [
 ];
 
 export function getLineType(lines: string[], index: number): LineType {
-  const clean = getCleanLine(lines[index]).trim().toLowerCase();
-  if (clean === 'list') return 'list-header';
-  if (clean === 'line') return 'divider';
-  if (/^timer(\s|$)/i.test(clean)) return 'timer';
+  const clean = getCleanLine(lines[index]).trim();
+  const lower = clean.toLowerCase();
+  if (lower === 'list') return 'list-header';
+  if (lower === 'line') return 'divider';
+  if (/^timer(\s|$)/i.test(lower)) return 'timer';
+  if (/^## /.test(clean)) return 'heading2';
+  if (/^# /.test(clean)) return 'heading1';
 
   let emptyCount = 0;
   for (let i = index - 1; i >= 0; i--) {
     const c = getCleanLine(lines[i]).trim().toLowerCase();
     if (c === 'list') return 'list-item';
     if (c === 'line' || /^timer(\s|$)/i.test(c)) return 'text';
+    if (/^##? /.test(getCleanLine(lines[i]).trim())) return 'text';
     if (c === '') {
       emptyCount++;
       if (emptyCount >= 2) return 'text';
@@ -49,33 +53,44 @@ export function escapeHTML(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
-export function boldifyHTML(text: string): string {
-  return text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+interface ContentToHTMLOptions {
+  editingTimerLine?: number;
 }
 
-export function contentToHTML(content: string): string {
+export function contentToHTML(content: string, options?: ContentToHTMLOptions): string {
   if (!content) return '<div data-type="text"><br></div>';
   const lines = content.split('\n');
   return lines.map((line, i) => {
     const type = getLineType(lines, i);
     switch (type) {
+      case 'heading1': {
+        const escaped = escapeHTML(line);
+        return `<div data-type="heading1" class="ce-heading1">${escaped || '<br>'}</div>`;
+      }
+      case 'heading2': {
+        const escaped = escapeHTML(line);
+        return `<div data-type="heading2" class="ce-heading2">${escaped || '<br>'}</div>`;
+      }
       case 'list-header':
         return `<div data-type="list-header" contenteditable="false" class="ce-list-header"><span class="ce-lh-text">list</span><button class="ce-delete-btn" data-action="delete" data-line="${i}">✕</button></div>`;
       case 'divider':
         return `<div data-type="divider" contenteditable="false" class="ce-divider"><hr class="ce-hr"/><button class="ce-delete-btn" data-action="delete" data-line="${i}">✕</button></div>`;
-      case 'timer':
+      case 'timer': {
+        if (options?.editingTimerLine === i) {
+          // Render as editable text while user is typing timer args
+          return `<div data-type="text">${escapeHTML(line) || '<br>'}</div>`;
+        }
         return `<div data-type="timer" data-timer-config="${escapeHTML(getTimerArgs(line))}" data-line="${i}" contenteditable="false" class="ce-timer" data-timer-slot="${i}"></div>`;
+      }
       case 'list-item': {
         const struck = isLineStruck(line);
         const clean = getCleanLine(line);
         const escaped = escapeHTML(clean);
-        const bold = boldifyHTML(escaped);
-        return `<div data-type="list-item" data-struck="${struck}" data-line="${i}" class="ce-list-item ${struck ? 'ce-struck' : ''}"><span contenteditable="false" class="ce-checkbox ${struck ? 'ce-checked' : ''}" data-action="toggle" data-line="${i}"></span><span class="ce-li-text">${bold || '<br>'}</span></div>`;
+        return `<div data-type="list-item" data-struck="${struck}" data-line="${i}" class="ce-list-item ${struck ? 'ce-struck' : ''}"><span contenteditable="false" class="ce-checkbox ${struck ? 'ce-checked' : ''}" data-action="toggle" data-line="${i}"></span><span class="ce-li-text">${escaped || '<br>'}</span></div>`;
       }
       default: {
         const escaped = escapeHTML(line);
-        const bold = boldifyHTML(escaped);
-        return `<div data-type="text">${bold || '<br>'}</div>`;
+        return `<div data-type="text">${escaped || '<br>'}</div>`;
       }
     }
   }).join('');
@@ -94,20 +109,24 @@ export function extractContent(editor: HTMLElement): string {
       lines.push(config ? `timer ${config}` : 'timer');
       return;
     }
+    if (type === 'heading1' || type === 'heading2') {
+      lines.push(extractText(el));
+      return;
+    }
     if (type === 'list-item') {
       const struck = el.dataset.struck === 'true';
       const textEl = el.querySelector('.ce-li-text');
-      const text = extractTextWithBold(textEl || el);
+      const text = extractText(textEl || el);
       lines.push(struck ? STRUCK_MARKER + text : text);
       return;
     }
-    const text = extractTextWithBold(el);
+    const text = extractText(el);
     lines.push(text);
   });
   return lines.join('\n');
 }
 
-function extractTextWithBold(el: Element): string {
+function extractText(el: Element): string {
   let result = '';
   el.childNodes.forEach(node => {
     if (node.nodeType === Node.TEXT_NODE) {
@@ -115,14 +134,12 @@ function extractTextWithBold(el: Element): string {
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const htmlEl = node as HTMLElement;
       const tag = htmlEl.tagName.toUpperCase();
-      if (tag === 'STRONG' || tag === 'B') {
-        result += '**' + extractTextWithBold(htmlEl) + '**';
-      } else if (tag === 'BR') {
+      if (tag === 'BR') {
         // ignore
-      } else if (tag === 'SPAN' && htmlEl.classList.contains('ce-checkbox')) {
+      } else if (htmlEl.contentEditable === 'false' || htmlEl.classList.contains('ce-checkbox')) {
         // skip
       } else if (tag !== 'BUTTON') {
-        result += extractTextWithBold(htmlEl);
+        result += extractText(htmlEl);
       }
     }
   });
@@ -143,8 +160,16 @@ export function getCurrentLineInfo(editor: HTMLElement): { lineIndex: number; of
   const lineIndex = Array.from(editor.childNodes).indexOf(node as ChildNode);
   if (lineIndex < 0) return null;
 
+  // For list items, measure offset within the text span
+  const el = node as HTMLElement;
+  let textContainer: Node = node;
+  if (el.dataset?.type === 'list-item') {
+    const textSpan = el.querySelector('.ce-li-text');
+    if (textSpan) textContainer = textSpan;
+  }
+
   const range = document.createRange();
-  range.selectNodeContents(node);
+  range.selectNodeContents(textContainer);
   range.setEnd(sel.anchorNode!, sel.anchorOffset);
   const offset = range.toString().length;
 
@@ -153,9 +178,14 @@ export function getCurrentLineInfo(editor: HTMLElement): { lineIndex: number; of
   while (endNode && endNode.parentNode !== editor) {
     endNode = endNode.parentNode;
   }
+  const endEl = endNode as HTMLElement;
+  let endTextContainer: Node = endNode || node;
+  if (endEl?.dataset?.type === 'list-item') {
+    const ts = endEl.querySelector('.ce-li-text');
+    if (ts) endTextContainer = ts;
+  }
   const endRange = document.createRange();
-  range.selectNodeContents(endNode || node);
-  endRange.selectNodeContents(endNode || node);
+  endRange.selectNodeContents(endTextContainer);
   endRange.setEnd(sel.focusNode!, sel.focusOffset);
   const endOffset = endRange.toString().length;
 
@@ -172,6 +202,14 @@ export function setCursorPosition(editor: HTMLElement, lineIndex: number, offset
   const range = document.createRange();
   let remaining = offset;
 
+  // For list items, target the text span
+  let targetNode: Node = lineNode;
+  const el = lineNode as HTMLElement;
+  if (el.dataset?.type === 'list-item') {
+    const textSpan = el.querySelector('.ce-li-text');
+    if (textSpan) targetNode = textSpan;
+  }
+
   function walkNodes(node: Node): boolean {
     if (node.nodeType === Node.TEXT_NODE) {
       const len = (node.textContent || '').length;
@@ -183,11 +221,10 @@ export function setCursorPosition(editor: HTMLElement, lineIndex: number, offset
       remaining -= len;
     } else {
       for (let i = 0; i < node.childNodes.length; i++) {
-        // Skip non-editable elements like checkboxes
         const child = node.childNodes[i];
         if (child.nodeType === Node.ELEMENT_NODE) {
-          const el = child as HTMLElement;
-          if (el.contentEditable === 'false' || el.classList.contains('ce-checkbox')) continue;
+          const childEl = child as HTMLElement;
+          if (childEl.contentEditable === 'false' || childEl.classList.contains('ce-checkbox')) continue;
         }
         if (walkNodes(child)) return true;
       }
@@ -195,8 +232,8 @@ export function setCursorPosition(editor: HTMLElement, lineIndex: number, offset
     return false;
   }
 
-  if (!walkNodes(lineNode)) {
-    range.selectNodeContents(lineNode);
+  if (!walkNodes(targetNode)) {
+    range.selectNodeContents(targetNode);
     range.collapse(false);
   }
 

@@ -15,10 +15,12 @@ import InfoDialog from './InfoDialog';
 import TimerWidget from './TimerWidget';
 import {
   STRUCK_MARKER, getCleanLine, isLineStruck, getLineType,
-  getTimerArgs, SLASH_COMMANDS, INDENT, LineType,
-  contentToHTML, extractContent, getCurrentLineInfo, setCursorPosition,
-  escapeHTML, boldifyHTML,
+  getTimerArgs, SLASH_COMMANDS, INDENT,
+  contentToHTML, extractContent, setCursorPosition,
+  escapeHTML,
 } from './writing-helpers';
+
+const TOTAL_PAGES = 5;
 
 const playChime = () => {
   try {
@@ -40,15 +42,36 @@ const playChime = () => {
 };
 
 const WritingInterface = () => {
-  const contentRef = useRef(localStorage.getItem('zen-writing-content') || '');
+  // --- Pages ---
+  const pagesRef = useRef<string[]>(null as any);
+  if (!pagesRef.current) {
+    const saved = localStorage.getItem('zen-writing-pages');
+    if (saved) {
+      try { pagesRef.current = JSON.parse(saved); } catch { pagesRef.current = Array(TOTAL_PAGES).fill(''); }
+    } else {
+      const old = localStorage.getItem('zen-writing-content') || '';
+      pagesRef.current = [old, ...Array(TOTAL_PAGES - 1).fill('')];
+    }
+    while (pagesRef.current.length < TOTAL_PAGES) pagesRef.current.push('');
+  }
+
+  const [currentPage, setCurrentPage] = useState(0);
+  const currentPageRef = useRef(0);
+  const contentRef = useRef(pagesRef.current[0]);
+
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [timerAlert, setTimerAlert] = useState(false);
+  const [pageTransition, setPageTransition] = useState<'none' | 'slide-left' | 'slide-right'>('none');
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
   const editorRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const editingTimerLineRef = useRef<number | null>(null);
+
+  // Keep page ref in sync
+  useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
 
   // Track timers for portal rendering
   const [timerSlots, setTimerSlots] = useState<Array<{ lineIndex: number; config: string }>>([]);
@@ -72,25 +95,30 @@ const WritingInterface = () => {
   const [slashPopup, setSlashPopup] = useState<{ rect: DOMRect; filter: string; lineIndex: number } | null>(null);
   const [popupHighlight, setPopupHighlight] = useState(0);
 
-  // Timer editing state
-  const [editingTimerLine, setEditingTimerLine] = useState<number | null>(null);
-
   const isDark = mounted && theme === 'dark';
 
-  // Structural re-render: sets innerHTML and updates timers
-  const structuralUpdate = useCallback((content: string, cursorLine?: number, cursorOffset?: number) => {
+  // --- Save helper ---
+  const saveContent = useCallback((content: string) => {
     contentRef.current = content;
-    localStorage.setItem('zen-writing-content', content);
+    pagesRef.current[currentPageRef.current] = content;
+    localStorage.setItem('zen-writing-pages', JSON.stringify(pagesRef.current));
+  }, []);
+
+  // --- Structural re-render ---
+  const structuralUpdate = useCallback((content: string, cursorLine?: number, cursorOffset?: number) => {
+    saveContent(content);
     if (!editorRef.current) return;
 
-    editorRef.current.innerHTML = contentToHTML(content);
+    editorRef.current.innerHTML = contentToHTML(content, {
+      editingTimerLine: editingTimerLineRef.current ?? undefined,
+    });
 
     // Find timer slots
     const lines = content.split('\n');
     const timers: Array<{ lineIndex: number; config: string }> = [];
     const portalNodes = new Map<number, HTMLElement>();
     lines.forEach((line, i) => {
-      if (getLineType(lines, i) === 'timer') {
+      if (getLineType(lines, i) === 'timer' && editingTimerLineRef.current !== i) {
         timers.push({ lineIndex: i, config: getTimerArgs(line) });
         const el = editorRef.current!.querySelector(`[data-timer-slot="${i}"]`) as HTMLElement;
         if (el) portalNodes.set(i, el);
@@ -108,16 +136,15 @@ const WritingInterface = () => {
         }
       });
     }
-  }, []);
+  }, [saveContent]);
 
-  // Mount
+  // --- Mount ---
   useEffect(() => {
     setMounted(true);
     if (editorRef.current) {
       structuralUpdate(contentRef.current, 0, 0);
       setTimeout(() => {
         editorRef.current?.focus();
-        // Place cursor at end of content
         const lines = contentRef.current.split('\n');
         const lastLine = lines.length - 1;
         const lastLen = lines[lastLine]?.length || 0;
@@ -125,6 +152,71 @@ const WritingInterface = () => {
       }, 100);
     }
   }, []);
+
+  // --- Page switching ---
+  const switchToPage = useCallback((newPage: number) => {
+    if (newPage < 0 || newPage >= TOTAL_PAGES || newPage === currentPageRef.current) return;
+    // Save current page
+    if (editorRef.current) {
+      pagesRef.current[currentPageRef.current] = extractContent(editorRef.current);
+      localStorage.setItem('zen-writing-pages', JSON.stringify(pagesRef.current));
+    }
+    // Clear timer editing
+    editingTimerLineRef.current = null;
+    timerControls.current.clear();
+    // Clear undo/redo for new page
+    undoStack.current = [];
+    redoStack.current = [];
+    // Transition animation
+    setPageTransition(newPage > currentPageRef.current ? 'slide-left' : 'slide-right');
+    contentRef.current = pagesRef.current[newPage];
+    setCurrentPage(newPage);
+  }, []);
+
+  // Load page content when currentPage changes (not on mount)
+  const hasMounted = useRef(false);
+  useEffect(() => {
+    if (!hasMounted.current) { hasMounted.current = true; return; }
+    structuralUpdate(pagesRef.current[currentPage], 0, 0);
+    setTimeout(() => {
+      editorRef.current?.focus();
+      setPageTransition('none');
+    }, 250);
+  }, [currentPage, structuralUpdate]);
+
+  // --- Touch swipe ---
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dy = e.changedTouches[0].clientY - touchStartY.current;
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 60) {
+      if (dx < 0) switchToPage(currentPageRef.current + 1);
+      else switchToPage(currentPageRef.current - 1);
+    }
+  };
+
+  // --- Trackpad two-finger horizontal swipe ---
+  const wheelAccum = useRef(0);
+  const wheelTimeout = useRef<NodeJS.Timeout>();
+  const handleWheel = (e: React.WheelEvent) => {
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) * 2) return;
+    if (Math.abs(e.deltaX) < 5) return;
+    wheelAccum.current += e.deltaX;
+    if (wheelTimeout.current) clearTimeout(wheelTimeout.current);
+    wheelTimeout.current = setTimeout(() => { wheelAccum.current = 0; }, 200);
+    if (wheelAccum.current > 100) {
+      switchToPage(currentPageRef.current + 1);
+      wheelAccum.current = 0;
+    } else if (wheelAccum.current < -100) {
+      switchToPage(currentPageRef.current - 1);
+      wheelAccum.current = 0;
+    }
+  };
 
   const triggerTyping = () => {
     setIsTyping(true);
@@ -151,7 +243,6 @@ const WritingInterface = () => {
     const target = e.target as HTMLElement;
     if (target === containerRef.current || target.dataset?.editorBg === 'true') {
       editorRef.current?.focus();
-      // Place cursor at end
       const lines = contentRef.current.split('\n');
       const lastLine = lines.length - 1;
       setCursorPosition(editorRef.current!, lastLine, lines[lastLine]?.length || 0);
@@ -190,16 +281,45 @@ const WritingInterface = () => {
     setTimerAlert(true);
   }, []);
 
+  // --- Get cursor info directly from DOM ---
+  const getCursorInfo = () => {
+    if (!editorRef.current) return null;
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return null;
+
+    let lineDiv: Node | null = sel.anchorNode;
+    while (lineDiv && lineDiv.parentNode !== editorRef.current) {
+      lineDiv = lineDiv.parentNode;
+    }
+    if (!lineDiv) return null;
+
+    const lineIndex = Array.from(editorRef.current.childNodes).indexOf(lineDiv as ChildNode);
+    if (lineIndex < 0) return null;
+
+    const el = lineDiv as HTMLElement;
+    let textContainer: Node = lineDiv;
+    if (el.dataset?.type === 'list-item') {
+      const textSpan = el.querySelector('.ce-li-text');
+      if (textSpan) textContainer = textSpan;
+    }
+
+    const range = document.createRange();
+    range.selectNodeContents(textContainer);
+    range.setEnd(sel.anchorNode!, sel.anchorOffset);
+    const offset = range.toString().length;
+
+    return { lineIndex, offset, lineDiv: el };
+  };
+
   // Handle input (text-only changes from user typing)
   const handleInput = useCallback(() => {
     if (!editorRef.current) return;
     const newContent = extractContent(editorRef.current);
-    contentRef.current = newContent;
-    localStorage.setItem('zen-writing-content', newContent);
+    saveContent(newContent);
     triggerTyping();
 
     // Check for slash commands
-    const info = getCurrentLineInfo(editorRef.current);
+    const info = getCursorInfo();
     if (info) {
       const lines = newContent.split('\n');
       const lineText = lines[info.lineIndex] || '';
@@ -234,7 +354,7 @@ const WritingInterface = () => {
     }
 
     if (slashPopup) setSlashPopup(null);
-  }, [slashPopup, pushUndo, structuralUpdate]);
+  }, [slashPopup, pushUndo, structuralUpdate, saveContent]);
 
   // Slash command select
   const handleSlashSelect = useCallback((command: string) => {
@@ -244,8 +364,8 @@ const WritingInterface = () => {
     pushUndo(true);
     if (command === 'timer') {
       lines[lineIndex] = 'timer ';
+      editingTimerLineRef.current = lineIndex;
       structuralUpdate(lines.join('\n'), lineIndex, 6);
-      setEditingTimerLine(lineIndex);
     } else {
       lines[lineIndex] = command;
       if (lineIndex >= lines.length - 1) lines.push('');
@@ -264,10 +384,7 @@ const WritingInterface = () => {
 
   // Key handler
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    const info = getCurrentLineInfo(editorRef.current!);
-    if (!info) return;
-    const { lineIndex, offset } = info;
-    const lines = contentRef.current.split('\n');
+    const info = getCursorInfo();
 
     // Popup nav
     if (slashPopup) {
@@ -276,6 +393,10 @@ const WritingInterface = () => {
       if (e.key === 'Enter') { e.preventDefault(); if (filteredCommands[popupHighlight]) handleSlashSelect(filteredCommands[popupHighlight].name); return; }
       if (e.key === 'Escape') { e.preventDefault(); setSlashPopup(null); return; }
     }
+
+    if (!info) return;
+    const { lineIndex, offset } = info;
+    const lines = contentRef.current.split('\n');
 
     // Ctrl+Z
     if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
@@ -296,21 +417,6 @@ const WritingInterface = () => {
       return;
     }
 
-    // Ctrl+B - use execCommand for bold
-    if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
-      e.preventDefault();
-      pushUndo(true);
-      document.execCommand('bold');
-      // After bold, extract and save content
-      requestAnimationFrame(() => {
-        if (editorRef.current) {
-          contentRef.current = extractContent(editorRef.current);
-          localStorage.setItem('zen-writing-content', contentRef.current);
-        }
-      });
-      return;
-    }
-
     // Tab - 8 space indent
     if (e.key === 'Tab' && !e.shiftKey) {
       e.preventDefault();
@@ -318,8 +424,7 @@ const WritingInterface = () => {
       document.execCommand('insertText', false, INDENT);
       requestAnimationFrame(() => {
         if (editorRef.current) {
-          contentRef.current = extractContent(editorRef.current);
-          localStorage.setItem('zen-writing-content', contentRef.current);
+          saveContent(extractContent(editorRef.current));
         }
       });
       return;
@@ -328,11 +433,12 @@ const WritingInterface = () => {
     // Backspace at start - unindent if indented
     if (e.key === 'Backspace' && offset === 0) {
       const lineText = lines[lineIndex] || '';
-      const cleanLine = getLineType(lines, lineIndex) === 'list-item' ? getCleanLine(lineText) : lineText;
+      const lineType = getLineType(lines, lineIndex);
+      const cleanLine = lineType === 'list-item' ? getCleanLine(lineText) : lineText;
       if (cleanLine.startsWith(INDENT)) {
         e.preventDefault();
         pushUndo(true);
-        if (getLineType(lines, lineIndex) === 'list-item') {
+        if (lineType === 'list-item') {
           const struck = isLineStruck(lineText);
           const newClean = cleanLine.slice(INDENT.length);
           lines[lineIndex] = struck ? STRUCK_MARKER + newClean : newClean;
@@ -349,7 +455,6 @@ const WritingInterface = () => {
       e.preventDefault();
       if (lineIndex > 0) {
         pushUndo(true);
-        // Extract fresh content first
         const freshContent = extractContent(editorRef.current!);
         const freshLines = freshContent.split('\n');
         [freshLines[lineIndex], freshLines[lineIndex - 1]] = [freshLines[lineIndex - 1], freshLines[lineIndex]];
@@ -374,15 +479,20 @@ const WritingInterface = () => {
       e.preventDefault();
       pushUndo(true);
 
-      // Timer editing
-      if (editingTimerLine === lineIndex) {
-        const freshContent = extractContent(editorRef.current!);
-        const freshLines = freshContent.split('\n');
-        const timerArgs = getTimerArgs(freshLines[lineIndex]);
+      const freshContent = extractContent(editorRef.current!);
+      const freshLines = freshContent.split('\n');
+
+      // Recompute cursor info from fresh content
+      const li = Math.min(lineIndex, freshLines.length - 1);
+      const currentLine = freshLines[li] || '';
+
+      // Timer editing mode
+      if (editingTimerLineRef.current === li) {
+        const timerArgs = getTimerArgs(currentLine);
         if (['p', 'r', 's'].includes(timerArgs.toLowerCase())) {
           const action = timerArgs.toLowerCase();
-          for (let i = lineIndex - 1; i >= 0; i--) {
-            if (getLineType(freshLines, i) === 'timer' && i !== lineIndex) {
+          for (let i = li - 1; i >= 0; i--) {
+            if (getLineType(freshLines, i) === 'timer' && i !== li) {
               const ctrl = timerControls.current.get(i);
               if (ctrl) {
                 if (action === 'p') ctrl.toggle();
@@ -392,35 +502,55 @@ const WritingInterface = () => {
               break;
             }
           }
-          freshLines.splice(lineIndex, 1);
-          setEditingTimerLine(null);
-          structuralUpdate(freshLines.join('\n'), Math.max(0, lineIndex - 1), 0);
+          freshLines.splice(li, 1);
+          editingTimerLineRef.current = null;
+          structuralUpdate(freshLines.join('\n'), Math.max(0, li - 1), 0);
           return;
         }
-        setEditingTimerLine(null);
-        if (lineIndex >= freshLines.length - 1) freshLines.push('');
-        structuralUpdate(freshLines.join('\n'), lineIndex + 1, 0);
+        // Finalize timer
+        editingTimerLineRef.current = null;
+        if (li >= freshLines.length - 1) freshLines.push('');
+        structuralUpdate(freshLines.join('\n'), li + 1, 0);
+        scrollToLine(li + 1);
         return;
       }
 
-      // Normal enter - extract fresh, split line
-      const freshContent = extractContent(editorRef.current!);
-      const freshLines = freshContent.split('\n');
-      const currentLine = freshLines[lineIndex] || '';
-      freshLines[lineIndex] = currentLine.slice(0, offset);
-      freshLines.splice(lineIndex + 1, 0, currentLine.slice(offset));
-      structuralUpdate(freshLines.join('\n'), lineIndex + 1, 0);
-      scrollToLine(lineIndex + 1);
+      // Check for /x at end of list item before splitting
+      const lineType = getLineType(freshLines, li);
+      const cleanLine = getCleanLine(currentLine);
+      if (lineType === 'list-item' && cleanLine.trimEnd().endsWith('/x')) {
+        const withoutX = cleanLine.replace(/\/x\s*$/, '').trimEnd();
+        const wasStruck = isLineStruck(currentLine);
+        freshLines[li] = wasStruck ? withoutX : STRUCK_MARKER + withoutX;
+        structuralUpdate(freshLines.join('\n'), li, withoutX.length);
+        return;
+      }
+
+      // Normal enter - split line at offset
+      const clampedOffset = Math.min(offset, currentLine.length);
+      // For list items, offset is within clean text
+      if (lineType === 'list-item') {
+        const struck = isLineStruck(currentLine);
+        const clean = getCleanLine(currentLine);
+        const off = Math.min(offset, clean.length);
+        freshLines[li] = struck ? STRUCK_MARKER + clean.slice(0, off) : clean.slice(0, off);
+        freshLines.splice(li + 1, 0, clean.slice(off));
+      } else {
+        freshLines[li] = currentLine.slice(0, clampedOffset);
+        freshLines.splice(li + 1, 0, currentLine.slice(clampedOffset));
+      }
+      structuralUpdate(freshLines.join('\n'), li + 1, 0);
+      scrollToLine(li + 1);
       return;
     }
 
     // Escape timer editing
-    if (e.key === 'Escape' && editingTimerLine === lineIndex) {
+    if (e.key === 'Escape' && editingTimerLineRef.current === lineIndex) {
       e.preventDefault();
       const freshLines = extractContent(editorRef.current!).split('\n');
       freshLines.splice(lineIndex, 1);
       if (!freshLines.length) freshLines.push('');
-      setEditingTimerLine(null);
+      editingTimerLineRef.current = null;
       structuralUpdate(freshLines.join('\n'), Math.max(0, lineIndex - 1), 0);
     }
   };
@@ -482,6 +612,22 @@ const WritingInterface = () => {
         pdf.text(text, margin, y); y += lh;
         return;
       }
+      if (type === 'heading1') {
+        pdf.setFontSize(18); pdf.setFont('helvetica', 'bold');
+        const text = line.replace(/^#\s*/, '');
+        if (y > pageH - margin) { pdf.addPage(); y = margin; }
+        pdf.text(text, margin, y); y += lh * 1.8;
+        pdf.setFontSize(11); pdf.setFont('helvetica', 'normal');
+        return;
+      }
+      if (type === 'heading2') {
+        pdf.setFontSize(15); pdf.setFont('helvetica', 'bold');
+        const text = line.replace(/^##\s*/, '');
+        if (y > pageH - margin) { pdf.addPage(); y = margin; }
+        pdf.text(text, margin, y); y += lh * 1.5;
+        pdf.setFontSize(11); pdf.setFont('helvetica', 'normal');
+        return;
+      }
       let text = cleanForExport(line);
       if (type === 'list-header') { text = ''; y += lh * 0.5; return; }
       if (!text.trim()) { y += lh; if (y > pageH - margin) { pdf.addPage(); y = margin; } return; }
@@ -507,7 +653,12 @@ const WritingInterface = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div
+      className="min-h-screen bg-background flex flex-col"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onWheel={handleWheel}
+    >
       {/* Timer alert glow overlay */}
       {timerAlert && (
         <div
@@ -556,7 +707,13 @@ const WritingInterface = () => {
         onClick={handleContainerClick}
       >
         <div className="w-full max-w-none mx-auto flex flex-col h-full" data-editor-bg="true">
-          <div className="relative pt-4 sm:pt-6 flex-1 pb-[200px]" data-editor-bg="true">
+          <div
+            className={`relative pt-4 sm:pt-6 flex-1 pb-[200px] ${
+              pageTransition === 'slide-left' ? 'animate-slide-left' :
+              pageTransition === 'slide-right' ? 'animate-slide-right' : ''
+            }`}
+            data-editor-bg="true"
+          >
             <div
               ref={editorRef}
               contentEditable
@@ -575,8 +732,23 @@ const WritingInterface = () => {
         </div>
       </div>
 
+      {/* Page dots */}
+      <div className="fixed bottom-10 left-1/2 -translate-x-1/2 flex gap-2.5 z-50">
+        {Array.from({ length: TOTAL_PAGES }).map((_, i) => (
+          <button
+            key={i}
+            onClick={() => switchToPage(i)}
+            className={`rounded-full transition-all duration-300 ${
+              i === currentPage
+                ? 'w-2 h-2 bg-accent-foreground'
+                : 'w-1.5 h-1.5 bg-muted-foreground/25 hover:bg-muted-foreground/50'
+            }`}
+          />
+        ))}
+      </div>
+
       {/* Footer */}
-      <div className="fixed bottom-4 left-0 right-0 text-center pointer-events-none opacity-40 hover:opacity-70 transition-opacity duration-300">
+      <div className="fixed bottom-3 left-0 right-0 text-center pointer-events-none opacity-40 hover:opacity-70 transition-opacity duration-300">
         <span
           className="font-playfair text-xs sm:text-sm text-foreground tracking-wide pointer-events-auto"
           style={isDark ? { textShadow: '0 0 20px hsl(40 60% 70% / 0.3), 0 0 40px hsl(35 50% 60% / 0.15)' } : {}}
@@ -602,7 +774,7 @@ const WritingInterface = () => {
         if (!node) return null;
         return createPortal(
           <TimerWidget
-            key={`timer-${lineIndex}`}
+            key={`timer-${lineIndex}-${config}`}
             config={config}
             onRegister={(ctrls) => timerControls.current.set(lineIndex, ctrls)}
             onRemove={() => {

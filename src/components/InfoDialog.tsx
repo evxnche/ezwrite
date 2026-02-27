@@ -25,6 +25,14 @@ const InfoDialog: React.FC<Props> = ({ open, onOpenChange }) => {
           </section>
 
           <section>
+            <h3 className="font-semibold mb-1.5 text-accent-foreground">Headers</h3>
+            <ul className="space-y-1 text-muted-foreground ml-3">
+              <li><span className="font-mono text-foreground"># text</span> — large heading</li>
+              <li><span className="font-mono text-foreground">## text</span> — smaller heading</li>
+            </ul>
+          </section>
+
+          <section>
             <h3 className="font-semibold mb-1.5 text-accent-foreground">Timer Options</h3>
             <ul className="space-y-1 text-muted-foreground ml-3">
               <li><span className="font-mono text-foreground">/timer</span> — stopwatch</li>
@@ -44,7 +52,6 @@ const InfoDialog: React.FC<Props> = ({ open, onOpenChange }) => {
           <section>
             <h3 className="font-semibold mb-1.5 text-accent-foreground">Keyboard Shortcuts</h3>
             <ul className="space-y-1 text-muted-foreground ml-3">
-              <li><kbd className="font-mono text-foreground">Ctrl+B</kbd> — bold</li>
               <li><kbd className="font-mono text-foreground">Ctrl+Z</kbd> — undo</li>
               <li><kbd className="font-mono text-foreground">Ctrl+Shift+Z</kbd> — redo</li>
               <li><kbd className="font-mono text-foreground">Tab</kbd> — indent</li>
@@ -58,6 +65,15 @@ const InfoDialog: React.FC<Props> = ({ open, onOpenChange }) => {
               <li>Click checkboxes to mark items done</li>
               <li>Type <span className="font-mono text-foreground">/x</span> at end of a list item to toggle strikethrough</li>
               <li>Two empty lines exit list mode</li>
+            </ul>
+          </section>
+
+          <section>
+            <h3 className="font-semibold mb-1.5 text-accent-foreground">Pages</h3>
+            <ul className="space-y-1 text-muted-foreground ml-3">
+              <li>Swipe left/right to switch pages</li>
+              <li>Two-finger trackpad gesture on laptop</li>
+              <li>Tap the dots at the bottom to jump</li>
             </ul>
           </section>
         </div>
