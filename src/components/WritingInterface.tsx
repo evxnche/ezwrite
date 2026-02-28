@@ -581,24 +581,6 @@ const WritingInterface = () => {
     return line;
   };
 
-  const saveAsTxt = () => {
-    const content = contentRef.current;
-    if (!content.trim()) return;
-    const lines = content.split('\n');
-    const exported = lines.map((line, i) => {
-      const type = getLineType(lines, i);
-      if (type === 'divider') return '---';
-      if (type === 'timer') return `⏱ ${getTimerArgs(line) || 'stopwatch'}`;
-      return cleanForExport(line);
-    }).join('\n');
-    const blob = new Blob([exported], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `ezwrite-${new Date().toISOString().split('T')[0]}.txt`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
   const saveAsMd = () => {
     const content = contentRef.current;
     if (!content.trim()) return;
@@ -728,7 +710,6 @@ const WritingInterface = () => {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="bg-popover rounded-xl">
-              <DropdownMenuItem onClick={saveAsTxt} className="cursor-pointer">Download as TXT</DropdownMenuItem>
               <DropdownMenuItem onClick={saveAsPdf} className="cursor-pointer">Download as PDF</DropdownMenuItem>
               <DropdownMenuItem onClick={saveAsMd} className="cursor-pointer">Download as Markdown</DropdownMenuItem>
             </DropdownMenuContent>
