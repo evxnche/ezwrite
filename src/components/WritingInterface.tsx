@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, Download } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -691,8 +691,8 @@ const WritingInterface = () => {
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button disabled={!contentRef.current.trim()} className="font-playfair text-sm text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30 tracking-wide">
-                export
+              <button disabled={!contentRef.current.trim()} className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30">
+                <Download size={16} />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="bg-popover rounded-xl">
