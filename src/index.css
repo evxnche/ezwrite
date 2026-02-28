@@ -317,11 +317,3 @@
   animation: slide-right-in 0.25s ease-out;
 }
 
-/* Focus mode */
-.focus-mode .ce-editor > div {
-  opacity: 0.2;
-  transition: opacity 0.15s;
-}
-.focus-mode .ce-editor > div[data-focused="true"] {
-  opacity: 1;
-}

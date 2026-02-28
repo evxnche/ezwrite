@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Download, Sun, Moon, Info, Focus } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Download, Sun, Moon, Info } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -64,8 +63,6 @@ const WritingInterface = () => {
   const [infoOpen, setInfoOpen] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [timerAlert, setTimerAlert] = useState(false);
-  const [focusMode, setFocusMode] = useState(false);
-  const activeLineRef = useRef(0);
   const [pageTransition, setPageTransition] = useState<'none' | 'slide-left' | 'slide-right'>('none');
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
   const editorRef = useRef<HTMLDivElement>(null);
@@ -226,14 +223,6 @@ const WritingInterface = () => {
     }
   };
 
-  const syncFocusLine = useCallback((lineIndex: number) => {
-    activeLineRef.current = lineIndex;
-    if (!editorRef.current) return;
-    editorRef.current.childNodes.forEach((node, i) => {
-      (node as HTMLElement).dataset.focused = String(i === lineIndex);
-    });
-  }, []);
-
   const triggerTyping = () => {
     setIsTyping(true);
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
@@ -372,7 +361,6 @@ const WritingInterface = () => {
         return;
       }
 
-      syncFocusLine(info.lineIndex);
       scrollToLine(info.lineIndex);
     }
 
@@ -419,7 +407,6 @@ const WritingInterface = () => {
 
     if (!info) return;
     const { lineIndex, offset } = info;
-    syncFocusLine(lineIndex);
     const lines = contentRef.current.split('\n');
 
     // Ctrl+Z
@@ -702,7 +689,7 @@ const WritingInterface = () => {
 
   return (
     <div
-      className={`min-h-screen bg-background flex flex-col${focusMode ? ' focus-mode' : ''}`}
+      className="min-h-screen bg-background flex flex-col"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       onWheel={handleWheel}
@@ -724,25 +711,17 @@ const WritingInterface = () => {
         >
           ez.
         </span>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-3">
           {mounted && (
-            <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="text-muted-foreground hover:text-accent-foreground">
-              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-            </Button>
+            <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="text-muted-foreground hover:text-foreground transition-colors">
+              {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
           )}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setFocusMode(f => !f)}
-            className={focusMode ? 'text-accent-foreground' : 'text-muted-foreground hover:text-accent-foreground'}
-          >
-            <Focus size={18} />
-          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" disabled={!contentRef.current.trim()} className="text-muted-foreground hover:text-accent-foreground">
-                <Download size={18} />
-              </Button>
+              <button disabled={!contentRef.current.trim()} className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30">
+                <Download size={16} />
+              </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="bg-popover rounded-xl">
               <DropdownMenuItem onClick={saveAsTxt} className="cursor-pointer">Download as TXT</DropdownMenuItem>
@@ -750,9 +729,9 @@ const WritingInterface = () => {
               <DropdownMenuItem onClick={saveAsMd} className="cursor-pointer">Download as Markdown</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button variant="ghost" size="icon" onClick={() => setInfoOpen(true)} className="text-muted-foreground hover:text-accent-foreground">
-            <Info size={18} />
-          </Button>
+          <button onClick={() => setInfoOpen(true)} className="text-muted-foreground hover:text-foreground transition-colors">
+            <Info size={16} />
+          </button>
         </div>
       </div>
 
