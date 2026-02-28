@@ -293,8 +293,10 @@ const WritingInterface = () => {
     if (!sel || !sel.rangeCount) return null;
 
     let lineDiv: Node | null = sel.anchorNode;
+    let cursorAtContainerLevel = false;
     // If cursor is directly on the editor container, pick the child at anchorOffset
     if (lineDiv === editorRef.current) {
+      cursorAtContainerLevel = true;
       lineDiv = editorRef.current.childNodes[sel.anchorOffset] as Node
         ?? editorRef.current.lastChild;
     } else {
@@ -308,6 +310,12 @@ const WritingInterface = () => {
     if (lineIndex < 0) return null;
 
     const el = lineDiv as HTMLElement;
+
+    // When anchorNode is the editor container itself, offset within the line is 0
+    if (cursorAtContainerLevel) {
+      return { lineIndex, offset: 0, lineDiv: el };
+    }
+
     let textContainer: Node = lineDiv;
     if (el.dataset?.type === 'list-item') {
       const textSpan = el.querySelector('.ce-li-text');

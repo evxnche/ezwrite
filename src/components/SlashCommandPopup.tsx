@@ -36,6 +36,10 @@ const SlashCommandPopup: React.FC<Props> = ({ commands, highlightIndex, onSelect
         <button
           key={cmd.name}
           className={`w-full text-left px-3 py-2 text-sm transition-colors flex items-center gap-2 ${
+            i === 0 ? 'rounded-t-xl' : ''
+          } ${
+            i === commands.length - 1 ? 'rounded-b-xl' : ''
+          } ${
             i === highlightIndex ? 'bg-accent text-accent-foreground' : 'text-popover-foreground hover:bg-accent/50'
           }`}
           onMouseDown={(e) => { e.preventDefault(); onSelect(cmd.name); }}
