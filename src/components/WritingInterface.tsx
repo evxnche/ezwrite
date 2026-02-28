@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Download, Sun, Moon, Info } from 'lucide-react';
+import { Download, Sun, Moon, Info, Focus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -64,6 +64,8 @@ const WritingInterface = () => {
   const [infoOpen, setInfoOpen] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [timerAlert, setTimerAlert] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
+  const activeLineRef = useRef(0);
   const [pageTransition, setPageTransition] = useState<'none' | 'slide-left' | 'slide-right'>('none');
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
   const editorRef = useRef<HTMLDivElement>(null);
@@ -224,6 +226,14 @@ const WritingInterface = () => {
     }
   };
 
+  const syncFocusLine = useCallback((lineIndex: number) => {
+    activeLineRef.current = lineIndex;
+    if (!editorRef.current) return;
+    editorRef.current.childNodes.forEach((node, i) => {
+      (node as HTMLElement).dataset.focused = String(i === lineIndex);
+    });
+  }, []);
+
   const triggerTyping = () => {
     setIsTyping(true);
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
@@ -362,6 +372,7 @@ const WritingInterface = () => {
         return;
       }
 
+      syncFocusLine(info.lineIndex);
       scrollToLine(info.lineIndex);
     }
 
@@ -408,6 +419,7 @@ const WritingInterface = () => {
 
     if (!info) return;
     const { lineIndex, offset } = info;
+    syncFocusLine(lineIndex);
     const lines = contentRef.current.split('\n');
 
     // Ctrl+Z
@@ -690,7 +702,7 @@ const WritingInterface = () => {
 
   return (
     <div
-      className="min-h-screen bg-background flex flex-col"
+      className={`min-h-screen bg-background flex flex-col${focusMode ? ' focus-mode' : ''}`}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       onWheel={handleWheel}
@@ -718,6 +730,14 @@ const WritingInterface = () => {
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </Button>
           )}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setFocusMode(f => !f)}
+            className={focusMode ? 'text-accent-foreground' : 'text-muted-foreground hover:text-accent-foreground'}
+          >
+            <Focus size={18} />
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" disabled={!contentRef.current.trim()} className="text-muted-foreground hover:text-accent-foreground">
