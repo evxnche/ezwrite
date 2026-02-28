@@ -71,9 +71,8 @@ const InfoDialog: React.FC<Props> = ({ open, onOpenChange }) => {
           <section>
             <h3 className="font-semibold mb-1.5 text-accent-foreground">Pages</h3>
             <ul className="space-y-1 text-muted-foreground ml-3">
-              <li>Swipe left/right to switch pages</li>
-              <li>Two-finger trackpad gesture on laptop</li>
-              <li>Tap the dots at the bottom to jump</li>
+              <li>5 pages total — swipe left/right to switch</li>
+              <li>Two-finger trackpad swipe on laptop</li>
             </ul>
           </section>
         </div>

@@ -203,18 +203,24 @@ const WritingInterface = () => {
   // --- Trackpad two-finger horizontal swipe ---
   const wheelAccum = useRef(0);
   const wheelTimeout = useRef<NodeJS.Timeout>();
+  const wheelCooldown = useRef(false);
   const handleWheel = (e: React.WheelEvent) => {
     if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) * 2) return;
     if (Math.abs(e.deltaX) < 5) return;
+    if (wheelCooldown.current) return;
     wheelAccum.current += e.deltaX;
     if (wheelTimeout.current) clearTimeout(wheelTimeout.current);
     wheelTimeout.current = setTimeout(() => { wheelAccum.current = 0; }, 200);
     if (wheelAccum.current > 100) {
       switchToPage(currentPageRef.current + 1);
       wheelAccum.current = 0;
+      wheelCooldown.current = true;
+      setTimeout(() => { wheelCooldown.current = false; }, 600);
     } else if (wheelAccum.current < -100) {
       switchToPage(currentPageRef.current - 1);
       wheelAccum.current = 0;
+      wheelCooldown.current = true;
+      setTimeout(() => { wheelCooldown.current = false; }, 600);
     }
   };
 
@@ -288,8 +294,14 @@ const WritingInterface = () => {
     if (!sel || !sel.rangeCount) return null;
 
     let lineDiv: Node | null = sel.anchorNode;
-    while (lineDiv && lineDiv.parentNode !== editorRef.current) {
-      lineDiv = lineDiv.parentNode;
+    // If cursor is directly on the editor container, pick the child at anchorOffset
+    if (lineDiv === editorRef.current) {
+      lineDiv = editorRef.current.childNodes[sel.anchorOffset] as Node
+        ?? editorRef.current.lastChild;
+    } else {
+      while (lineDiv && lineDiv.parentNode !== editorRef.current) {
+        lineDiv = lineDiv.parentNode;
+      }
     }
     if (!lineDiv) return null;
 
@@ -730,21 +742,6 @@ const WritingInterface = () => {
             {isTyping && <div className="absolute bottom-4 right-4 w-2 h-2 bg-accent-foreground rounded-full animate-pulse" />}
           </div>
         </div>
-      </div>
-
-      {/* Page dots */}
-      <div className="fixed bottom-10 left-1/2 -translate-x-1/2 flex gap-2.5 z-50">
-        {Array.from({ length: TOTAL_PAGES }).map((_, i) => (
-          <button
-            key={i}
-            onClick={() => switchToPage(i)}
-            className={`rounded-full transition-all duration-300 ${
-              i === currentPage
-                ? 'w-2 h-2 bg-accent-foreground'
-                : 'w-1.5 h-1.5 bg-muted-foreground/25 hover:bg-muted-foreground/50'
-            }`}
-          />
-        ))}
       </div>
 
       {/* Footer */}

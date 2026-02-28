@@ -53,42 +53,113 @@ const TimerWidget: React.FC<TimerWidgetProps> = ({ config, onRegister, onRemove,
   const [phase, setPhase] = useState<PomoPhase>('work');
   const phaseRef = useRef<PomoPhase>('work');
   const [done, setDone] = useState(false);
+  // Wall-clock anchor: when running, the timestamp at which the current phase started
+  const epochRef = useRef<number>(Date.now());
+  const baseSecondsRef = useRef<number>(parsed.initial);
 
   useEffect(() => {
     onRegister?.({
       toggle: () => setRunning(r => !r),
-      restart: () => { setSeconds(parsed.initial); phaseRef.current = 'work'; setPhase('work'); setDone(false); setRunning(true); },
-      stop: () => { setRunning(false); setSeconds(parsed.mode === 'stopwatch' ? 0 : parsed.initial); setDone(false); },
+      restart: () => {
+        phaseRef.current = 'work';
+        setPhase('work');
+        setDone(false);
+        baseSecondsRef.current = parsed.initial;
+        epochRef.current = Date.now();
+        setSeconds(parsed.initial);
+        setRunning(true);
+      },
+      stop: () => {
+        setRunning(false);
+        const s = parsed.mode === 'stopwatch' ? 0 : parsed.initial;
+        baseSecondsRef.current = s;
+        setSeconds(s);
+        setDone(false);
+      },
     });
   }, [onRegister, parsed]);
 
+  // Re-anchor epoch whenever running starts
+  useEffect(() => {
+    if (running && !done) {
+      epochRef.current = Date.now();
+    }
+  }, [running, done]);
+
   useEffect(() => {
     if (!running || done) return;
-    const id = setInterval(() => {
-      setSeconds(prev => {
-        if (parsed.mode === 'stopwatch') return prev + 1;
-        const next = prev - 1;
-        if (next <= 0) {
-          if (parsed.mode === 'pomodoro') {
-            const np: PomoPhase = phaseRef.current === 'work' ? 'break' : 'work';
-            phaseRef.current = np;
-            setPhase(np);
-            onComplete?.();
-            return np === 'work' ? (parsed as any).work : (parsed as any).break;
-          }
-          setDone(true);
-          setRunning(false);
+
+    const tick = () => {
+      const elapsed = Math.floor((Date.now() - epochRef.current) / 1000);
+      if (parsed.mode === 'stopwatch') {
+        setSeconds(baseSecondsRef.current + elapsed);
+        return;
+      }
+      const remaining = baseSecondsRef.current - elapsed;
+      if (remaining <= 0) {
+        if (parsed.mode === 'pomodoro') {
+          const np: PomoPhase = phaseRef.current === 'work' ? 'break' : 'work';
+          phaseRef.current = np;
+          setPhase(np);
+          const nextSecs = np === 'work' ? (parsed as any).work : (parsed as any).break;
+          baseSecondsRef.current = nextSecs;
+          epochRef.current = Date.now();
+          setSeconds(nextSecs);
           onComplete?.();
-          return 0;
+          return;
         }
-        return next;
-      });
-    }, 1000);
-    return () => clearInterval(id);
+        setDone(true);
+        setRunning(false);
+        setSeconds(0);
+        onComplete?.();
+        return;
+      }
+      setSeconds(remaining);
+    };
+
+    tick();
+    const id = setInterval(tick, 500);
+
+    // Re-sync when tab becomes visible again
+    const onVisible = () => { if (!document.hidden) tick(); };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [running, done, parsed, onComplete]);
 
-  const toggle = () => { if (done) { setSeconds(parsed.initial); setDone(false); setRunning(true); } else setRunning(r => !r); };
-  const restart = () => { setSeconds(parsed.mode === 'stopwatch' ? 0 : parsed.initial); phaseRef.current = 'work'; setPhase('work'); setDone(false); setRunning(true); };
+  const toggle = () => {
+    if (done) {
+      baseSecondsRef.current = parsed.initial;
+      epochRef.current = Date.now();
+      setSeconds(parsed.initial);
+      setDone(false);
+      setRunning(true);
+    } else {
+      if (running) {
+        // Pausing: save how many seconds remain as new base
+        const elapsed = Math.floor((Date.now() - epochRef.current) / 1000);
+        if (parsed.mode === 'stopwatch') {
+          baseSecondsRef.current = baseSecondsRef.current + elapsed;
+        } else {
+          baseSecondsRef.current = Math.max(0, baseSecondsRef.current - elapsed);
+        }
+      }
+      setRunning(r => !r);
+    }
+  };
+
+  const restart = () => {
+    phaseRef.current = 'work';
+    setPhase('work');
+    setDone(false);
+    baseSecondsRef.current = parsed.mode === 'stopwatch' ? 0 : parsed.initial;
+    epochRef.current = Date.now();
+    setSeconds(parsed.mode === 'stopwatch' ? 0 : parsed.initial);
+    setRunning(true);
+  };
 
   const label = parsed.mode === 'pomodoro' ? (phase === 'work' ? 'WORK' : 'BREAK') :
                 parsed.mode === 'countdown' ? 'COUNTDOWN' : 'STOPWATCH';
