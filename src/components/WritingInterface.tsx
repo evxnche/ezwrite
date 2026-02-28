@@ -75,8 +75,6 @@ const WritingInterface = () => {
   // Track timers for portal rendering
   const [timerSlots, setTimerSlots] = useState<Array<{ lineIndex: number; config: string }>>([]);
   const [timerPortalNodes, setTimerPortalNodes] = useState<Map<number, HTMLElement>>(new Map());
-  const timerControls = useRef<Map<number, { toggle: () => void; restart: () => void; stop: () => void }>>(new Map());
-
   // Undo / Redo
   const undoStack = useRef<string[]>([]);
   const redoStack = useRef<string[]>([]);
@@ -162,7 +160,6 @@ const WritingInterface = () => {
     }
     // Clear timer editing
     editingTimerLineRef.current = null;
-    timerControls.current.clear();
     // Clear undo/redo for new page
     undoStack.current = [];
     redoStack.current = [];
@@ -511,25 +508,6 @@ const WritingInterface = () => {
 
       // Timer editing mode
       if (editingTimerLineRef.current === li) {
-        const timerArgs = getTimerArgs(currentLine);
-        if (['p', 'r', 's'].includes(timerArgs.toLowerCase())) {
-          const action = timerArgs.toLowerCase();
-          for (let i = li - 1; i >= 0; i--) {
-            if (getLineType(freshLines, i) === 'timer' && i !== li) {
-              const ctrl = timerControls.current.get(i);
-              if (ctrl) {
-                if (action === 'p') ctrl.toggle();
-                if (action === 'r') ctrl.restart();
-                if (action === 's') ctrl.stop();
-              }
-              break;
-            }
-          }
-          freshLines.splice(li, 1);
-          editingTimerLineRef.current = null;
-          structuralUpdate(freshLines.join('\n'), Math.max(0, li - 1), 0);
-          return;
-        }
         // Finalize timer
         editingTimerLineRef.current = null;
         if (li >= freshLines.length - 1) freshLines.push('');
@@ -787,7 +765,6 @@ const WritingInterface = () => {
           <TimerWidget
             key={`timer-${lineIndex}-${config}`}
             config={config}
-            onRegister={(ctrls) => timerControls.current.set(lineIndex, ctrls)}
             onRemove={() => {
               pushUndo(true);
               const ls = contentRef.current.split('\n');

@@ -35,26 +35,15 @@ const InfoDialog: React.FC<Props> = ({ open, onOpenChange }) => {
           <section>
             <h3 className="font-semibold mb-1.5 text-accent-foreground">Timer Options</h3>
             <ul className="space-y-1 text-muted-foreground ml-3">
-              <li><span className="font-mono text-foreground">/timer</span> — stopwatch</li>
               <li><span className="font-mono text-foreground">/timer 5</span> — five min countdown</li>
               <li><span className="font-mono text-foreground">/timer 15:30</span> — countdown to 3:30pm</li>
-              <li><span className="font-mono text-foreground">/timer pomo</span> — 25+5 pomodoro</li>
               <li><span className="font-mono text-foreground">/timer 57 11</span> — custom pomodoro</li>
             </ul>
-            <div className="text-muted-foreground mt-2 ml-3 space-y-1">
-              <p className="text-xs uppercase tracking-wider text-accent-foreground font-medium">Controls</p>
-              <p><span className="font-mono text-foreground">timer p</span> — pause / resume</p>
-              <p><span className="font-mono text-foreground">timer r</span> — restart</p>
-              <p><span className="font-mono text-foreground">timer s</span> — stop</p>
-            </div>
           </section>
 
           <section>
             <h3 className="font-semibold mb-1.5 text-accent-foreground">Keyboard Shortcuts</h3>
             <ul className="space-y-1 text-muted-foreground ml-3">
-              <li><kbd className="font-mono text-foreground">Ctrl+Z</kbd> — undo</li>
-              <li><kbd className="font-mono text-foreground">Ctrl+Shift+Z</kbd> — redo</li>
-              <li><kbd className="font-mono text-foreground">Tab</kbd> — indent</li>
               <li><kbd className="font-mono text-foreground">Alt+↑/↓</kbd> — move line up/down</li>
             </ul>
           </section>
@@ -62,7 +51,6 @@ const InfoDialog: React.FC<Props> = ({ open, onOpenChange }) => {
           <section>
             <h3 className="font-semibold mb-1.5 text-accent-foreground">List Features</h3>
             <ul className="space-y-1 text-muted-foreground ml-3">
-              <li>Click checkboxes to mark items done</li>
               <li>Type <span className="font-mono text-foreground">/x</span> at end of a list item to toggle strikethrough</li>
               <li>Two empty lines exit list mode</li>
             </ul>
@@ -71,8 +59,7 @@ const InfoDialog: React.FC<Props> = ({ open, onOpenChange }) => {
           <section>
             <h3 className="font-semibold mb-1.5 text-accent-foreground">Pages</h3>
             <ul className="space-y-1 text-muted-foreground ml-3">
-              <li>5 pages total — swipe left/right to switch</li>
-              <li>Two-finger trackpad swipe on laptop</li>
+              <li>swipe left or right to switch between 5 pages</li>
             </ul>
           </section>
         </div>

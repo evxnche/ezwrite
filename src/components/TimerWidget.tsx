@@ -1,15 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Play, Pause, RotateCcw, Square, Timer } from 'lucide-react';
 
-interface TimerControls {
-  toggle: () => void;
-  restart: () => void;
-  stop: () => void;
-}
-
 interface TimerWidgetProps {
   config: string;
-  onRegister?: (controls: TimerControls) => void;
   onRemove?: () => void;
   onComplete?: () => void;
 }
@@ -18,9 +11,6 @@ type PomoPhase = 'work' | 'break';
 
 function parseConfig(config: string) {
   const t = config.trim().toLowerCase();
-  if (!t) return { mode: 'stopwatch' as const, initial: 0 };
-  if (t === 'pomo') return { mode: 'pomodoro' as const, initial: 25 * 60, work: 25 * 60, break: 5 * 60 };
-  
   const cp = t.match(/^(\d+)\s+(\d+)$/);
   if (cp) return { mode: 'pomodoro' as const, initial: +cp[1] * 60, work: +cp[1] * 60, break: +cp[2] * 60 };
   
@@ -35,6 +25,7 @@ function parseConfig(config: string) {
   const nm = t.match(/^(\d+)$/);
   if (nm) return { mode: 'countdown' as const, initial: +nm[1] * 60 };
   
+  // fallback: stopwatch
   return { mode: 'stopwatch' as const, initial: 0 };
 }
 
@@ -46,7 +37,7 @@ function formatTime(s: number): string {
   return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 }
 
-const TimerWidget: React.FC<TimerWidgetProps> = ({ config, onRegister, onRemove, onComplete }) => {
+const TimerWidget: React.FC<TimerWidgetProps> = ({ config, onRemove, onComplete }) => {
   const parsed = useMemo(() => parseConfig(config), [config]);
   const [seconds, setSeconds] = useState(parsed.initial);
   const [running, setRunning] = useState(true);
@@ -56,28 +47,6 @@ const TimerWidget: React.FC<TimerWidgetProps> = ({ config, onRegister, onRemove,
   // Wall-clock anchor: when running, the timestamp at which the current phase started
   const epochRef = useRef<number>(Date.now());
   const baseSecondsRef = useRef<number>(parsed.initial);
-
-  useEffect(() => {
-    onRegister?.({
-      toggle: () => setRunning(r => !r),
-      restart: () => {
-        phaseRef.current = 'work';
-        setPhase('work');
-        setDone(false);
-        baseSecondsRef.current = parsed.initial;
-        epochRef.current = Date.now();
-        setSeconds(parsed.initial);
-        setRunning(true);
-      },
-      stop: () => {
-        setRunning(false);
-        const s = parsed.mode === 'stopwatch' ? 0 : parsed.initial;
-        baseSecondsRef.current = s;
-        setSeconds(s);
-        setDone(false);
-      },
-    });
-  }, [onRegister, parsed]);
 
   // Re-anchor epoch whenever running starts
   useEffect(() => {
