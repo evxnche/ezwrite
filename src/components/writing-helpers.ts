@@ -10,6 +10,7 @@ export const SLASH_COMMANDS = [
   { name: 'list', description: 'Create a checklist' },
   { name: 'line', description: 'Insert a divider' },
   { name: 'timer', description: 'Start a timer' },
+  { name: 'help', description: 'Show shortcuts & commands' },
 ];
 
 export function getLineType(lines: string[], index: number): LineType {

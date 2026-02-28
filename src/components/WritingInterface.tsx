@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Download, Sun, Moon, Info } from 'lucide-react';
+import { Sun, Moon } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -373,7 +373,11 @@ const WritingInterface = () => {
     const { lineIndex } = slashPopup;
     const lines = contentRef.current.split('\n');
     pushUndo(true);
-    if (command === 'timer') {
+    if (command === 'help') {
+      lines[lineIndex] = '';
+      structuralUpdate(lines.join('\n'), lineIndex, 0);
+      setInfoOpen(true);
+    } else if (command === 'timer') {
       lines[lineIndex] = 'timer ';
       editingTimerLineRef.current = lineIndex;
       structuralUpdate(lines.join('\n'), lineIndex, 6);
@@ -719,8 +723,8 @@ const WritingInterface = () => {
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button disabled={!contentRef.current.trim()} className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30">
-                <Download size={16} />
+              <button disabled={!contentRef.current.trim()} className="font-playfair text-sm text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30 tracking-wide">
+                export
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="bg-popover rounded-xl">
@@ -729,9 +733,6 @@ const WritingInterface = () => {
               <DropdownMenuItem onClick={saveAsMd} className="cursor-pointer">Download as Markdown</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <button onClick={() => setInfoOpen(true)} className="text-muted-foreground hover:text-foreground transition-colors">
-            <Info size={16} />
-          </button>
         </div>
       </div>
 
