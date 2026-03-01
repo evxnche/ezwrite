@@ -62,6 +62,10 @@ const InfoDialog: React.FC<Props> = ({ open, onOpenChange }) => {
               <li>swipe left or right to switch between 5 pages</li>
             </ul>
           </section>
+
+          <section>
+            <p className="text-muted-foreground">dev hotline — <span className="text-foreground">evanbuildsstuff@gmail.com</span></p>
+          </section>
         </div>
       </DialogContent>
     </Dialog>
