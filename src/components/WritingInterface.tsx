@@ -74,9 +74,9 @@ const WritingInterface = () => {
   useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
 
   // Track timers for portal rendering
-  const [timerSlots, setTimerSlots] = useState<Array<{ lineIndex: number; config: string; stableId: string }>>([]);
-  const [timerPortalNodes, setTimerPortalNodes] = useState<Map<number, HTMLElement>>(new Map());
-  // Stable IDs so timer widgets aren't remounted when line indices shift
+  const [timerSlots, setTimerSlots] = useState<Array<{ stableId: string; config: string }>>([]);
+  // Persistent portal containers keyed by stableId — survive innerHTML resets
+  const timerContainers = useRef<Map<string, HTMLElement>>(new Map());
   const timerStableIds = useRef<Map<string, string>>(new Map());
   // Undo / Redo
   const undoStack = useRef<string[]>([]);
@@ -113,24 +113,37 @@ const WritingInterface = () => {
       editingTimerLine: editingTimerLineRef.current ?? undefined,
     });
 
-    // Find timer slots
+    // Find timer slots and re-attach persistent containers
     const lines = content.split('\n');
-    const timers: Array<{ lineIndex: number; config: string; stableId: string }> = [];
-    const portalNodes = new Map<number, HTMLElement>();
+    const timers: Array<{ stableId: string; config: string }> = [];
+    const activeIds = new Set<string>();
     lines.forEach((line, i) => {
       if (getLineType(lines, i) === 'timer' && editingTimerLineRef.current !== i) {
         const config = getTimerArgs(line);
         const idKey = config || '__stopwatch__';
         if (!timerStableIds.current.has(idKey)) {
-          timerStableIds.current.set(idKey, `timer-${Date.now()}-${Math.random()}`);
+          timerStableIds.current.set(idKey, `t-${Date.now()}-${Math.random()}`);
         }
-        timers.push({ lineIndex: i, config, stableId: timerStableIds.current.get(idKey)! });
-        const el = editorRef.current!.querySelector(`[data-timer-slot="${i}"]`) as HTMLElement;
-        if (el) portalNodes.set(i, el);
+        const stableId = timerStableIds.current.get(idKey)!;
+        activeIds.add(stableId);
+        // Get or create persistent container div
+        if (!timerContainers.current.has(stableId)) {
+          timerContainers.current.set(stableId, document.createElement('div'));
+        }
+        // Re-attach container into the fresh slot (innerHTML reset detached it)
+        const slot = editorRef.current!.querySelector(`[data-timer-slot="${i}"]`) as HTMLElement;
+        if (slot) slot.appendChild(timerContainers.current.get(stableId)!);
+        timers.push({ stableId, config });
+      }
+    });
+    // Clean up containers for removed timers
+    timerStableIds.current.forEach((stableId, key) => {
+      if (!activeIds.has(stableId)) {
+        timerContainers.current.delete(stableId);
+        timerStableIds.current.delete(key);
       }
     });
     setTimerSlots(timers);
-    setTimerPortalNodes(portalNodes);
 
     // Restore cursor
     if (cursorLine !== undefined) {
@@ -791,9 +804,9 @@ const WritingInterface = () => {
       )}
 
       {/* Timer portals */}
-      {timerSlots.map(({ lineIndex, config, stableId }) => {
-        const node = timerPortalNodes.get(lineIndex);
-        if (!node) return null;
+      {timerSlots.map(({ stableId, config }) => {
+        const container = timerContainers.current.get(stableId);
+        if (!container) return null;
         return createPortal(
           <TimerWidget
             key={stableId}
@@ -801,13 +814,16 @@ const WritingInterface = () => {
             onRemove={() => {
               pushUndo(true);
               const ls = contentRef.current.split('\n');
-              ls.splice(lineIndex, 1);
-              if (!ls.length) ls.push('');
-              structuralUpdate(ls.join('\n'), Math.min(lineIndex, ls.length - 1), 0);
+              const lineIndex = ls.findIndex((l, i) => getLineType(ls, i) === 'timer' && (getTimerArgs(l) || '__stopwatch__') === (config || '__stopwatch__'));
+              if (lineIndex >= 0) {
+                ls.splice(lineIndex, 1);
+                if (!ls.length) ls.push('');
+                structuralUpdate(ls.join('\n'), Math.min(lineIndex, ls.length - 1), 0);
+              }
             }}
             onComplete={handleTimerComplete}
           />,
-          node
+          container
         );
       })}
 
