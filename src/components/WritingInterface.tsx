@@ -415,7 +415,19 @@ const WritingInterface = () => {
       if (e.key === 'Escape') { e.preventDefault(); setSlashPopup(null); return; }
     }
 
-    if (!info) return;
+    // Always prevent Enter/Tab from reaching the browser's contentEditable handler,
+    // even if cursor info is unavailable — native handling corrupts the DOM structure.
+    if (!info) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        pushUndo(true);
+        const lines = contentRef.current.split('\n');
+        lines.push('');
+        structuralUpdate(lines.join('\n'), lines.length - 1, 0);
+      }
+      if (e.key === 'Tab') e.preventDefault();
+      return;
+    }
     const { lineIndex, offset } = info;
     const lines = contentRef.current.split('\n');
 
