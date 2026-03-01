@@ -13,7 +13,7 @@ import SlashCommandPopup from './SlashCommandPopup';
 import InfoDialog from './InfoDialog';
 import TimerWidget from './TimerWidget';
 import {
-  STRUCK_MARKER, getCleanLine, isLineStruck, getLineType,
+  STRUCK_MARKER, LIST_EXIT, getCleanLine, isLineStruck, getLineType,
   getTimerArgs, SLASH_COMMANDS, INDENT,
   contentToHTML, extractContent, setCursorPosition,
   escapeHTML,
@@ -571,11 +571,11 @@ const WritingInterface = () => {
       // For list items, offset is within clean text
       if (lineType === 'list-item') {
         const clean = getCleanLine(currentLine);
-        // Enter on empty list item → exit list (insert two empty lines to break context)
+        // Enter on empty list item → exit list using invisible marker
         if (!clean.trim()) {
-          freshLines.splice(li, 1, '', '');
-          structuralUpdate(freshLines.join('\n'), li + 1, 0);
-          scrollToLine(li + 1);
+          freshLines.splice(li, 1, LIST_EXIT);
+          structuralUpdate(freshLines.join('\n'), li, 0);
+          scrollToLine(li);
           return;
         }
         const struck = isLineStruck(currentLine);
@@ -626,7 +626,7 @@ const WritingInterface = () => {
         const clean = getCleanLine(line);
         return struck ? `- [x] ${clean}` : `- [ ] ${clean}`;
       }
-      return line;
+      return line.startsWith(LIST_EXIT) ? line.slice(LIST_EXIT.length) : line;
     }).filter((line, i, arr) => !(line === '' && arr[i - 1] === ''))
       .join('\n').trim();
     const blob = new Blob([exported], { type: 'text/markdown' });

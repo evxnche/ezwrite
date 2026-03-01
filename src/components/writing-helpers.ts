@@ -1,4 +1,5 @@
 export const STRUCK_MARKER = '\u200B\u2713';
+export const LIST_EXIT = '\u2060'; // word joiner — invisible, marks explicit list exit
 export const INDENT = '        '; // 8 spaces
 
 export const getCleanLine = (line: string) => line.startsWith(STRUCK_MARKER) ? line.slice(STRUCK_MARKER.length) : line;
@@ -14,6 +15,7 @@ export const SLASH_COMMANDS = [
 ];
 
 export function getLineType(lines: string[], index: number): LineType {
+  if (lines[index].startsWith(LIST_EXIT)) return 'text';
   const clean = getCleanLine(lines[index]).trim();
   const lower = clean.toLowerCase();
   if (lower === 'list') return 'list-header';
@@ -24,6 +26,7 @@ export function getLineType(lines: string[], index: number): LineType {
 
   let emptyCount = 0;
   for (let i = index - 1; i >= 0; i--) {
+    if (lines[i].startsWith(LIST_EXIT)) return 'text'; // explicit list break
     const c = getCleanLine(lines[i]).trim().toLowerCase();
     if (c === 'list') return 'list-item';
     if (c === 'line' || /^timer(\s|$)/i.test(c)) return 'text';
@@ -90,8 +93,11 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
         return `<div data-type="list-item" data-struck="${struck}" data-line="${i}" class="ce-list-item ${struck ? 'ce-struck' : ''}"><span contenteditable="false" class="ce-checkbox ${struck ? 'ce-checked' : ''}" data-action="toggle" data-line="${i}"></span><span class="ce-li-text">${escaped || '<br>'}</span></div>`;
       }
       default: {
-        const escaped = escapeHTML(line);
-        return `<div data-type="text">${escaped || '<br>'}</div>`;
+        const isListExit = line.startsWith(LIST_EXIT);
+        const displayLine = isListExit ? line.slice(LIST_EXIT.length) : line;
+        const escaped = escapeHTML(displayLine);
+        const attr = isListExit ? ' data-list-exit="1"' : '';
+        return `<div data-type="text"${attr}>${escaped || '<br>'}</div>`;
       }
     }
   }).join('');
@@ -122,7 +128,7 @@ export function extractContent(editor: HTMLElement): string {
       return;
     }
     const text = extractText(el);
-    lines.push(text);
+    lines.push(el.dataset.listExit === '1' ? LIST_EXIT + text : text);
   });
   return lines.join('\n');
 }
