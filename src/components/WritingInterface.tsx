@@ -49,7 +49,7 @@ const WritingInterface = () => {
       try { pagesRef.current = JSON.parse(saved); } catch { pagesRef.current = Array(TOTAL_PAGES).fill(''); }
     } else {
       const old = localStorage.getItem('zen-writing-content') || '';
-      const welcome = old || `hi.\n\ni am evan.\n\nthinking is cool.\nwriting is thinking.\n\ni write. you write. we write.\nwriting shouldn't be such a battle.\nit shouldn't be a battle of point sizes, font styles, and colours.\n\nhence, ezwrite.\ni like pen and paper. this is close.\n\nthere isn't much to it.\n/line pulls up a divider.\n/list pulls up a checklist.\n/timer pulls up a timer + some more func.\nyou can always type in "/help" and you'll find all the help you need.\nbtw your data stays on your device.\n\ni hope this helps.\n\nto report bugs or just say hi, evanbuildsstuff@gmail.com\n\n-evan`;
+      const welcome = old || `hi.\n\ni am evan.\n\nthinking is cool.\nwriting is thinking.\n\ni write. you write. we write.\nwriting today is a slog.\na battle of point sizes, font styles, and colours.\n\nhence, ezwrite.\ni like pen and paper. this is close.\n\nthere isn't much to it.\n/line splits things up.\n/list keeps you on track with checklists.\n/timer pulls up a timer + some more func.\nor just type in "/help" and you'll find all the help you need.\nbtw your data stays on your device.\n\nit's yours now. go write.\n\nto report bugs or just say hi, evanbuildsstuff@gmail.com\n\n-evan`;
       pagesRef.current = [welcome, ...Array(TOTAL_PAGES - 1).fill('')];
     }
     while (pagesRef.current.length < TOTAL_PAGES) pagesRef.current.push('');
