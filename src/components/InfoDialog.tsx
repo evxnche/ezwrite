@@ -63,9 +63,9 @@ const InfoDialog: React.FC<Props> = ({ open, onOpenChange }) => {
             </ul>
           </section>
 
-          <section>
-            <p className="text-muted-foreground">dev hotline — <span className="text-foreground">evanbuildsstuff@gmail.com</span></p>
-          </section>
+        </div>
+        <div className="border-t border-border pt-3 mt-1">
+          <p className="font-mono text-xs text-muted-foreground">dev hotline — <a href="mailto:evanbuildsstuff@gmail.com" className="text-accent-foreground hover:underline">evanbuildsstuff@gmail.com</a></p>
         </div>
       </DialogContent>
     </Dialog>
