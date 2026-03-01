@@ -42,23 +42,10 @@ const InfoDialog: React.FC<Props> = ({ open, onOpenChange }) => {
           </section>
 
           <section>
-            <h3 className="font-semibold mb-1.5 text-accent-foreground">Keyboard Shortcuts</h3>
+            <h3 className="font-semibold mb-1.5 text-accent-foreground">Shortcuts</h3>
             <ul className="space-y-1 text-muted-foreground ml-3">
               <li><span className="text-foreground">Alt+↑/↓</span> — move line up/down</li>
-            </ul>
-          </section>
-
-          <section>
-            <h3 className="font-semibold mb-1.5 text-accent-foreground">List Features</h3>
-            <ul className="space-y-1 text-muted-foreground ml-3">
               <li>type <span className="text-foreground">/x</span> at end of a list item to toggle strikethrough</li>
-              <li>two empty lines exit list mode</li>
-            </ul>
-          </section>
-
-          <section>
-            <h3 className="font-semibold mb-1.5 text-accent-foreground">Pages</h3>
-            <ul className="space-y-1 text-muted-foreground ml-3">
               <li>swipe left or right to switch between 5 pages</li>
             </ul>
           </section>
