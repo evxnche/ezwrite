@@ -13,6 +13,13 @@ interface Props {
   rect: DOMRect;
 }
 
+const COMMAND_COLORS: Record<string, string> = {
+  list:  'text-amber-400',
+  line:  'text-sky-400',
+  timer: 'text-rose-400',
+  help:  'text-emerald-400',
+};
+
 const SlashCommandPopup: React.FC<Props> = ({ commands, highlightIndex, onSelect, onClose, rect }) => {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -29,23 +36,24 @@ const SlashCommandPopup: React.FC<Props> = ({ commands, highlightIndex, onSelect
   return (
     <div
       ref={ref}
-      className="fixed z-50 bg-popover border border-border rounded-xl shadow-lg py-1 min-w-[180px]"
-      style={{ top: rect.bottom + 4, left: rect.left }}
+      className="fixed z-50 bg-popover border border-border rounded-xl shadow-lg overflow-hidden min-w-[220px]"
+      style={{ top: rect.bottom + 6, left: rect.left }}
     >
       {commands.map((cmd, i) => (
         <button
           key={cmd.name}
-          className={`w-full text-left px-3 py-2 text-sm transition-colors flex items-center gap-2 ${
-            i === 0 ? 'rounded-t-xl' : ''
-          } ${
-            i === commands.length - 1 ? 'rounded-b-xl' : ''
-          } ${
-            i === highlightIndex ? 'bg-accent text-accent-foreground' : 'text-popover-foreground hover:bg-accent/50'
+          className={`w-full text-left px-3 py-2.5 transition-colors flex items-center gap-3 ${
+            i === highlightIndex ? 'bg-accent' : 'hover:bg-accent/40'
           }`}
           onMouseDown={(e) => { e.preventDefault(); onSelect(cmd.name); }}
         >
-          <span className="font-medium">/{cmd.name}</span>
-          <span className="text-muted-foreground text-xs">{cmd.description}</span>
+          <span className="flex items-center justify-center w-5 h-5 rounded-md border border-border text-xs font-mono text-muted-foreground bg-background flex-shrink-0">
+            {i + 1}
+          </span>
+          <span className={`font-mono text-sm font-medium w-10 flex-shrink-0 ${COMMAND_COLORS[cmd.name] ?? 'text-foreground'}`}>
+            {cmd.name}
+          </span>
+          <span className="text-muted-foreground text-xs leading-snug">{cmd.description}</span>
         </button>
       ))}
     </div>

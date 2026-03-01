@@ -413,6 +413,12 @@ const WritingInterface = () => {
       if (e.key === 'ArrowUp') { e.preventDefault(); setPopupHighlight(h => Math.max(h - 1, 0)); return; }
       if (e.key === 'Enter') { e.preventDefault(); if (filteredCommands[popupHighlight]) handleSlashSelect(filteredCommands[popupHighlight].name); return; }
       if (e.key === 'Escape') { e.preventDefault(); setSlashPopup(null); return; }
+      const num = parseInt(e.key);
+      if (!isNaN(num) && num >= 1 && num <= filteredCommands.length) {
+        e.preventDefault();
+        handleSlashSelect(filteredCommands[num - 1].name);
+        return;
+      }
     }
 
     // Always prevent Enter/Tab from reaching the browser's contentEditable handler,
