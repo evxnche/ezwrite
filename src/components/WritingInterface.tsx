@@ -74,8 +74,10 @@ const WritingInterface = () => {
   useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
 
   // Track timers for portal rendering
-  const [timerSlots, setTimerSlots] = useState<Array<{ lineIndex: number; config: string }>>([]);
+  const [timerSlots, setTimerSlots] = useState<Array<{ lineIndex: number; config: string; stableId: string }>>([]);
   const [timerPortalNodes, setTimerPortalNodes] = useState<Map<number, HTMLElement>>(new Map());
+  // Stable IDs so timer widgets aren't remounted when line indices shift
+  const timerStableIds = useRef<Map<string, string>>(new Map());
   // Undo / Redo
   const undoStack = useRef<string[]>([]);
   const redoStack = useRef<string[]>([]);
@@ -113,11 +115,16 @@ const WritingInterface = () => {
 
     // Find timer slots
     const lines = content.split('\n');
-    const timers: Array<{ lineIndex: number; config: string }> = [];
+    const timers: Array<{ lineIndex: number; config: string; stableId: string }> = [];
     const portalNodes = new Map<number, HTMLElement>();
     lines.forEach((line, i) => {
       if (getLineType(lines, i) === 'timer' && editingTimerLineRef.current !== i) {
-        timers.push({ lineIndex: i, config: getTimerArgs(line) });
+        const config = getTimerArgs(line);
+        const idKey = config || '__stopwatch__';
+        if (!timerStableIds.current.has(idKey)) {
+          timerStableIds.current.set(idKey, `timer-${Date.now()}-${Math.random()}`);
+        }
+        timers.push({ lineIndex: i, config, stableId: timerStableIds.current.get(idKey)! });
         const el = editorRef.current!.querySelector(`[data-timer-slot="${i}"]`) as HTMLElement;
         if (el) portalNodes.set(i, el);
       }
@@ -784,12 +791,12 @@ const WritingInterface = () => {
       )}
 
       {/* Timer portals */}
-      {timerSlots.map(({ lineIndex, config }) => {
+      {timerSlots.map(({ lineIndex, config, stableId }) => {
         const node = timerPortalNodes.get(lineIndex);
         if (!node) return null;
         return createPortal(
           <TimerWidget
-            key={`timer-${lineIndex}-${config}`}
+            key={stableId}
             config={config}
             onRemove={() => {
               pushUndo(true);
