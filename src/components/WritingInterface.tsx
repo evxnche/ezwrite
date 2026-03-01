@@ -550,8 +550,15 @@ const WritingInterface = () => {
       const clampedOffset = Math.min(offset, currentLine.length);
       // For list items, offset is within clean text
       if (lineType === 'list-item') {
-        const struck = isLineStruck(currentLine);
         const clean = getCleanLine(currentLine);
+        // Enter on empty list item → exit list (insert two empty lines to break context)
+        if (!clean.trim()) {
+          freshLines.splice(li, 1, '', '');
+          structuralUpdate(freshLines.join('\n'), li + 1, 0);
+          scrollToLine(li + 1);
+          return;
+        }
+        const struck = isLineStruck(currentLine);
         const off = Math.min(offset, clean.length);
         freshLines[li] = struck ? STRUCK_MARKER + clean.slice(0, off) : clean.slice(0, off);
         freshLines.splice(li + 1, 0, clean.slice(off));
