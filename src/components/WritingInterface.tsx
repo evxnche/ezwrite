@@ -582,6 +582,12 @@ const WritingInterface = () => {
         const off = Math.min(offset, clean.length);
         freshLines[li] = struck ? STRUCK_MARKER + clean.slice(0, off) : clean.slice(0, off);
         freshLines.splice(li + 1, 0, clean.slice(off));
+      } else if (currentLine.startsWith(LIST_EXIT)) {
+        // Keep marker pinned to this line; split only the visible text after it
+        const visible = currentLine.slice(LIST_EXIT.length);
+        const visOff = Math.max(0, clampedOffset - LIST_EXIT.length);
+        freshLines[li] = LIST_EXIT + visible.slice(0, visOff);
+        freshLines.splice(li + 1, 0, visible.slice(visOff));
       } else {
         freshLines[li] = currentLine.slice(0, clampedOffset);
         freshLines.splice(li + 1, 0, currentLine.slice(clampedOffset));
