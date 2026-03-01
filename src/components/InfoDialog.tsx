@@ -13,7 +13,7 @@ const InfoDialog: React.FC<Props> = ({ open, onOpenChange }) => {
         <DialogHeader>
           <DialogTitle className="font-playfair text-base sm:text-lg truncate">Shortcuts &amp; Commands</DialogTitle>
         </DialogHeader>
-        <div className="font-playfair space-y-5 text-sm leading-relaxed overflow-y-auto max-h-[70vh]">
+        <div className="font-mono space-y-5 text-sm leading-relaxed overflow-y-auto max-h-[70vh]">
           <section>
             <h3 className="font-semibold mb-1.5 text-accent-foreground">/ Commands</h3>
             <p className="text-muted-foreground mb-1">Type <kbd className="px-1 py-0.5 bg-background rounded text-xs">/</kbd> at the start of a line:</p>

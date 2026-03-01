@@ -47,13 +47,13 @@ const SlashCommandPopup: React.FC<Props> = ({ commands, highlightIndex, onSelect
           }`}
           onMouseDown={(e) => { e.preventDefault(); onSelect(cmd.name); }}
         >
-          <span className="flex items-center justify-center w-5 h-5 rounded-md border border-border text-xs font-playfair text-muted-foreground bg-background flex-shrink-0">
+          <span className="flex items-center justify-center w-5 h-5 rounded-md border border-border text-xs font-mono text-muted-foreground bg-background flex-shrink-0">
             {i + 1}
           </span>
-          <span className={`font-playfair text-sm font-medium w-10 flex-shrink-0 ${COMMAND_COLORS[cmd.name] ?? 'text-foreground'}`}>
+          <span className={`font-mono text-sm font-medium w-10 flex-shrink-0 ${COMMAND_COLORS[cmd.name] ?? 'text-foreground'}`}>
             {cmd.name}
           </span>
-          <span className="font-playfair text-muted-foreground text-xs leading-snug">{cmd.description}</span>
+          <span className="font-mono text-muted-foreground text-xs leading-snug">{cmd.description}</span>
         </button>
       ))}
     </div>
