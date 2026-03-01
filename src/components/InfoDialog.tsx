@@ -18,9 +18,9 @@ const InfoDialog: React.FC<Props> = ({ open, onOpenChange }) => {
             <h3 className="font-semibold mb-1.5 text-accent-foreground">/ Commands</h3>
             <p className="text-muted-foreground mb-1">Type <kbd className="px-1 py-0.5 bg-background rounded text-xs">/</kbd> at the start of a line:</p>
             <ul className="space-y-1 text-muted-foreground ml-3">
-              <li><span className="text-amber-400">/list</span> — checklist with checkboxes</li>
-              <li><span className="text-sky-400">/line</span> — horizontal divider</li>
-              <li><span className="text-rose-400">/timer</span> — start a timer</li>
+              <li><span className="text-accent-foreground">/list</span> — checklist with checkboxes</li>
+              <li><span className="text-accent-foreground">/line</span> — horizontal divider</li>
+              <li><span className="text-accent-foreground">/timer</span> — start a timer</li>
             </ul>
           </section>
 

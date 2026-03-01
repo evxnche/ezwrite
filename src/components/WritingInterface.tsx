@@ -129,7 +129,7 @@ const WritingInterface = () => {
     if (cursorLine !== undefined) {
       requestAnimationFrame(() => {
         if (editorRef.current) {
-          editorRef.current.focus();
+          editorRef.current.focus({ preventScroll: true });
           setCursorPosition(editorRef.current, cursorLine, cursorOffset ?? 0);
         }
       });

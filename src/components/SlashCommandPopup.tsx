@@ -14,10 +14,10 @@ interface Props {
 }
 
 const COMMAND_COLORS: Record<string, string> = {
-  list:  'text-amber-400',
-  line:  'text-sky-400',
-  timer: 'text-rose-400',
-  help:  'text-emerald-400',
+  list:  'text-accent-foreground',
+  line:  'text-accent-foreground',
+  timer: 'text-accent-foreground',
+  help:  'text-accent-foreground',
 };
 
 const SlashCommandPopup: React.FC<Props> = ({ commands, highlightIndex, onSelect, onClose, rect }) => {
