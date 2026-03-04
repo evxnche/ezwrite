@@ -1,6 +1,6 @@
 # ezwrite
 
-A minimal, distraction-free writing tool by Evan Cheriyan.
+a minimal, distraction-free writing tool because i like paper and pen.
 
 ## Dev
 
