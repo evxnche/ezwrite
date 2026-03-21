@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { BookOpen, Languages, Folder } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { SpellCheck, Folder } from 'lucide-react';
 import { isFileSystemSupported } from '@/lib/storage';
 
 interface Props {
@@ -65,34 +66,46 @@ const InfoDialog: React.FC<Props> = ({
         {/* Toolbar row below header */}
         <div className="flex items-center gap-3 pb-2 border-b border-border">
           {onToggleFont && (
-            <button
-              onClick={onToggleFont}
-              className="transition-colors"
-              style={{ color: useSerif ? 'hsl(var(--accent-foreground))' : 'hsl(var(--muted-foreground))' }}
-              title={useSerif ? 'switch to monospace font' : 'switch to serif font'}
-            >
-              <BookOpen size={15} />
-            </button>
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={onToggleFont}
+                  className="transition-colors font-serif text-base leading-none select-none"
+                  style={{ color: useSerif ? 'hsl(var(--accent-foreground))' : 'hsl(var(--muted-foreground))' }}
+                >
+                  A
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{useSerif ? 'switch to monospace' : 'switch to serif'}</TooltipContent>
+            </Tooltip>
           )}
           {onToggleSpellCheck && (
-            <button
-              onClick={onToggleSpellCheck}
-              className="transition-colors"
-              style={{ color: spellCheckEnabled ? 'hsl(var(--accent-foreground))' : 'hsl(var(--muted-foreground))' }}
-              title={spellCheckEnabled ? 'disable spellcheck' : 'enable spellcheck'}
-            >
-              <Languages size={15} />
-            </button>
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={onToggleSpellCheck}
+                  className="transition-colors"
+                  style={{ color: spellCheckEnabled ? 'hsl(var(--accent-foreground))' : 'hsl(var(--muted-foreground))' }}
+                >
+                  <SpellCheck size={15} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{spellCheckEnabled ? 'disable spellcheck' : 'enable spellcheck'}</TooltipContent>
+            </Tooltip>
           )}
           {fsSupported && onPickFolder && (
-            <button
-              onClick={onPickFolder}
-              className="transition-colors"
-              style={{ color: dirName ? 'hsl(var(--accent-foreground))' : 'hsl(var(--muted-foreground))' }}
-              title={dirName ? `saving to /${dirName} — click to change` : 'choose save folder'}
-            >
-              <Folder size={15} />
-            </button>
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={onPickFolder}
+                  className="transition-colors"
+                  style={{ color: dirName ? 'hsl(var(--accent-foreground))' : 'hsl(var(--muted-foreground))' }}
+                >
+                  <Folder size={15} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{dirName ? `saving to /${dirName} — click to change` : 'choose save folder'}</TooltipContent>
+            </Tooltip>
           )}
         </div>
         <div className="relative">
