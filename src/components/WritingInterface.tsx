@@ -174,24 +174,6 @@ const WritingInterface = () => {
 
   // Image resize
   const resizingRef = useRef<{ lineIndex: number; startX: number; startWidth: number; imgEl: HTMLImageElement; lineEl: HTMLElement } | null>(null);
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!resizingRef.current) return;
-      const { startX, startWidth, imgEl, lineEl } = resizingRef.current;
-      const newWidth = Math.max(50, startWidth + (e.clientX - startX));
-      imgEl.style.width = newWidth + 'px';
-      imgEl.style.maxWidth = '100%';
-      lineEl.dataset.width = String(Math.round(newWidth));
-    };
-    const handleMouseUp = () => {
-      if (!resizingRef.current) return;
-      resizingRef.current = null;
-      if (editorRef.current) { pushUndo(true); saveContent(extractContent(editorRef.current)); }
-    };
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-    return () => { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
-  }, [pushUndo, saveContent]);
 
   // Slash popup
   const [slashPopup, setSlashPopup] = useState<{ rect: DOMRect; filter: string; lineIndex: number } | null>(null);
@@ -213,6 +195,26 @@ const WritingInterface = () => {
     // Also auto-write to OPFS (origin private file system — no permission needed)
     writeToOPFS(pagesRef.current);
   }, []);
+
+  // Image resize mouse handlers (declared after saveContent/pushUndo to avoid TDZ)
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const { startX, startWidth, imgEl, lineEl } = resizingRef.current;
+      const newWidth = Math.max(50, startWidth + (e.clientX - startX));
+      imgEl.style.width = newWidth + 'px';
+      imgEl.style.maxWidth = '100%';
+      lineEl.dataset.width = String(Math.round(newWidth));
+    };
+    const handleMouseUp = () => {
+      if (!resizingRef.current) return;
+      resizingRef.current = null;
+      if (editorRef.current) { pushUndo(true); saveContent(extractContent(editorRef.current)); }
+    };
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
+  }, [pushUndo, saveContent]);
 
   // --- Structural re-render ---
   const structuralUpdate = useCallback((content: string, cursorLine?: number, cursorOffset?: number) => {
