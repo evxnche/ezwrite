@@ -86,7 +86,7 @@ const WritingInterface = () => {
 
   // Page dots — show briefly on page switch
   const [showDots, setShowDots] = useState(false);
-  const dotsTimeoutRef = useRef<NodeJS.Timeout>();
+  const dotsTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
   // Spellcheck toggle (persisted)
   const [spellCheckEnabled, setSpellCheckEnabled] = useState(() =>
