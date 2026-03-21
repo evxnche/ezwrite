@@ -79,7 +79,7 @@ const WritingInterface = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [timerAlert, setTimerAlert] = useState(false);
   const [pageTransition, setPageTransition] = useState<'none' | 'slide-left' | 'slide-right'>('none');
-  const typingTimeoutRef = useRef<NodeJS.Timeout>();
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const editorRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const editingTimerLineRef = useRef<number | null>(null);
