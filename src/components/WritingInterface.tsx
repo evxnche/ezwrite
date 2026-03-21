@@ -16,8 +16,12 @@ import {
   STRUCK_MARKER, LIST_EXIT, getCleanLine, isLineStruck, getLineType,
   getTimerArgs, SLASH_COMMANDS, INDENT,
   contentToHTML, extractContent, setCursorPosition,
-  escapeHTML,
+  contentToMarkdown,
 } from './writing-helpers';
+import {
+  isFileSystemSupported, getSavedHandle, pickSaveDirectory,
+  writePageFiles, clearHandle, getDirName, writeToOPFS,
+} from '@/lib/storage';
 
 const TOTAL_PAGES = 5;
 
@@ -40,6 +44,13 @@ const playChime = () => {
   } catch {}
 };
 
+const DEFAULT_PAGE_CONTENT = 'start writing.';
+
+const getDefaultPage = (index: number): string => {
+  if (index === 0) return DEFAULT_PAGE_CONTENT;
+  return DEFAULT_PAGE_CONTENT;
+};
+
 const WritingInterface = () => {
   // --- Pages ---
   const pagesRef = useRef<string[]>(null as any);
@@ -49,15 +60,18 @@ const WritingInterface = () => {
       try { pagesRef.current = JSON.parse(saved); } catch { pagesRef.current = Array(TOTAL_PAGES).fill(''); }
     } else {
       const old = localStorage.getItem('zen-writing-content') || '';
-      const welcome = old || `hi.\n\ni am evan.\n\nthinking is cool.\nwriting is thinking.\n\ni write. you write. we write.\nwriting today is a slog.\na battle of point sizes, font styles, and colours.\n\nhence, ezwrite.\ni like pen and paper. this is close.\n\nthere isn't much to it.\n/line splits things up.\n/list keeps you on track with checklists.\n/timer pulls up a timer + some more func.\nor just type in "/help" and you'll find all the help you need.\nbtw your data stays on your device.\n\nit's yours now. go write.\n\nto report bugs or just say hi, evanbuildsstuff@gmail.com\n\n-evan`;
-      pagesRef.current = [welcome, ...Array(TOTAL_PAGES - 1).fill('')];
+      const welcome = old || `hi.\n\ni am evan.\n\nthinking is cool.\nwriting is thinking.\n\nwe all write.\nwriting today is a slog.\na battle of point sizes, font styles, and colours.\n\nhence, ezwrite.\ni like pen and paper. this is close.\n\nthere isn't much to it.\n/line splits things up.\n/list keeps you on track with checklists.\n/timer pulls up a timer + some more func.\nor just type in "/help" and you'll find all the help you need.\nbtw your data stays on your device.\n\nit's yours now. go write.\n\nto report bugs or just say hi, evanbuildsstuff@gmail.com\n\n-evan`;
+      pagesRef.current = [welcome, ...Array(TOTAL_PAGES - 1).fill('start writing.')];
     }
     while (pagesRef.current.length < TOTAL_PAGES) pagesRef.current.push('');
   }
 
+  const getPageContent = (index: number): string =>
+    pagesRef.current[index] || getDefaultPage(index);
+
   const [currentPage, setCurrentPage] = useState(0);
   const currentPageRef = useRef(0);
-  const contentRef = useRef(pagesRef.current[0]);
+  const contentRef = useRef(getPageContent(0));
 
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -69,6 +83,74 @@ const WritingInterface = () => {
   const editorRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const editingTimerLineRef = useRef<number | null>(null);
+
+  // Page dots — show briefly on page switch
+  const [showDots, setShowDots] = useState(false);
+  const dotsTimeoutRef = useRef<NodeJS.Timeout>();
+
+  // Spellcheck toggle (persisted)
+  const [spellCheckEnabled, setSpellCheckEnabled] = useState(() =>
+    localStorage.getItem('ezwrite-spellcheck') === 'true'
+  );
+  const handleToggleSpellCheck = () => {
+    setSpellCheckEnabled(v => {
+      const next = !v;
+      localStorage.setItem('ezwrite-spellcheck', String(next));
+      return next;
+    });
+  };
+
+  // Font toggle (persisted)
+  const [useSerif, setUseSerif] = useState(() =>
+    localStorage.getItem('ezwrite-font') !== 'mono'
+  );
+  const handleToggleFont = () => {
+    setUseSerif(v => {
+      const next = !v;
+      localStorage.setItem('ezwrite-font', next ? 'serif' : 'mono');
+      return next;
+    });
+  };
+
+  // PWA install prompt
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
+  useEffect(() => {
+    const handler = (e: Event) => { e.preventDefault(); setInstallPrompt(e); };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+  const handleInstall = installPrompt ? async () => {
+    installPrompt.prompt();
+    await installPrompt.userChoice;
+    setInstallPrompt(null);
+  } : undefined;
+
+  // File System Access API — desktop save folder
+  const [dirHandle, setDirHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const dirHandleRef = useRef<FileSystemDirectoryHandle | null>(null);
+  useEffect(() => {
+    if (!isFileSystemSupported()) return;
+    getSavedHandle().then(h => {
+      if (h) { setDirHandle(h); dirHandleRef.current = h; }
+    });
+  }, []);
+
+  const handlePickFolder = async () => {
+    const h = await pickSaveDirectory();
+    if (h) {
+      setDirHandle(h);
+      dirHandleRef.current = h;
+      // Write all pages immediately after picking
+      const markdowns = pagesRef.current.map(p => contentToMarkdown(p));
+      writePageFiles(h, markdowns);
+    }
+  };
+
+  const handleClearFolder = async () => {
+    await clearHandle();
+    setDirHandle(null);
+    dirHandleRef.current = null;
+  };
 
   // Keep page ref in sync
   useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
@@ -86,7 +168,6 @@ const WritingInterface = () => {
     const now = Date.now();
     if (!force && now - lastUndoTime.current < 500) return;
     undoStack.current.push(contentRef.current);
-    if (undoStack.current.length > 100) undoStack.current.shift();
     redoStack.current = [];
     lastUndoTime.current = now;
   }, []);
@@ -101,7 +182,15 @@ const WritingInterface = () => {
   const saveContent = useCallback((content: string) => {
     contentRef.current = content;
     pagesRef.current[currentPageRef.current] = content;
-    localStorage.setItem('zen-writing-pages', JSON.stringify(pagesRef.current));
+    const serialized = JSON.stringify(pagesRef.current);
+    localStorage.setItem('zen-writing-pages', serialized);
+    // Write per-page .md files to chosen folder (desktop File System API)
+    if (dirHandleRef.current) {
+      const markdowns = pagesRef.current.map(p => contentToMarkdown(p));
+      writePageFiles(dirHandleRef.current, markdowns);
+    }
+    // Also auto-write to OPFS (origin private file system — no permission needed)
+    writeToOPFS(pagesRef.current);
   }, []);
 
   // --- Structural re-render ---
@@ -184,9 +273,13 @@ const WritingInterface = () => {
     // Clear undo/redo for new page
     undoStack.current = [];
     redoStack.current = [];
+    // Show dots briefly
+    setShowDots(true);
+    clearTimeout(dotsTimeoutRef.current);
+    dotsTimeoutRef.current = setTimeout(() => setShowDots(false), 500);
     // Transition animation
     setPageTransition(newPage > currentPageRef.current ? 'slide-left' : 'slide-right');
-    contentRef.current = pagesRef.current[newPage];
+    contentRef.current = getPageContent(newPage);
     setCurrentPage(newPage);
   }, []);
 
@@ -194,7 +287,7 @@ const WritingInterface = () => {
   const hasMounted = useRef(false);
   useEffect(() => {
     if (!hasMounted.current) { hasMounted.current = true; return; }
-    structuralUpdate(pagesRef.current[currentPage], 0, 0);
+    structuralUpdate(getPageContent(currentPage), 0, 0);
     setTimeout(() => {
       editorRef.current?.focus();
       setPageTransition('none');
@@ -209,6 +302,8 @@ const WritingInterface = () => {
     touchStartY.current = e.touches[0].clientY;
   };
   const handleTouchEnd = (e: React.TouchEvent) => {
+    // Don't trigger page switch if user was selecting text
+    if (window.getSelection()?.toString()) return;
     const dx = e.changedTouches[0].clientX - touchStartX.current;
     const dy = e.changedTouches[0].clientY - touchStartY.current;
     if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 60) {
@@ -264,6 +359,7 @@ const WritingInterface = () => {
   // Click anywhere to focus editor
   const handleContainerClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
+    if (editorRef.current?.contains(target)) return;
     if (target === containerRef.current || target.dataset?.editorBg === 'true') {
       editorRef.current?.focus();
       const lines = contentRef.current.split('\n');
@@ -315,7 +411,9 @@ const WritingInterface = () => {
     // If cursor is directly on the editor container, pick the child at anchorOffset
     if (lineDiv === editorRef.current) {
       cursorAtContainerLevel = true;
-      lineDiv = editorRef.current.childNodes[sel.anchorOffset] as Node
+      // anchorOffset N means cursor is AFTER child N-1; pick that child (not child N)
+      const childIdx = sel.anchorOffset > 0 ? sel.anchorOffset - 1 : 0;
+      lineDiv = editorRef.current.childNodes[childIdx] as Node
         ?? editorRef.current.lastChild;
     } else {
       while (lineDiv && lineDiv.parentNode !== editorRef.current) {
@@ -329,9 +427,23 @@ const WritingInterface = () => {
 
     const el = lineDiv as HTMLElement;
 
-    // When anchorNode is the editor container itself, offset within the line is 0
+    // When anchorNode is the editor container itself, compute actual offset from range
     if (cursorAtContainerLevel) {
-      return { lineIndex, offset: 0, lineDiv: el };
+      if (sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        try {
+          const lineRange = document.createRange();
+          lineRange.selectNodeContents(el);
+          lineRange.setEnd(range.endContainer, range.endOffset);
+          const actualOffset = lineRange.toString().length;
+          return { lineIndex, offset: actualOffset, lineDiv: el };
+        } catch {
+          // fallthrough to offset: 0
+        }
+      }
+      // Fallback: cursor at end of line (anchorOffset > 0 = after this child)
+      const fallbackLen = el.textContent?.length ?? 0;
+      return { lineIndex, offset: sel.anchorOffset > 0 ? fallbackLen : 0, lineDiv: el };
     }
 
     let textContainer: Node = lineDiv;
@@ -351,7 +463,16 @@ const WritingInterface = () => {
   // Handle input (text-only changes from user typing)
   const handleInput = useCallback(() => {
     if (!editorRef.current) return;
-    const newContent = extractContent(editorRef.current);
+    let newContent = extractContent(editorRef.current);
+
+    // Bug 12: strip lone leading spaces (mobile keyboard artifact) — preserve INDENT (8 spaces)
+    const stripped = newContent.split('\n').map(line =>
+      line.startsWith(' ') && !line.startsWith(INDENT) ? line.trimStart() : line
+    ).join('\n');
+    if (stripped !== newContent) {
+      newContent = stripped;
+    }
+
     saveContent(newContent);
     triggerTyping();
 
@@ -387,6 +508,28 @@ const WritingInterface = () => {
         return;
       }
 
+      // Bug 18: immediate header activation — re-render if line type changed without Enter
+      const lineEl = editorRef.current?.childNodes[info.lineIndex] as HTMLElement | undefined;
+      const domType = lineEl?.dataset?.type;
+      const computedType = getLineType(lines, info.lineIndex);
+      if (domType && domType !== computedType) {
+        structuralUpdate(newContent, info.lineIndex, info.offset);
+        return;
+      }
+
+      // Re-render indented lines so padding-left applies live while typing
+      const currentLineText = lines[info.lineIndex] || '';
+      const currentIndentLevel = (() => {
+        let l = currentLineText; let n = 0;
+        while (l.startsWith(INDENT)) { n++; l = l.slice(INDENT.length); }
+        return n;
+      })();
+      const domIndent = lineEl ? parseInt(lineEl.dataset.indent || '0') || 0 : 0;
+      if (currentIndentLevel !== domIndent) {
+        structuralUpdate(newContent, info.lineIndex, info.offset);
+        return;
+      }
+
       scrollToLine(info.lineIndex);
     }
 
@@ -397,7 +540,8 @@ const WritingInterface = () => {
   const handleSlashSelect = useCallback((command: string) => {
     if (!slashPopup) return;
     const { lineIndex } = slashPopup;
-    const lines = contentRef.current.split('\n');
+    // Bug 7: use fresh DOM content instead of potentially stale contentRef
+    const lines = editorRef.current ? extractContent(editorRef.current).split('\n') : contentRef.current.split('\n');
     pushUndo(true);
     if (command === 'help') {
       lines[lineIndex] = '';
@@ -409,7 +553,8 @@ const WritingInterface = () => {
       structuralUpdate(lines.join('\n'), lineIndex, 6);
     } else {
       lines[lineIndex] = command;
-      if (lineIndex >= lines.length - 1) lines.push('');
+      // Only add empty line if we're at the end of content
+      if (lineIndex >= lines.length - 1) lines.splice(lineIndex + 1, 0, '');
       structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
     }
     setSlashPopup(null);
@@ -489,11 +634,30 @@ const WritingInterface = () => {
       return;
     }
 
-    // Backspace at start - unindent if indented
+    // Backspace at start - unindent, exit list, or remove list header
     if (e.key === 'Backspace' && offset === 0) {
       const lineText = lines[lineIndex] || '';
       const lineType = getLineType(lines, lineIndex);
       const cleanLine = lineType === 'list-item' ? getCleanLine(lineText) : lineText;
+
+      // Bug 8a: Backspace on empty list-item exits the list
+      if (lineType === 'list-item' && !cleanLine.trim()) {
+        e.preventDefault();
+        pushUndo(true);
+        lines.splice(lineIndex, 1, LIST_EXIT);
+        structuralUpdate(lines.join('\n'), lineIndex, 0);
+        return;
+      }
+
+      // Bug 8b: Backspace at start of line immediately after list header removes the header
+      if (lineIndex > 0 && getLineType(lines, lineIndex - 1) === 'list-header') {
+        e.preventDefault();
+        pushUndo(true);
+        lines.splice(lineIndex - 1, 1);
+        structuralUpdate(lines.join('\n'), lineIndex - 1, 0);
+        return;
+      }
+
       if (cleanLine.startsWith(INDENT)) {
         e.preventDefault();
         pushUndo(true);
@@ -533,6 +697,39 @@ const WritingInterface = () => {
       return;
     }
 
+    // Auto-close brackets: (), [], {}
+    const BRACKET_PAIRS: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
+    if (BRACKET_PAIRS[e.key]) {
+      e.preventDefault();
+      document.execCommand('insertText', false, e.key + BRACKET_PAIRS[e.key]);
+      const sel = window.getSelection();
+      if (sel?.rangeCount) {
+        const r = sel.getRangeAt(0);
+        r.setStart(r.startContainer, r.startOffset - 1);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }
+      saveContent(extractContent(editorRef.current!));
+      return;
+    }
+
+    // Item 19: auto-close double quotes, position cursor between them
+    if (e.key === '"') {
+      e.preventDefault();
+      document.execCommand('insertText', false, '""');
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount) {
+        const range = sel.getRangeAt(0);
+        range.setStart(range.startContainer, Math.max(0, range.startOffset - 1));
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+      saveContent(extractContent(editorRef.current!));
+      return;
+    }
+
     // Enter
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -541,8 +738,12 @@ const WritingInterface = () => {
       const freshContent = extractContent(editorRef.current!);
       const freshLines = freshContent.split('\n');
 
+      // Bug 6: re-read cursor position after extractContent to get fresh offset
+      const freshInfo = getCursorInfo();
+      const freshOffset = freshInfo?.offset ?? offset;
+
       // Recompute cursor info from fresh content
-      const li = Math.min(lineIndex, freshLines.length - 1);
+      const li = Math.min(freshInfo?.lineIndex ?? lineIndex, freshLines.length - 1);
       const currentLine = freshLines[li] || '';
 
       // Timer editing mode
@@ -566,8 +767,51 @@ const WritingInterface = () => {
         return;
       }
 
+      // Item 17: auto-continue bullet/numbered lists (plain-text style, not /list checkboxes)
+      if (lineType !== 'list-item') {
+        const bulletMatch = currentLine.match(/^(\s*- )(.*)/);
+        const numberedMatch = currentLine.match(/^(\s*)(\d+)\. (.*)/);
+        if (bulletMatch) {
+          const prefix = bulletMatch[1];
+          const text = bulletMatch[2];
+          if (!text.trim()) {
+            // Empty bullet line → end the list, remove prefix
+            freshLines[li] = '';
+            structuralUpdate(freshLines.join('\n'), li, 0);
+            scrollToLine(li);
+            return;
+          }
+          const splitAt = Math.max(0, Math.min(freshOffset, currentLine.length) - prefix.length);
+          freshLines[li] = prefix + text.slice(0, splitAt);
+          freshLines.splice(li + 1, 0, prefix + text.slice(splitAt));
+          structuralUpdate(freshLines.join('\n'), li + 1, prefix.length);
+          scrollToLine(li + 1);
+          return;
+        }
+        if (numberedMatch) {
+          const indent = numberedMatch[1];
+          const num = parseInt(numberedMatch[2]);
+          const text = numberedMatch[3];
+          const fullPrefix = `${indent}${num}. `;
+          if (!text.trim()) {
+            // Empty numbered line → end the list, remove prefix
+            freshLines[li] = '';
+            structuralUpdate(freshLines.join('\n'), li, 0);
+            scrollToLine(li);
+            return;
+          }
+          const splitAt = Math.max(0, Math.min(freshOffset, currentLine.length) - fullPrefix.length);
+          const nextPrefix = `${indent}${num + 1}. `;
+          freshLines[li] = fullPrefix + text.slice(0, splitAt);
+          freshLines.splice(li + 1, 0, nextPrefix + text.slice(splitAt));
+          structuralUpdate(freshLines.join('\n'), li + 1, nextPrefix.length);
+          scrollToLine(li + 1);
+          return;
+        }
+      }
+
       // Normal enter - split line at offset
-      const clampedOffset = Math.min(offset, currentLine.length);
+      const clampedOffset = Math.min(freshOffset, currentLine.length);
       // For list items, offset is within clean text
       if (lineType === 'list-item') {
         const clean = getCleanLine(currentLine);
@@ -579,7 +823,7 @@ const WritingInterface = () => {
           return;
         }
         const struck = isLineStruck(currentLine);
-        const off = Math.min(offset, clean.length);
+        const off = Math.min(freshOffset, clean.length);
         freshLines[li] = struck ? STRUCK_MARKER + clean.slice(0, off) : clean.slice(0, off);
         freshLines.splice(li + 1, 0, clean.slice(off));
       } else if (currentLine.startsWith(LIST_EXIT)) {
@@ -589,8 +833,16 @@ const WritingInterface = () => {
         freshLines[li] = LIST_EXIT + visible.slice(0, visOff);
         freshLines.splice(li + 1, 0, visible.slice(visOff));
       } else {
+        // Carry INDENT prefix to new line if cursor is at/past the prefix
+        let indentPrefix = '';
+        let tmpLine = currentLine;
+        while (tmpLine.startsWith(INDENT)) { indentPrefix += INDENT; tmpLine = tmpLine.slice(INDENT.length); }
         freshLines[li] = currentLine.slice(0, clampedOffset);
-        freshLines.splice(li + 1, 0, currentLine.slice(clampedOffset));
+        const afterCursor = currentLine.slice(clampedOffset);
+        const newLine = (indentPrefix && clampedOffset >= indentPrefix.length)
+          ? indentPrefix + afterCursor.trimStart()
+          : afterCursor;
+        freshLines.splice(li + 1, 0, newLine);
       }
       structuralUpdate(freshLines.join('\n'), li + 1, 0);
       scrollToLine(li + 1);
@@ -613,6 +865,85 @@ const WritingInterface = () => {
     pushUndo();
   }, [pushUndo]);
 
+  // Intercept paste — strip HTML formatting, normalize line breaks, insert as plain text
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    e.preventDefault();
+
+    // Check for image paste first
+    const items = Array.from(e.clipboardData.items);
+    const imageItem = items.find(item => item.type.startsWith('image/'));
+    if (imageItem) {
+      const file = imageItem.getAsFile();
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const base64 = ev.target?.result as string;
+          if (!base64) return;
+          const info = getCursorInfo();
+          const lines = contentRef.current.split('\n');
+          const lineIndex = info?.lineIndex ?? lines.length - 1;
+          // Insert img:: line after current line
+          lines.splice(lineIndex + 1, 0, `img::${base64}`);
+          pushUndo(true);
+          structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
+        };
+        reader.readAsDataURL(file);
+        return;
+      }
+    }
+
+    const raw = e.clipboardData.getData('text/plain');
+    if (!raw) return;
+    pushUndo(true);
+
+    // Collapse single newlines (line wraps from narrow window) to spaces;
+    // preserve double newlines (paragraph breaks)
+    const normalized = raw
+      .replace(/\r\n/g, '\n')
+      .replace(/\n{2,}/g, '\u0000')    // protect paragraph breaks
+      .replace(/\n/g, ' ')              // collapse single newlines to space
+      .replace(/\u0000/g, '\n\n')       // restore paragraph breaks
+      .replace(/ {2,}/g, ' ');          // clean up double spaces
+
+    document.execCommand('insertText', false, normalized);
+  }, [pushUndo, structuralUpdate]);
+
+  // Item 13: cut handler for mobile — manually copy + delete selection
+  const handleCut = useCallback(async (e: React.ClipboardEvent) => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed) return;
+    const text = sel.toString();
+    try {
+      await navigator.clipboard.writeText(text);
+      e.preventDefault();
+      document.execCommand('delete');
+      if (editorRef.current) saveContent(extractContent(editorRef.current));
+    } catch {
+      // let browser handle it natively
+    }
+  }, [saveContent]);
+
+  // Item 11: download or share (Web Share API for mobile, anchor fallback for desktop)
+  const downloadOrShare = async (blob: Blob, filename: string) => {
+    const file = new File([blob], filename, { type: blob.type });
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: filename });
+        return;
+      } catch {
+        // fall through to anchor download
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   // Exports
   const cleanForExport = (line: string) => {
     if (isLineStruck(line)) return '[x] ' + getCleanLine(line);
@@ -622,25 +953,9 @@ const WritingInterface = () => {
   const saveAsMd = () => {
     const content = contentRef.current;
     if (!content.trim()) return;
-    const lines = content.split('\n');
-    const exported = lines.map((line, i) => {
-      const type = getLineType(lines, i);
-      if (type === 'divider') return '---';
-      if (type === 'timer' || type === 'list-header') return '';
-      if (type === 'list-item') {
-        const struck = isLineStruck(line);
-        const clean = getCleanLine(line);
-        return struck ? `- [x] ${clean}` : `- [ ] ${clean}`;
-      }
-      return line.startsWith(LIST_EXIT) ? line.slice(LIST_EXIT.length) : line;
-    }).filter((line, i, arr) => !(line === '' && arr[i - 1] === ''))
-      .join('\n').trim();
+    const exported = contentToMarkdown(content);
     const blob = new Blob([exported], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `ezwrite-${new Date().toISOString().split('T')[0]}.md`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadOrShare(blob, `ezwrite-${new Date().toISOString().split('T')[0]}.md`);
   };
 
   const saveAsPdf = () => {
@@ -698,7 +1013,9 @@ const WritingInterface = () => {
       y += lh * 0.3;
     });
 
-    pdf.save(`ezwrite-${new Date().toISOString().split('T')[0]}.pdf`);
+    const filename = `ezwrite-${new Date().toISOString().split('T')[0]}.pdf`;
+    const pdfBlob = pdf.output('blob');
+    downloadOrShare(pdfBlob, filename);
   };
 
   // Editor styles
@@ -708,7 +1025,7 @@ const WritingInterface = () => {
     outline: 'none',
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-word',
-    ...(isDark ? { textShadow: '0 0 10px hsl(40 60% 70% / 0.35), 0 0 25px hsl(35 50% 60% / 0.18)' } : {}),
+    ...(isDark ? { textShadow: '0 0 10px hsl(40 60% 70% / 0.22), 0 0 25px hsl(35 50% 60% / 0.12)' } : {}),
   };
 
   return (
@@ -731,7 +1048,7 @@ const WritingInterface = () => {
       <div className="flex justify-between items-center p-4 sm:p-6 opacity-60 hover:opacity-100 transition-opacity duration-300 bg-background">
         <span
           className="font-playfair text-xl sm:text-2xl text-foreground tracking-wide"
-          style={isDark ? { textShadow: '0 0 20px hsl(40 60% 70% / 0.3), 0 0 40px hsl(35 50% 60% / 0.15)' } : {}}
+          style={isDark ? { textShadow: '0 0 20px hsl(40 60% 70% / 0.2), 0 0 40px hsl(35 50% 60% / 0.10)' } : {}}
         >
           ez.
         </span>
@@ -777,10 +1094,12 @@ const WritingInterface = () => {
               onInput={handleInput}
               onKeyDown={handleKeyDown}
               onBeforeInput={handleBeforeInput}
+              onPaste={handlePaste}
+              onCut={handleCut}
               onClick={handleEditorClick}
-              className="font-playfair text-base sm:text-lg font-light tracking-wide text-foreground ce-editor"
+              className={`${useSerif ? 'font-playfair' : 'font-mono'} text-base sm:text-lg font-light tracking-wide text-foreground ce-editor`}
               style={editorStyle}
-              spellCheck={false}
+              spellCheck={spellCheckEnabled}
             />
 
             {isTyping && <div className="absolute bottom-4 right-4 w-2 h-2 bg-accent-foreground rounded-full animate-pulse" />}
@@ -788,11 +1107,30 @@ const WritingInterface = () => {
         </div>
       </div>
 
+      {/* Page indicator dots */}
+      <div
+        className={`fixed bottom-10 left-0 right-0 flex justify-center items-center gap-2 pointer-events-none transition-opacity duration-500 ${showDots ? 'opacity-60' : 'opacity-0'}`}
+      >
+        {Array.from({ length: TOTAL_PAGES }).map((_, i) => (
+          <button
+            key={i}
+            onClick={() => switchToPage(i)}
+            className="pointer-events-auto transition-all duration-200 rounded-full bg-foreground"
+            style={{
+              width: currentPage === i ? '6px' : '4px',
+              height: currentPage === i ? '6px' : '4px',
+              opacity: currentPage === i ? 1 : 0.4,
+            }}
+            aria-label={`Go to page ${i + 1}`}
+          />
+        ))}
+      </div>
+
       {/* Footer */}
       <div className="fixed bottom-3 left-0 right-0 text-center pointer-events-none opacity-40 hover:opacity-70 transition-opacity duration-300">
         <span
           className="font-playfair text-xs sm:text-sm text-foreground tracking-wide pointer-events-auto"
-          style={isDark ? { textShadow: '0 0 20px hsl(40 60% 70% / 0.3), 0 0 40px hsl(35 50% 60% / 0.15)' } : {}}
+          style={isDark ? { textShadow: '0 0 20px hsl(40 60% 70% / 0.2), 0 0 40px hsl(35 50% 60% / 0.10)' } : {}}
         >
           built by evan :)
         </span>
@@ -834,7 +1172,18 @@ const WritingInterface = () => {
       })}
 
       {/* Info dialog */}
-      <InfoDialog open={infoOpen} onOpenChange={setInfoOpen} />
+      <InfoDialog
+        open={infoOpen}
+        onOpenChange={setInfoOpen}
+        dirName={getDirName(dirHandle)}
+        onPickFolder={handlePickFolder}
+        onClearFolder={handleClearFolder}
+        onInstall={handleInstall}
+        spellCheckEnabled={spellCheckEnabled}
+        onToggleSpellCheck={handleToggleSpellCheck}
+        useSerif={useSerif}
+        onToggleFont={handleToggleFont}
+      />
     </div>
   );
 };

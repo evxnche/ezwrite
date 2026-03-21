@@ -5,7 +5,7 @@ export const INDENT = '        '; // 8 spaces
 export const getCleanLine = (line: string) => line.startsWith(STRUCK_MARKER) ? line.slice(STRUCK_MARKER.length) : line;
 export const isLineStruck = (line: string) => line.startsWith(STRUCK_MARKER);
 
-export type LineType = 'text' | 'heading1' | 'heading2' | 'list-header' | 'list-item' | 'divider' | 'timer';
+export type LineType = 'text' | 'heading1' | 'heading2' | 'list-header' | 'list-item' | 'divider' | 'timer' | 'image';
 
 export const SLASH_COMMANDS = [
   { name: 'list', description: 'Create a checklist' },
@@ -15,8 +15,10 @@ export const SLASH_COMMANDS = [
 ];
 
 export function getLineType(lines: string[], index: number): LineType {
-  if (lines[index].startsWith(LIST_EXIT)) return 'text';
-  const clean = getCleanLine(lines[index]).trim();
+  const line = lines[index];
+  if (line.startsWith('img::')) return 'image';
+  if (line.startsWith(LIST_EXIT)) return 'text';
+  const clean = getCleanLine(line).trim();
   const lower = clean.toLowerCase();
   if (lower === 'list') return 'list-header';
   if (lower === 'line') return 'divider';
@@ -57,6 +59,19 @@ export function escapeHTML(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
+// Wrap URLs in a styled span for visual signifier (Task 15)
+function applyLinkHighlight(text: string): string {
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+  if (parts.length === 1) return escapeHTML(text); // no URLs
+  return parts.map((part, i) => {
+    if (i % 2 === 1) {
+      return `<span class="ce-link">${escapeHTML(part)}</span>`;
+    }
+    return escapeHTML(part);
+  }).join('');
+}
+
 interface ContentToHTMLOptions {
   editingTimerLine?: number;
 }
@@ -81,10 +96,13 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
         return `<div data-type="divider" contenteditable="false" class="ce-divider"><hr class="ce-hr"/><button class="ce-delete-btn" data-action="delete" data-line="${i}">✕</button></div>`;
       case 'timer': {
         if (options?.editingTimerLine === i) {
-          // Render as editable text while user is typing timer args
           return `<div data-type="text">${escapeHTML(line) || '<br>'}</div>`;
         }
         return `<div data-type="timer" data-timer-config="${escapeHTML(getTimerArgs(line))}" data-line="${i}" contenteditable="false" class="ce-timer" data-timer-slot="${i}"></div>`;
+      }
+      case 'image': {
+        const src = line.slice('img::'.length);
+        return `<div data-type="image" contenteditable="false" class="ce-image" data-line="${i}"><img src="${src}" class="ce-image-img" alt="" /><button class="ce-delete-btn" data-action="delete" data-line="${i}">✕</button></div>`;
       }
       case 'list-item': {
         const struck = isLineStruck(line);
@@ -94,10 +112,23 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
       }
       default: {
         const isListExit = line.startsWith(LIST_EXIT);
-        const displayLine = isListExit ? line.slice(LIST_EXIT.length) : line;
-        const escaped = escapeHTML(displayLine);
+        let displayLine = isListExit ? line.slice(LIST_EXIT.length) : line;
         const attr = isListExit ? ' data-list-exit="1"' : '';
-        return `<div data-type="text"${attr}>${escaped || '<br>'}</div>`;
+
+        // Task 14: detect and strip indent prefix, apply CSS padding
+        let indentLevel = 0;
+        while (displayLine.startsWith(INDENT)) {
+          indentLevel++;
+          displayLine = displayLine.slice(INDENT.length);
+        }
+        const indentAttr = indentLevel > 0
+          ? ` data-indent="${indentLevel}" style="padding-left: ${indentLevel * 2}em"`
+          : '';
+
+        // Task 15: apply URL highlighting
+        const html = applyLinkHighlight(displayLine);
+
+        return `<div data-type="text"${attr}${indentAttr}>${html || '<br>'}</div>`;
       }
     }
   }).join('');
@@ -116,6 +147,12 @@ export function extractContent(editor: HTMLElement): string {
       lines.push(config ? `timer ${config}` : 'timer');
       return;
     }
+    if (type === 'image') {
+      const img = el.querySelector('img');
+      const src = img?.getAttribute('src') || '';
+      lines.push(src ? `img::${src}` : '');
+      return;
+    }
     if (type === 'heading1' || type === 'heading2') {
       lines.push(extractText(el));
       return;
@@ -127,8 +164,12 @@ export function extractContent(editor: HTMLElement): string {
       lines.push(struck ? STRUCK_MARKER + text : text);
       return;
     }
+    // text type
     const text = extractText(el);
-    lines.push(el.dataset.listExit === '1' ? LIST_EXIT + text : text);
+    // Task 14: prepend INDENT sequences if data-indent is set
+    const indentLevel = el.dataset.indent ? parseInt(el.dataset.indent) || 0 : 0;
+    const result = indentLevel > 0 ? INDENT.repeat(indentLevel) + text : text;
+    lines.push(el.dataset.listExit === '1' ? LIST_EXIT + result : result);
   });
   return lines.join('\n');
 }
@@ -201,4 +242,26 @@ export function setCursorPosition(editor: HTMLElement, lineIndex: number, offset
 
   sel.removeAllRanges();
   sel.addRange(range);
+}
+
+// Task 16: reusable markdown export utility
+export function contentToMarkdown(content: string): string {
+  if (!content.trim()) return '';
+  const lines = content.split('\n');
+  return lines.map((line, i) => {
+    const type = getLineType(lines, i);
+    if (type === 'divider') return '---';
+    if (type === 'timer' || type === 'list-header') return '';
+    if (type === 'image') {
+      const src = line.slice('img::'.length);
+      return `![image](${src})`;
+    }
+    if (type === 'list-item') {
+      const struck = isLineStruck(line);
+      const clean = getCleanLine(line);
+      return struck ? `- [x] ${clean}` : `- [ ] ${clean}`;
+    }
+    return line.startsWith(LIST_EXIT) ? line.slice(LIST_EXIT.length) : line;
+  }).filter((line, i, arr) => !(line === '' && arr[i - 1] === ''))
+    .join('\n').trim();
 }

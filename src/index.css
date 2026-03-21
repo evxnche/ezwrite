@@ -155,6 +155,9 @@
 /* ContentEditable editor styles */
 .ce-editor {
   min-height: 200px;
+  user-select: text;
+  -webkit-user-select: text;
+  touch-action: auto; /* allows text selection drag on mobile */
 }
 
 .ce-editor > div {
@@ -283,7 +286,7 @@
 
 .dark .ce-heading1 {
   color: hsl(40 80% 90%);
-  text-shadow: 0 0 15px hsl(40 60% 70% / 0.5), 0 0 35px hsl(35 50% 60% / 0.25);
+  text-shadow: 0 0 15px hsl(40 60% 70% / 0.35), 0 0 35px hsl(35 50% 60% / 0.16);
 }
 
 .ce-heading2 {
@@ -295,25 +298,52 @@
 
 .dark .ce-heading2 {
   color: hsl(40 70% 85%);
-  text-shadow: 0 0 12px hsl(40 60% 70% / 0.4), 0 0 28px hsl(35 50% 60% / 0.2);
+  text-shadow: 0 0 12px hsl(40 60% 70% / 0.28), 0 0 28px hsl(35 50% 60% / 0.13);
 }
 
 /* Page transition animations */
 @keyframes slide-left-in {
-  from { transform: translateX(30px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
+  from { transform: translateX(50px) scale(0.97); opacity: 0; }
+  to   { transform: translateX(0) scale(1);       opacity: 1; }
 }
 
 @keyframes slide-right-in {
-  from { transform: translateX(-30px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
+  from { transform: translateX(-50px) scale(0.97); opacity: 0; }
+  to   { transform: translateX(0) scale(1);        opacity: 1; }
 }
 
 .animate-slide-left {
-  animation: slide-left-in 0.25s ease-out;
+  animation: slide-left-in 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 .animate-slide-right {
-  animation: slide-right-in 0.25s ease-out;
+  animation: slide-right-in 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Task 13: Image blocks */
+.ce-image {
+  position: relative;
+  padding: 4px 0;
+  user-select: none;
+}
+
+.ce-image-img {
+  display: block;
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 4px 0;
+}
+
+/* Task 14: Indented text — prevent double indent from text-indent */
+.ce-editor > [data-indent] {
+  text-indent: 0;
+}
+
+/* Task 15: Link signifier */
+.ce-link {
+  opacity: 0.6;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
 }
 
