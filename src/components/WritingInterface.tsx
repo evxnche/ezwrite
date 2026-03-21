@@ -314,7 +314,7 @@ const WritingInterface = () => {
 
   // --- Trackpad two-finger horizontal swipe ---
   const wheelAccum = useRef(0);
-  const wheelTimeout = useRef<NodeJS.Timeout>();
+  const wheelTimeout = useRef<ReturnType<typeof setTimeout>>();
   const wheelCooldown = useRef(false);
   const handleWheel = (e: React.WheelEvent) => {
     if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) * 2) return;
