@@ -320,7 +320,7 @@
   animation: slide-right-in 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
-/* Task 13: Image blocks */
+/* Image blocks */
 .ce-image {
   position: relative;
   padding: 4px 0;
@@ -332,6 +332,27 @@
   max-width: 100%;
   border-radius: 8px;
   margin: 4px 0;
+}
+
+.ce-image-resize-handle {
+  position: absolute;
+  bottom: 8px;
+  right: 4px;
+  width: 10px;
+  height: 10px;
+  background: hsl(var(--accent-foreground));
+  border-radius: 50%;
+  cursor: se-resize;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.ce-image:hover .ce-image-resize-handle {
+  opacity: 0.6;
+}
+
+.ce-image:hover .ce-delete-btn {
+  opacity: 1;
 }
 
 /* Task 14: Indented text — prevent double indent from text-indent */

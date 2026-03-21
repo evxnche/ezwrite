@@ -172,6 +172,27 @@ const WritingInterface = () => {
     lastUndoTime.current = now;
   }, []);
 
+  // Image resize
+  const resizingRef = useRef<{ lineIndex: number; startX: number; startWidth: number; imgEl: HTMLImageElement; lineEl: HTMLElement } | null>(null);
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const { startX, startWidth, imgEl, lineEl } = resizingRef.current;
+      const newWidth = Math.max(50, startWidth + (e.clientX - startX));
+      imgEl.style.width = newWidth + 'px';
+      imgEl.style.maxWidth = '100%';
+      lineEl.dataset.width = String(Math.round(newWidth));
+    };
+    const handleMouseUp = () => {
+      if (!resizingRef.current) return;
+      resizingRef.current = null;
+      if (editorRef.current) { pushUndo(true); saveContent(extractContent(editorRef.current)); }
+    };
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
+  }, [pushUndo, saveContent]);
+
   // Slash popup
   const [slashPopup, setSlashPopup] = useState<{ rect: DOMRect; filter: string; lineIndex: number } | null>(null);
   const [popupHighlight, setPopupHighlight] = useState(0);
@@ -297,13 +318,22 @@ const WritingInterface = () => {
   // --- Touch swipe ---
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
+  const touchHasSelection = useRef(false);
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
+    touchHasSelection.current = false;
+  };
+  const handleTouchMove = () => {
+    if (window.getSelection()?.toString()) {
+      touchHasSelection.current = true;
+    }
   };
   const handleTouchEnd = (e: React.TouchEvent) => {
+    const hadSelection = touchHasSelection.current;
+    touchHasSelection.current = false;
     // Don't trigger page switch if user was selecting text
-    if (window.getSelection()?.toString()) return;
+    if (hadSelection || window.getSelection()?.toString()) return;
     const dx = e.changedTouches[0].clientX - touchStartX.current;
     const dy = e.changedTouches[0].clientY - touchStartY.current;
     if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 60) {
@@ -347,12 +377,7 @@ const WritingInterface = () => {
       if (!editorRef.current) return;
       const lineNode = editorRef.current.childNodes[lineIndex] as HTMLElement;
       if (!lineNode) return;
-      const rect = lineNode.getBoundingClientRect();
-      const lineHeight = 32;
-      const bottomTarget = rect.bottom + lineHeight * 3;
-      if (bottomTarget > window.innerHeight) {
-        window.scrollBy({ top: bottomTarget - window.innerHeight + 16, behavior: 'smooth' });
-      }
+      lineNode.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
   };
 
@@ -368,11 +393,23 @@ const WritingInterface = () => {
     }
   };
 
+  // Handle mousedown for image resize handles
+  const handleEditorMouseDown = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.dataset.action !== 'resize') return;
+    e.preventDefault();
+    const lineIndex = parseInt(target.dataset.line || '0');
+    const lineEl = editorRef.current?.childNodes[lineIndex] as HTMLElement | undefined;
+    const imgEl = lineEl?.querySelector('img') as HTMLImageElement | null;
+    if (!imgEl || !lineEl) return;
+    resizingRef.current = { lineIndex, startX: e.clientX, startWidth: imgEl.offsetWidth, imgEl, lineEl };
+  };
+
   // Handle clicks inside editor (checkboxes, delete buttons)
   const handleEditorClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     const action = target.dataset.action;
-    if (!action) return;
+    if (!action || action === 'resize') return;
 
     const lineIndex = parseInt(target.dataset.line || '0');
     if (action === 'toggle') {
@@ -405,59 +442,54 @@ const WritingInterface = () => {
     if (!editorRef.current) return null;
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return null;
+    const range = sel.getRangeAt(0);
 
-    let lineDiv: Node | null = sel.anchorNode;
-    let cursorAtContainerLevel = false;
-    // If cursor is directly on the editor container, pick the child at anchorOffset
-    if (lineDiv === editorRef.current) {
-      cursorAtContainerLevel = true;
-      // anchorOffset N means cursor is AFTER child N-1; pick that child (not child N)
-      const childIdx = sel.anchorOffset > 0 ? sel.anchorOffset - 1 : 0;
-      lineDiv = editorRef.current.childNodes[childIdx] as Node
-        ?? editorRef.current.lastChild;
+    const children = Array.from(editorRef.current.childNodes) as HTMLElement[];
+    let foundIdx = -1;
+    let foundEl: HTMLElement | null = null;
+
+    if (range.startContainer === editorRef.current) {
+      // Cursor at container level: startOffset N means cursor is AFTER child N-1
+      foundIdx = Math.max(0, Math.min(range.startOffset > 0 ? range.startOffset - 1 : 0, children.length - 1));
+      foundEl = children[foundIdx] || null;
     } else {
-      while (lineDiv && lineDiv.parentNode !== editorRef.current) {
-        lineDiv = lineDiv.parentNode;
-      }
-    }
-    if (!lineDiv) return null;
-
-    const lineIndex = Array.from(editorRef.current.childNodes).indexOf(lineDiv as ChildNode);
-    if (lineIndex < 0) return null;
-
-    const el = lineDiv as HTMLElement;
-
-    // When anchorNode is the editor container itself, compute actual offset from range
-    if (cursorAtContainerLevel) {
-      if (sel.rangeCount > 0) {
-        const range = sel.getRangeAt(0);
-        try {
-          const lineRange = document.createRange();
-          lineRange.selectNodeContents(el);
-          lineRange.setEnd(range.endContainer, range.endOffset);
-          const actualOffset = lineRange.toString().length;
-          return { lineIndex, offset: actualOffset, lineDiv: el };
-        } catch {
-          // fallthrough to offset: 0
+      for (let i = 0; i < children.length; i++) {
+        if (children[i].contains(range.startContainer)) {
+          foundIdx = i;
+          foundEl = children[i];
+          break;
         }
       }
-      // Fallback: cursor at end of line (anchorOffset > 0 = after this child)
-      const fallbackLen = el.textContent?.length ?? 0;
-      return { lineIndex, offset: sel.anchorOffset > 0 ? fallbackLen : 0, lineDiv: el };
     }
 
-    let textContainer: Node = lineDiv;
-    if (el.dataset?.type === 'list-item') {
-      const textSpan = el.querySelector('.ce-li-text');
+    if (foundIdx < 0 || !foundEl) return null;
+
+    // For list-items, measure offset within the text span
+    let textContainer: Node = foundEl;
+    if (foundEl.dataset?.type === 'list-item') {
+      const textSpan = foundEl.querySelector('.ce-li-text');
       if (textSpan) textContainer = textSpan;
     }
 
-    const range = document.createRange();
-    range.selectNodeContents(textContainer);
-    range.setEnd(sel.anchorNode!, sel.anchorOffset);
-    const offset = range.toString().length;
+    let offset = 0;
+    try {
+      const lineRange = document.createRange();
+      lineRange.selectNodeContents(textContainer);
+      lineRange.setEnd(range.startContainer, range.startOffset);
+      offset = lineRange.toString().length;
+    } catch {
+      // If cursor is at container level after this child, offset = full length
+      if (range.startContainer === editorRef.current) {
+        offset = range.startOffset > foundIdx ? (foundEl.textContent?.length ?? 0) : 0;
+      }
+    }
 
-    return { lineIndex, offset, lineDiv: el };
+    // Adjust for indent prefix stripped from display (applies to text and list-item with data-indent)
+    if (foundEl.dataset?.indent) {
+      offset += parseInt(foundEl.dataset.indent) * INDENT.length;
+    }
+
+    return { lineIndex: foundIdx, offset, lineDiv: foundEl };
   };
 
   // Handle input (text-only changes from user typing)
@@ -490,8 +522,8 @@ const WritingInterface = () => {
           if (sel && sel.rangeCount) {
             const range = sel.getRangeAt(0);
             const rect = range.getBoundingClientRect();
+            if (!slashPopup) setPopupHighlight(0); // only reset highlight when popup first opens
             setSlashPopup({ rect, filter, lineIndex: info.lineIndex });
-            setPopupHighlight(0);
           }
           return;
         }
@@ -553,7 +585,13 @@ const WritingInterface = () => {
       structuralUpdate(lines.join('\n'), lineIndex, 6);
     } else {
       lines[lineIndex] = command;
-      // Only add empty line if we're at the end of content
+      // For /list: collapse consecutive empty lines below to prevent multiple empty checkboxes
+      if (command === 'list') {
+        let next = lineIndex + 1;
+        while (next + 1 < lines.length && lines[next] === '' && lines[next + 1] === '') {
+          lines.splice(next, 1);
+        }
+      }
       if (lineIndex >= lines.length - 1) lines.splice(lineIndex + 1, 0, '');
       structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
     }
@@ -812,11 +850,16 @@ const WritingInterface = () => {
 
       // Normal enter - split line at offset
       const clampedOffset = Math.min(freshOffset, currentLine.length);
-      // For list items, offset is within clean text
+      // For list items, offset is within clean text (with indent adjustment from getCursorInfo)
       if (lineType === 'list-item') {
-        const clean = getCleanLine(currentLine);
+        const clean = getCleanLine(currentLine); // includes INDENT prefix if any
+        // Compute indent prefix from clean
+        let listIndentLevel = 0;
+        let cleanNoIndent = clean;
+        while (cleanNoIndent.startsWith(INDENT)) { listIndentLevel++; cleanNoIndent = cleanNoIndent.slice(INDENT.length); }
+        const listIndentPrefix = INDENT.repeat(listIndentLevel);
         // Enter on empty list item → exit list using invisible marker
-        if (!clean.trim()) {
+        if (!cleanNoIndent.trim()) {
           freshLines.splice(li, 1, LIST_EXIT);
           structuralUpdate(freshLines.join('\n'), li, 0);
           scrollToLine(li);
@@ -825,7 +868,8 @@ const WritingInterface = () => {
         const struck = isLineStruck(currentLine);
         const off = Math.min(freshOffset, clean.length);
         freshLines[li] = struck ? STRUCK_MARKER + clean.slice(0, off) : clean.slice(0, off);
-        freshLines.splice(li + 1, 0, clean.slice(off));
+        // New line carries indent prefix + text after cursor
+        freshLines.splice(li + 1, 0, listIndentPrefix + clean.slice(off));
       } else if (currentLine.startsWith(LIST_EXIT)) {
         // Keep marker pinned to this line; split only the visible text after it
         const visible = currentLine.slice(LIST_EXIT.length);
@@ -1032,6 +1076,7 @@ const WritingInterface = () => {
     <div
       className="min-h-screen bg-background flex flex-col"
       onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       onWheel={handleWheel}
     >
@@ -1097,6 +1142,7 @@ const WritingInterface = () => {
               onPaste={handlePaste}
               onCut={handleCut}
               onClick={handleEditorClick}
+              onMouseDown={handleEditorMouseDown}
               className={`${useSerif ? 'font-playfair' : 'font-mono'} text-base sm:text-lg font-light tracking-wide text-foreground ce-editor`}
               style={editorStyle}
               spellCheck={spellCheckEnabled}

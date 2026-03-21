@@ -101,14 +101,27 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
         return `<div data-type="timer" data-timer-config="${escapeHTML(getTimerArgs(line))}" data-line="${i}" contenteditable="false" class="ce-timer" data-timer-slot="${i}"></div>`;
       }
       case 'image': {
-        const src = line.slice('img::'.length);
-        return `<div data-type="image" contenteditable="false" class="ce-image" data-line="${i}"><img src="${src}" class="ce-image-img" alt="" /><button class="ce-delete-btn" data-action="delete" data-line="${i}">✕</button></div>`;
+        const payload = line.slice('img::'.length);
+        const lastSep = payload.lastIndexOf('::');
+        let src = payload;
+        let imgWidth: string | null = null;
+        if (lastSep > 0) {
+          const possibleWidth = payload.slice(lastSep + 2);
+          if (/^\d+$/.test(possibleWidth)) { imgWidth = possibleWidth; src = payload.slice(0, lastSep); }
+        }
+        const widthStyle = imgWidth ? ` style="width: ${imgWidth}px; max-width: 100%"` : '';
+        const dataWidth = imgWidth ? ` data-width="${imgWidth}"` : '';
+        return `<div data-type="image" contenteditable="false" class="ce-image" data-line="${i}"${dataWidth}><img src="${src}" class="ce-image-img" alt=""${widthStyle} /><div class="ce-image-resize-handle" data-action="resize" data-line="${i}"></div><button class="ce-delete-btn" data-action="delete" data-line="${i}">✕</button></div>`;
       }
       case 'list-item': {
         const struck = isLineStruck(line);
-        const clean = getCleanLine(line);
+        let clean = getCleanLine(line);
+        // Strip indent prefix, apply as padding-left so checkbox moves with indent
+        let indentLevel = 0;
+        while (clean.startsWith(INDENT)) { indentLevel++; clean = clean.slice(INDENT.length); }
+        const indentAttr = indentLevel > 0 ? ` data-indent="${indentLevel}" style="padding-left: ${indentLevel * 2}em"` : '';
         const escaped = escapeHTML(clean);
-        return `<div data-type="list-item" data-struck="${struck}" data-line="${i}" class="ce-list-item ${struck ? 'ce-struck' : ''}"><span contenteditable="false" class="ce-checkbox ${struck ? 'ce-checked' : ''}" data-action="toggle" data-line="${i}"></span><span class="ce-li-text">${escaped || '<br>'}</span></div>`;
+        return `<div data-type="list-item" data-struck="${struck}" data-line="${i}"${indentAttr} class="ce-list-item ${struck ? 'ce-struck' : ''}"><span contenteditable="false" class="ce-checkbox ${struck ? 'ce-checked' : ''}" data-action="toggle" data-line="${i}"></span><span class="ce-li-text">${escaped || '<br>'}</span></div>`;
       }
       default: {
         const isListExit = line.startsWith(LIST_EXIT);
@@ -148,9 +161,10 @@ export function extractContent(editor: HTMLElement): string {
       return;
     }
     if (type === 'image') {
-      const img = el.querySelector('img');
+      const img = el.querySelector('img') as HTMLImageElement | null;
       const src = img?.getAttribute('src') || '';
-      lines.push(src ? `img::${src}` : '');
+      const width = (el as HTMLElement).dataset.width;
+      lines.push(src ? `img::${src}${width ? '::' + width : ''}` : '');
       return;
     }
     if (type === 'heading1' || type === 'heading2') {
@@ -161,7 +175,9 @@ export function extractContent(editor: HTMLElement): string {
       const struck = el.dataset.struck === 'true';
       const textEl = el.querySelector('.ce-li-text');
       const text = extractText(textEl || el);
-      lines.push(struck ? STRUCK_MARKER + text : text);
+      const indentLevel = el.dataset.indent ? parseInt(el.dataset.indent) || 0 : 0;
+      const prefix = (struck ? STRUCK_MARKER : '') + INDENT.repeat(indentLevel);
+      lines.push(prefix + text);
       return;
     }
     // text type
@@ -253,7 +269,13 @@ export function contentToMarkdown(content: string): string {
     if (type === 'divider') return '---';
     if (type === 'timer' || type === 'list-header') return '';
     if (type === 'image') {
-      const src = line.slice('img::'.length);
+      const payload = line.slice('img::'.length);
+      const lastSep = payload.lastIndexOf('::');
+      let src = payload;
+      if (lastSep > 0) {
+        const possibleWidth = payload.slice(lastSep + 2);
+        if (/^\d+$/.test(possibleWidth)) src = payload.slice(0, lastSep);
+      }
       return `![image](${src})`;
     }
     if (type === 'list-item') {
@@ -263,5 +285,5 @@ export function contentToMarkdown(content: string): string {
     }
     return line.startsWith(LIST_EXIT) ? line.slice(LIST_EXIT.length) : line;
   }).filter((line, i, arr) => !(line === '' && arr[i - 1] === ''))
-    .join('\n').trim();
+    .join('\n') + '\n';
 }
