@@ -77,7 +77,7 @@ export async function writePageFiles(
   try {
     // Only request permission if handle changed or not yet granted
     if (dirHandle !== lastGrantedHandle) {
-      const permission = await dirHandle.requestPermission({ mode: 'readwrite' });
+      const permission = await (dirHandle as any).requestPermission({ mode: 'readwrite' });
       if (permission !== 'granted') return;
       lastGrantedHandle = dirHandle;
     }

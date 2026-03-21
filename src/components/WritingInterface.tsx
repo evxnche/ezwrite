@@ -79,14 +79,14 @@ const WritingInterface = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [timerAlert, setTimerAlert] = useState(false);
   const [pageTransition, setPageTransition] = useState<'none' | 'slide-left' | 'slide-right'>('none');
-  const typingTimeoutRef = useRef<NodeJS.Timeout>();
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const editorRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const editingTimerLineRef = useRef<number | null>(null);
 
   // Page dots — show briefly on page switch
   const [showDots, setShowDots] = useState(false);
-  const dotsTimeoutRef = useRef<NodeJS.Timeout>();
+  const dotsTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
   // Spellcheck toggle (persisted)
   const [spellCheckEnabled, setSpellCheckEnabled] = useState(() =>
@@ -314,7 +314,7 @@ const WritingInterface = () => {
 
   // --- Trackpad two-finger horizontal swipe ---
   const wheelAccum = useRef(0);
-  const wheelTimeout = useRef<NodeJS.Timeout>();
+  const wheelTimeout = useRef<ReturnType<typeof setTimeout>>();
   const wheelCooldown = useRef(false);
   const handleWheel = (e: React.WheelEvent) => {
     if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) * 2) return;
