@@ -180,6 +180,9 @@ const WritingInterface = () => {
   // Persistent portal containers keyed by stableId — survive innerHTML resets
   const timerContainers = useRef<Map<string, HTMLElement>>(new Map());
   const timerStableIds = useRef<Map<string, string>>(new Map());
+  // Tracks the cursor position set by structuralUpdate while the RAF hasn't fired yet.
+  // handleKeyDown uses this instead of live getCursorInfo() during that window.
+  const pendingCursor = useRef<{ lineIndex: number; offset: number } | null>(null);
   // Undo / Redo
   const undoStack = useRef<string[]>([]);
   const redoStack = useRef<string[]>([]);
@@ -277,17 +280,19 @@ const WritingInterface = () => {
     });
     setTimerSlots(timers);
 
-    // Restore cursor synchronously when editor is focused (prevents race with next keydown)
+    // Restore cursor and record where it should be so handleKeyDown can use it
+    // if Enter fires before the RAF (browser sometimes overrides sync restore)
     if (cursorLine !== undefined) {
+      pendingCursor.current = { lineIndex: cursorLine, offset: cursorOffset ?? 0 };
       if (document.activeElement === editorRef.current) {
         setCursorPosition(editorRef.current, cursorLine, cursorOffset ?? 0);
       }
-      // RAF for focus + re-place cursor (handles mount, page switch, non-focused cases)
       requestAnimationFrame(() => {
         if (editorRef.current) {
           editorRef.current.focus({ preventScroll: true });
           setCursorPosition(editorRef.current, cursorLine, cursorOffset ?? 0);
         }
+        pendingCursor.current = null; // RAF fired — Selection API is reliable again
       });
     }
   }, [saveContent]);
@@ -634,7 +639,11 @@ const WritingInterface = () => {
 
   // Key handler
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    const info = getCursorInfo();
+    // Prefer pendingCursor when structuralUpdate has fired but RAF hasn't yet —
+    // the Selection API may be stale in that window regardless of sync restore.
+    const info = pendingCursor.current
+      ? { lineIndex: pendingCursor.current.lineIndex, offset: pendingCursor.current.offset, lineDiv: editorRef.current?.children[pendingCursor.current.lineIndex] as HTMLElement ?? null }
+      : getCursorInfo();
 
     // Popup nav
     if (slashPopup) {
