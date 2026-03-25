@@ -79,7 +79,7 @@ const InfoDialog: React.FC<Props> = ({
           <DialogTitle className="font-mono text-base sm:text-lg truncate lowercase">shortcuts &amp; commands</DialogTitle>
         </DialogHeader>
         {/* Toolbar row below header */}
-        <div className="flex items-center gap-3 pb-2 border-b border-border">
+        <div className="flex items-center gap-3 pb-2 border-b border-border w-full">
           {onToggleFont && (
             <Tooltip delayDuration={0}>
               <TooltipTrigger asChild>
@@ -138,6 +138,14 @@ const InfoDialog: React.FC<Props> = ({
               <TooltipContent>{dirName ? `saving to /${dirName} — click to change` : 'choose save folder'}</TooltipContent>
             </Tooltip>
           )}
+          <button
+            onClick={handleCheckUpdate}
+            disabled={updateStatus === 'checking'}
+            className="ml-auto font-mono text-xs lowercase transition-colors disabled:opacity-40"
+            style={{ color: updateStatus === 'done' ? 'hsl(var(--accent-foreground))' : 'hsl(var(--muted-foreground))' }}
+          >
+            {updateStatus === 'checking' ? 'checking...' : updateStatus === 'done' ? 'up to date ✓' : 'update'}
+          </button>
         </div>
         <div className="relative">
           <div
@@ -210,13 +218,6 @@ const InfoDialog: React.FC<Props> = ({
                 <li><span className="text-foreground">mac (safari, sonoma+):</span> tap the share icon in the toolbar → "add to dock"</li>
                 <li><span className="text-foreground">mac / desktop (chrome / edge):</span> look for the install icon in the address bar</li>
               </ul>
-              <button
-                onClick={handleCheckUpdate}
-                disabled={updateStatus === 'checking'}
-                className="mt-2 ml-3 text-accent-foreground hover:underline text-sm font-mono lowercase disabled:opacity-50"
-              >
-                {updateStatus === 'checking' ? 'checking...' : updateStatus === 'done' ? 'up to date ✓' : 'check for updates →'}
-              </button>
               {canInstall && (
                 <button
                   onClick={onInstall}
