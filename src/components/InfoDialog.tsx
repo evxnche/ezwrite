@@ -81,7 +81,7 @@ const InfoDialog: React.FC<Props> = ({
         {/* Toolbar row below header */}
         <div className="flex items-center gap-3 pb-2 border-b border-border w-full">
           {onToggleFont && (
-            <Tooltip delayDuration={0}>
+            <Tooltip delayDuration={400}>
               <TooltipTrigger asChild>
                 <button
                   onClick={onToggleFont}
@@ -91,7 +91,7 @@ const InfoDialog: React.FC<Props> = ({
                   A
                 </button>
               </TooltipTrigger>
-              <TooltipContent>{useSerif ? 'switch to monospace' : 'switch to serif'}</TooltipContent>
+              <TooltipContent>{useSerif ? 'switch to sans serif' : 'switch to serif'}</TooltipContent>
             </Tooltip>
           )}
           {onToggleSpellCheck && (
