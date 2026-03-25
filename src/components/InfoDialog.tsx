@@ -144,7 +144,7 @@ const InfoDialog: React.FC<Props> = ({
             className="ml-auto font-mono text-xs lowercase transition-colors disabled:opacity-40"
             style={{ color: updateStatus === 'done' ? 'hsl(var(--accent-foreground))' : 'hsl(var(--muted-foreground))' }}
           >
-            {updateStatus === 'checking' ? 'checking...' : updateStatus === 'done' ? 'up to date ✓' : 'update'}
+            {updateStatus === 'checking' ? 'checking...' : updateStatus === 'done' ? 'up to date ✓' : 'click to update'}
           </button>
         </div>
         <div className="relative">
