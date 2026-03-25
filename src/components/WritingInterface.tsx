@@ -257,8 +257,12 @@ const WritingInterface = () => {
     });
     setTimerSlots(timers);
 
-    // Restore cursor
+    // Restore cursor synchronously when editor is focused (prevents race with next keydown)
     if (cursorLine !== undefined) {
+      if (document.activeElement === editorRef.current) {
+        setCursorPosition(editorRef.current, cursorLine, cursorOffset ?? 0);
+      }
+      // RAF for focus + re-place cursor (handles mount, page switch, non-focused cases)
       requestAnimationFrame(() => {
         if (editorRef.current) {
           editorRef.current.focus({ preventScroll: true });
@@ -777,13 +781,8 @@ const WritingInterface = () => {
 
       const freshContent = extractContent(editorRef.current!);
       const freshLines = freshContent.split('\n');
-
-      // Bug 6: re-read cursor position after extractContent to get fresh offset
-      const freshInfo = getCursorInfo();
-      const freshOffset = freshInfo?.offset ?? offset;
-
-      // Recompute cursor info from fresh content
-      const li = Math.min(freshInfo?.lineIndex ?? lineIndex, freshLines.length - 1);
+      const freshOffset = offset;
+      const li = Math.min(lineIndex, freshLines.length - 1);
       const currentLine = freshLines[li] || '';
 
       // Timer editing mode
