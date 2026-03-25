@@ -34,6 +34,17 @@ const InfoDialog: React.FC<Props> = ({
   onToggleColorTheme,
 }) => {
   const [canInstall, setCanInstall] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'done'>('idle');
+
+  const handleCheckUpdate = async () => {
+    setUpdateStatus('checking');
+    try {
+      const reg = await navigator.serviceWorker?.getRegistration();
+      if (reg) await reg.update();
+    } catch {}
+    setUpdateStatus('done');
+    setTimeout(() => setUpdateStatus('idle'), 3000);
+  };
   const fsSupported = isFileSystemSupported();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(false);
@@ -199,6 +210,13 @@ const InfoDialog: React.FC<Props> = ({
                 <li><span className="text-foreground">mac (safari, sonoma+):</span> tap the share icon in the toolbar → "add to dock"</li>
                 <li><span className="text-foreground">mac / desktop (chrome / edge):</span> look for the install icon in the address bar</li>
               </ul>
+              <button
+                onClick={handleCheckUpdate}
+                disabled={updateStatus === 'checking'}
+                className="mt-2 ml-3 text-accent-foreground hover:underline text-sm font-mono lowercase disabled:opacity-50"
+              >
+                {updateStatus === 'checking' ? 'checking...' : updateStatus === 'done' ? 'up to date ✓' : 'check for updates →'}
+              </button>
               {canInstall && (
                 <button
                   onClick={onInstall}
