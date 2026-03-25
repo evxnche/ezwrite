@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Sun, Moon, Download, Palette } from 'lucide-react';
+import { Sun, Moon, Download } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1129,11 +1129,6 @@ const WritingInterface = () => {
           ez.
         </span>
         <div className="flex items-center gap-3">
-          {mounted && (
-            <button onClick={handleToggleColorTheme} title="change colour theme" className={`transition-colors ${colorTheme ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
-              <Palette size={16} />
-            </button>
-          )}
           {mounted && (
             <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="text-muted-foreground hover:text-foreground transition-colors">
               {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
