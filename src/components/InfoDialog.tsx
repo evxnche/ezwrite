@@ -174,6 +174,7 @@ const InfoDialog: React.FC<Props> = ({
             <section>
               <h3 className="font-semibold mb-1.5 text-accent-foreground">timer options</h3>
               <ul className="space-y-1 text-muted-foreground ml-3">
+                <li><span className="text-foreground">/timer</span> — stopwatch</li>
                 <li><span className="text-foreground">/timer 5</span> — five min countdown</li>
                 <li><span className="text-foreground">/timer 15:30</span> — countdown to 3:30pm</li>
                 <li><span className="text-foreground">/timer 57 11</span> — custom pomodoro</li>
@@ -212,11 +213,11 @@ const InfoDialog: React.FC<Props> = ({
 
             <section>
               <h3 className="font-semibold mb-1.5 text-accent-foreground">install as app</h3>
-              <ul className="space-y-1 text-muted-foreground ml-3">
+              <ul className="space-y-1 text-muted-foreground ml-3 text-xs">
                 <li><span className="text-foreground">iphone / ipad:</span> tap the share icon → "add to home screen"</li>
                 <li><span className="text-foreground">android:</span> tap browser menu → "add to home screen" or "install app"</li>
-                <li><span className="text-foreground">mac (safari, sonoma+):</span> tap the share icon in the toolbar → "add to dock"</li>
-                <li><span className="text-foreground">mac / desktop (chrome / edge):</span> look for the install icon in the address bar</li>
+                <li><span className="text-foreground">mac (safari, sonoma+):</span> share icon in toolbar → "add to dock"</li>
+                <li><span className="text-foreground">mac / desktop (chrome / edge):</span> install icon in the address bar</li>
               </ul>
               {canInstall && (
                 <button
