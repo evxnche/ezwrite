@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Sun, Moon, Download } from 'lucide-react';
+import { Sun, Moon, Download, Plus } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -87,6 +87,20 @@ const WritingInterface = () => {
   // Page dots — show briefly on page switch
   const [showDots, setShowDots] = useState(false);
   const dotsTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Touch device + keyboard height (for floating / button)
+  const isTouchDevice = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
+  )[0];
+  const [kbHeight, setKbHeight] = useState(0);
+  useEffect(() => {
+    if (!isTouchDevice) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => setKbHeight(Math.max(0, window.innerHeight - vv.height - vv.offsetTop));
+    vv.addEventListener('resize', update);
+    return () => vv.removeEventListener('resize', update);
+  }, [isTouchDevice]);
 
   // Color theme toggle — cycles: '' → 'blue' → 'green' → 'red' → ''
   const COLOR_THEMES = ['', 'blue', 'green', 'red'] as const;
@@ -1243,6 +1257,23 @@ const WritingInterface = () => {
           />
         ))}
       </div>
+
+      {/* Floating / button — mobile only, inserts / to trigger command popup */}
+      {isTouchDevice && !slashPopup && (
+        <button
+          onPointerDown={(e) => {
+            e.preventDefault(); // keep editor focused / keyboard up
+            if (editorRef.current) {
+              editorRef.current.focus();
+              document.execCommand('insertText', false, '/');
+            }
+          }}
+          className="fixed right-4 z-50 w-11 h-11 rounded-full bg-popover border border-border text-muted-foreground flex items-center justify-center shadow-lg transition-colors"
+          style={{ bottom: kbHeight + 20 }}
+        >
+          <Plus size={18} />
+        </button>
+      )}
 
       {/* Footer */}
       <div className="fixed bottom-3 left-0 right-0 text-center pointer-events-none opacity-40 hover:opacity-70 transition-opacity duration-300">
