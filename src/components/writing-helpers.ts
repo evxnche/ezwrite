@@ -149,10 +149,38 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
 
 export function extractContent(editor: HTMLElement): string {
   const lines: string[] = [];
+  let looseText = '';
+
+  const flushLooseText = () => {
+    lines.push(looseText);
+    looseText = '';
+  };
+
   editor.childNodes.forEach(node => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      looseText += node.textContent || '';
+      return;
+    }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
+
     const el = node as HTMLElement;
     const type = el.dataset.type;
+    if (!type) {
+      const tag = el.tagName.toUpperCase();
+      if (tag === 'BR') {
+        flushLooseText();
+        return;
+      }
+      if (tag === 'DIV' || tag === 'P') {
+        if (looseText) flushLooseText();
+        lines.push(extractText(el));
+        return;
+      }
+      looseText += extractText(el);
+      return;
+    }
+
+    if (looseText) flushLooseText();
     if (type === 'list-header') { lines.push('list'); return; }
     if (type === 'divider') { lines.push('line'); return; }
     if (type === 'timer') {
@@ -187,6 +215,9 @@ export function extractContent(editor: HTMLElement): string {
     const result = indentLevel > 0 ? INDENT.repeat(indentLevel) + text : text;
     lines.push(el.dataset.listExit === '1' ? LIST_EXIT + result : result);
   });
+
+  if (looseText) flushLooseText();
+
   return lines.join('\n');
 }
 

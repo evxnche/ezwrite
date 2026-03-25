@@ -331,18 +331,45 @@ const WritingInterface = () => {
       const sel = window.getSelection();
       if (!sel || !sel.rangeCount) return;
       const range = sel.getRangeAt(0);
-      if (range.startContainer !== el) return; // already inside a div — fine
+
+      // Case 1: cursor is inside a raw text node that's a direct child of the editor
+      if (range.startContainer.nodeType === Node.TEXT_NODE &&
+          range.startContainer.parentNode === el) {
+        const divs = Array.from(el.childNodes).filter(n => n.nodeType === Node.ELEMENT_NODE);
+        const target = divs[0] as HTMLElement | undefined;
+        if (target) {
+          try {
+            const newRange = document.createRange();
+            newRange.selectNodeContents(target);
+            newRange.collapse(false); // end of div
+            sel.removeAllRanges();
+            sel.addRange(newRange);
+          } catch { /* ignore */ }
+        }
+        return;
+      }
+
+      // Case 2: cursor is at the editor container level
+      if (range.startContainer !== el) return;
       const children = el.childNodes;
       if (!children.length) return;
       const childOffset = range.startOffset;
-      const target = childOffset === 0
-        ? children[0]
-        : children[Math.min(childOffset, children.length) - 1];
-      if (target.nodeType !== Node.ELEMENT_NODE) return;
+      // Find the nearest element node (skip raw text nodes)
+      let target: Node | null = null;
+      if (childOffset === 0) {
+        for (let i = 0; i < children.length; i++) {
+          if (children[i].nodeType === Node.ELEMENT_NODE) { target = children[i]; break; }
+        }
+      } else {
+        for (let i = Math.min(childOffset, children.length) - 1; i >= 0; i--) {
+          if (children[i].nodeType === Node.ELEMENT_NODE) { target = children[i]; break; }
+        }
+      }
+      if (!target) return;
       try {
         const newRange = document.createRange();
         newRange.selectNodeContents(target);
-        newRange.collapse(childOffset === 0); // start of first div, or end of previous div
+        newRange.collapse(childOffset === 0);
         sel.removeAllRanges();
         sel.addRange(newRange);
       } catch { /* ignore */ }
@@ -595,6 +622,17 @@ const WritingInterface = () => {
   // Handle input (text-only changes from user typing)
   const handleInput = useCallback(() => {
     if (!editorRef.current) return;
+
+    // Detect raw text nodes at container level — if found, DOM is corrupted.
+    // Re-render to fix structure. extractContent now captures raw text content.
+    let hasRawText = false;
+    for (const node of editorRef.current.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE && node.textContent) {
+        hasRawText = true;
+        break;
+      }
+    }
+
     let newContent = extractContent(editorRef.current);
 
     // Bug 12: strip lone leading spaces (mobile keyboard artifact) — preserve INDENT (8 spaces)
@@ -607,6 +645,32 @@ const WritingInterface = () => {
 
     saveContent(newContent);
     triggerTyping();
+
+    if (hasRawText) {
+      // DOM has raw text nodes — figure out cursor position, then re-render cleanly
+      const sel = window.getSelection();
+      let fixLine = 0, fixOffset = 0;
+      if (sel?.rangeCount) {
+        const range = sel.getRangeAt(0);
+        // If cursor is in a raw text node, compute position from it
+        if (range.startContainer.nodeType === Node.TEXT_NODE &&
+            range.startContainer.parentNode === editorRef.current) {
+          fixOffset = range.startOffset;
+          // Count nodes before cursor to find line index
+          let idx = 0;
+          for (const child of editorRef.current.childNodes) {
+            if (child === range.startContainer) break;
+            idx++;
+          }
+          fixLine = idx;
+        } else {
+          const info = getCursorInfo();
+          if (info) { fixLine = info.lineIndex; fixOffset = info.offset; }
+        }
+      }
+      structuralUpdate(newContent, fixLine, fixOffset);
+      return;
+    }
 
     // Check for slash commands
     const info = getCursorInfo();
