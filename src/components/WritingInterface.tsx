@@ -67,7 +67,7 @@ const WritingInterface = () => {
   }
 
   const getPageContent = (index: number): string =>
-    pagesRef.current[index] || getDefaultPage(index);
+    pagesRef.current[index] ?? getDefaultPage(index);
 
   const [currentPage, setCurrentPage] = useState(0);
   const currentPageRef = useRef(0);
