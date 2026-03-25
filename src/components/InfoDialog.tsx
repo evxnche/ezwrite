@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { SpellCheck, Folder } from 'lucide-react';
+import { SpellCheck, Folder, Palette } from 'lucide-react';
 import { isFileSystemSupported } from '@/lib/storage';
 
 interface Props {
@@ -15,6 +15,8 @@ interface Props {
   onToggleSpellCheck?: () => void;
   useSerif?: boolean;
   onToggleFont?: () => void;
+  colorTheme?: string;
+  onToggleColorTheme?: () => void;
 }
 
 const InfoDialog: React.FC<Props> = ({
@@ -28,6 +30,8 @@ const InfoDialog: React.FC<Props> = ({
   onToggleSpellCheck,
   useSerif,
   onToggleFont,
+  colorTheme,
+  onToggleColorTheme,
 }) => {
   const [canInstall, setCanInstall] = useState(false);
   const fsSupported = isFileSystemSupported();
@@ -91,6 +95,22 @@ const InfoDialog: React.FC<Props> = ({
                 </button>
               </TooltipTrigger>
               <TooltipContent>{spellCheckEnabled ? 'disable spellcheck' : 'enable spellcheck'}</TooltipContent>
+            </Tooltip>
+          )}
+          {onToggleColorTheme && (
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={onToggleColorTheme}
+                  className="transition-colors"
+                  style={{ color: colorTheme ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))' }}
+                >
+                  <Palette size={15} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {!colorTheme ? 'blue theme' : colorTheme === 'blue' ? 'green theme' : colorTheme === 'green' ? 'red theme' : 'original theme'}
+              </TooltipContent>
             </Tooltip>
           )}
           {fsSupported && onPickFolder && (

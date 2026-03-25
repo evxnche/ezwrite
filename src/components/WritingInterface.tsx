@@ -88,21 +88,22 @@ const WritingInterface = () => {
   const [showDots, setShowDots] = useState(false);
   const dotsTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
-  // Color theme toggle (persisted)
-  const [colorTheme, setColorTheme] = useState(() =>
-    localStorage.getItem('ezwrite-color-theme') === 'true'
+  // Color theme toggle — cycles: '' → 'blue' → 'green' → 'red' → ''
+  const COLOR_THEMES = ['', 'blue', 'green', 'red'] as const;
+  const [colorTheme, setColorTheme] = useState<string>(() =>
+    localStorage.getItem('ezwrite-color-theme') || ''
   );
   useEffect(() => {
     if (colorTheme) {
-      document.documentElement.classList.add('color-theme');
+      document.documentElement.setAttribute('data-color-theme', colorTheme);
     } else {
-      document.documentElement.classList.remove('color-theme');
+      document.documentElement.removeAttribute('data-color-theme');
     }
   }, [colorTheme]);
   const handleToggleColorTheme = () => {
     setColorTheme(v => {
-      const next = !v;
-      localStorage.setItem('ezwrite-color-theme', String(next));
+      const next = COLOR_THEMES[(COLOR_THEMES.indexOf(v as typeof COLOR_THEMES[number]) + 1) % COLOR_THEMES.length];
+      localStorage.setItem('ezwrite-color-theme', next);
       return next;
     });
   };
@@ -1082,14 +1083,24 @@ const WritingInterface = () => {
     downloadOrShare(pdfBlob, filename);
   };
 
+  // Glow helpers — matches text hue for color themes, original warm glow otherwise
+  const glowHsl = colorTheme
+    ? (isDark ? '53 38% 87%' : colorTheme === 'blue' ? '218 33% 46%' : colorTheme === 'green' ? '139 34% 24%' : '0 43% 34%')
+    : null;
+  const titleGlow: React.CSSProperties = glowHsl
+    ? { textShadow: `0 0 20px hsl(${glowHsl} / 0.28), 0 0 40px hsl(${glowHsl} / 0.13)` }
+    : isDark ? { textShadow: '0 0 20px hsl(40 60% 70% / 0.2), 0 0 40px hsl(35 50% 60% / 0.10)' } : {};
+
   // Editor styles
   const editorStyle: React.CSSProperties = {
     lineHeight: '1.8',
-    caretColor: isDark ? 'hsl(40 60% 85%)' : 'hsl(0 0% 25%)',
+    caretColor: glowHsl ? `hsl(${glowHsl})` : (isDark ? 'hsl(40 60% 85%)' : 'hsl(0 0% 25%)'),
     outline: 'none',
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-word',
-    ...(isDark ? { textShadow: '0 0 10px hsl(40 60% 70% / 0.22), 0 0 25px hsl(35 50% 60% / 0.12)' } : {}),
+    ...(glowHsl
+      ? { textShadow: `0 0 10px hsl(${glowHsl} / 0.18), 0 0 25px hsl(${glowHsl} / 0.10)` }
+      : isDark ? { textShadow: '0 0 10px hsl(40 60% 70% / 0.22), 0 0 25px hsl(35 50% 60% / 0.12)' } : {}),
   };
 
   return (
@@ -1113,13 +1124,13 @@ const WritingInterface = () => {
       <div className="flex justify-between items-center p-4 sm:p-6 opacity-60 hover:opacity-100 transition-opacity duration-300 bg-background">
         <span
           className="font-playfair text-xl sm:text-2xl text-foreground tracking-wide"
-          style={isDark ? { textShadow: '0 0 20px hsl(40 60% 70% / 0.2), 0 0 40px hsl(35 50% 60% / 0.10)' } : {}}
+          style={titleGlow}
         >
           ez.
         </span>
         <div className="flex items-center gap-3">
           {mounted && (
-            <button onClick={handleToggleColorTheme} className={`transition-colors ${colorTheme ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+            <button onClick={handleToggleColorTheme} title="change colour theme" className={`transition-colors ${colorTheme ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
               <Palette size={16} />
             </button>
           )}
@@ -1201,7 +1212,7 @@ const WritingInterface = () => {
       <div className="fixed bottom-3 left-0 right-0 text-center pointer-events-none opacity-40 hover:opacity-70 transition-opacity duration-300">
         <span
           className="font-playfair text-xs sm:text-sm text-foreground tracking-wide pointer-events-auto"
-          style={isDark ? { textShadow: '0 0 20px hsl(40 60% 70% / 0.2), 0 0 40px hsl(35 50% 60% / 0.10)' } : {}}
+          style={titleGlow}
         >
           built by evan :)
         </span>
@@ -1254,6 +1265,8 @@ const WritingInterface = () => {
         onToggleSpellCheck={handleToggleSpellCheck}
         useSerif={useSerif}
         onToggleFont={handleToggleFont}
+        colorTheme={colorTheme}
+        onToggleColorTheme={handleToggleColorTheme}
       />
     </div>
   );
