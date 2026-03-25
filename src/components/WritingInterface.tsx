@@ -197,6 +197,11 @@ const WritingInterface = () => {
   // Tracks the cursor position set by structuralUpdate while the RAF hasn't fired yet.
   // handleKeyDown uses this instead of live getCursorInfo() during that window.
   const pendingCursor = useRef<{ lineIndex: number; offset: number } | null>(null);
+  // Continuously tracked cursor from selectionchange — fallback when pendingCursor is null
+  // and getCursorInfo() might return stale state (e.g. cursor at container level after innerHTML reset).
+  const trackedCursor = useRef<{ lineIndex: number; offset: number } | null>(null);
+  // True while structuralUpdate is resetting innerHTML — suppresses selectionchange tracking.
+  const isResettingDOM = useRef(false);
   // Undo / Redo
   const undoStack = useRef<string[]>([]);
   const redoStack = useRef<string[]>([]);
@@ -258,9 +263,11 @@ const WritingInterface = () => {
     saveContent(content);
     if (!editorRef.current) return;
 
+    isResettingDOM.current = true;
     editorRef.current.innerHTML = contentToHTML(content, {
       editingTimerLine: editingTimerLineRef.current ?? undefined,
     });
+    isResettingDOM.current = false;
 
     // Find timer slots and re-attach persistent containers
     const lines = content.split('\n');
@@ -297,6 +304,7 @@ const WritingInterface = () => {
     // Restore cursor and record where it should be so handleKeyDown can use it
     // if Enter fires before the RAF (browser sometimes overrides sync restore)
     if (cursorLine !== undefined) {
+      trackedCursor.current = { lineIndex: cursorLine, offset: cursorOffset ?? 0 };
       pendingCursor.current = { lineIndex: cursorLine, offset: cursorOffset ?? 0 };
       if (document.activeElement === editorRef.current) {
         setCursorPosition(editorRef.current, cursorLine, cursorOffset ?? 0);
@@ -342,6 +350,21 @@ const WritingInterface = () => {
     el.addEventListener('beforeinput', ensureCursorInDiv);
     return () => el.removeEventListener('beforeinput', ensureCursorInDiv);
   }, []);
+
+  // --- Continuous cursor tracking via selectionchange ---
+  // getCursorInfo() can return stale data when the cursor is at the editor container
+  // level after an innerHTML reset (even with the sync restore + RAF). selectionchange
+  // fires after every cursor move (typing, clicking, arrows), so we always have a
+  // fresh known-good position for handleKeyDown to fall back on.
+  useEffect(() => {
+    const handler = () => {
+      if (isResettingDOM.current) return; // ignore events fired during innerHTML reset
+      const info = getCursorInfo();
+      if (info) trackedCursor.current = { lineIndex: info.lineIndex, offset: info.offset };
+    };
+    document.addEventListener('selectionchange', handler);
+    return () => document.removeEventListener('selectionchange', handler);
+  }, []); // getCursorInfo only uses stable refs (editorRef) — closure is safe
 
   // --- Mount ---
   useEffect(() => {
@@ -685,10 +708,12 @@ const WritingInterface = () => {
 
   // Key handler
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    // Prefer pendingCursor when structuralUpdate has fired but RAF hasn't yet —
-    // the Selection API may be stale in that window regardless of sync restore.
-    const info = pendingCursor.current
-      ? { lineIndex: pendingCursor.current.lineIndex, offset: pendingCursor.current.offset, lineDiv: editorRef.current?.children[pendingCursor.current.lineIndex] as HTMLElement ?? null }
+    // Priority: pendingCursor (set by structuralUpdate, RAF not yet fired)
+    //        → trackedCursor (last known-good from selectionchange)
+    //        → live getCursorInfo() (may return stale state at container level)
+    const _cursor = pendingCursor.current ?? trackedCursor.current;
+    const info = _cursor
+      ? { lineIndex: _cursor.lineIndex, offset: _cursor.offset, lineDiv: editorRef.current?.children[_cursor.lineIndex] as HTMLElement ?? null }
       : getCursorInfo();
 
     // Popup nav

@@ -2,23 +2,23 @@ import React from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 
 const UpdateBanner: React.FC = () => {
-  const { needRefresh: [needRefresh], registration } = useRegisterSW();
+  const { needRefresh: [needRefresh, setNeedRefresh], updateServiceWorker, registration } = useRegisterSW();
 
   if (!needRefresh) return null;
 
   const handleUpdate = () => {
-    const reg = registration?.active ? registration : null;
-    const waiting = registration?.waiting;
+    // registration is a React ref — must use .current to get the ServiceWorkerRegistration
+    const waiting = registration.current?.waiting;
     if (waiting) {
-      // Wait for the new SW to take control before reloading.
-      // On iOS Safari, reloading immediately after postMessage doesn't work —
-      // the page reloads before the new SW is active, so nothing updates.
+      // iOS Safari: reloading immediately after SKIP_WAITING doesn't activate the new SW.
+      // Wait for controllerchange (new SW took control) before reloading.
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         window.location.reload();
       }, { once: true });
       waiting.postMessage({ type: 'SKIP_WAITING' });
+      setNeedRefresh(false); // clear the banner immediately
     } else {
-      window.location.reload();
+      updateServiceWorker(true); // standard update flow (clears needRefresh + reloads)
     }
   };
 
