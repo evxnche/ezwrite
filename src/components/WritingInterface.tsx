@@ -297,6 +297,38 @@ const WritingInterface = () => {
     }
   }, [saveContent]);
 
+  // --- Cursor normalizer ---
+  // When structuralUpdate resets innerHTML, the browser can leave the cursor at the
+  // editor container level (not inside a line div). Typing then inserts a raw text node
+  // that extractContent silently skips, making typed text vanish. This beforeinput
+  // listener moves the cursor inside the correct div before any character lands.
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    const ensureCursorInDiv = () => {
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount) return;
+      const range = sel.getRangeAt(0);
+      if (range.startContainer !== el) return; // already inside a div — fine
+      const children = el.childNodes;
+      if (!children.length) return;
+      const childOffset = range.startOffset;
+      const target = childOffset === 0
+        ? children[0]
+        : children[Math.min(childOffset, children.length) - 1];
+      if (target.nodeType !== Node.ELEMENT_NODE) return;
+      try {
+        const newRange = document.createRange();
+        newRange.selectNodeContents(target);
+        newRange.collapse(childOffset === 0); // start of first div, or end of previous div
+        sel.removeAllRanges();
+        sel.addRange(newRange);
+      } catch { /* ignore */ }
+    };
+    el.addEventListener('beforeinput', ensureCursorInDiv);
+    return () => el.removeEventListener('beforeinput', ensureCursorInDiv);
+  }, []);
+
   // --- Mount ---
   useEffect(() => {
     setMounted(true);
