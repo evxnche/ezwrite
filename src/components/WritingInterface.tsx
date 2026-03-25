@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Sun, Moon, Download } from 'lucide-react';
+import { Sun, Moon, Download, Palette } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -87,6 +87,25 @@ const WritingInterface = () => {
   // Page dots — show briefly on page switch
   const [showDots, setShowDots] = useState(false);
   const dotsTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Color theme toggle (persisted)
+  const [colorTheme, setColorTheme] = useState(() =>
+    localStorage.getItem('ezwrite-color-theme') === 'true'
+  );
+  useEffect(() => {
+    if (colorTheme) {
+      document.documentElement.classList.add('color-theme');
+    } else {
+      document.documentElement.classList.remove('color-theme');
+    }
+  }, [colorTheme]);
+  const handleToggleColorTheme = () => {
+    setColorTheme(v => {
+      const next = !v;
+      localStorage.setItem('ezwrite-color-theme', String(next));
+      return next;
+    });
+  };
 
   // Spellcheck toggle (persisted)
   const [spellCheckEnabled, setSpellCheckEnabled] = useState(() =>
@@ -1099,6 +1118,11 @@ const WritingInterface = () => {
           ez.
         </span>
         <div className="flex items-center gap-3">
+          {mounted && (
+            <button onClick={handleToggleColorTheme} className={`transition-colors ${colorTheme ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+              <Palette size={16} />
+            </button>
+          )}
           {mounted && (
             <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="text-muted-foreground hover:text-foreground transition-colors">
               {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
