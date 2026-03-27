@@ -881,20 +881,20 @@ const WritingInterface = () => {
       }
     }
 
-    // Alt+Left/Right — switch page
-    if (e.altKey && e.key === 'ArrowLeft') {
+    // Cmd/Ctrl+Left/Right — switch page
+    if ((e.metaKey || e.ctrlKey) && e.key === 'ArrowLeft') {
       e.preventDefault();
       switchToPage(currentPageRef.current - 1);
       return;
     }
-    if (e.altKey && e.key === 'ArrowRight') {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'ArrowRight') {
       e.preventDefault();
       switchToPage(currentPageRef.current + 1);
       return;
     }
 
-    // Alt/Opt+Arrow move line
-    if (e.altKey && e.key === 'ArrowUp') {
+    // Cmd/Ctrl+Arrow move line
+    if ((e.metaKey || e.ctrlKey) && e.key === 'ArrowUp') {
       e.preventDefault();
       if (lineIndex > 0) {
         pushUndo(true);
@@ -905,7 +905,7 @@ const WritingInterface = () => {
       }
       return;
     }
-    if (e.altKey && e.key === 'ArrowDown') {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'ArrowDown') {
       e.preventDefault();
       if (lineIndex < lines.length - 1) {
         pushUndo(true);
