@@ -7,17 +7,13 @@ const UpdateBanner: React.FC = () => {
   if (!needRefresh) return null;
 
   const handleUpdate = () => {
-    setNeedRefresh(false); // always dismiss the banner immediately
+    setNeedRefresh(false);
     const waiting = registration.current?.waiting;
     if (waiting) {
-      let reloaded = false;
-      const reload = () => { if (!reloaded) { reloaded = true; window.location.reload(); } };
-      navigator.serviceWorker.addEventListener('controllerchange', reload, { once: true });
       waiting.postMessage({ type: 'SKIP_WAITING' });
-      setTimeout(reload, 2000);
-    } else {
-      window.location.reload();
     }
+    // Give the SW a moment to activate, then reload unconditionally
+    setTimeout(() => window.location.reload(), 400);
   };
 
   return (
