@@ -7,18 +7,16 @@ const UpdateBanner: React.FC = () => {
   if (!needRefresh) return null;
 
   const handleUpdate = () => {
+    setNeedRefresh(false); // always dismiss the banner immediately
     const waiting = registration.current?.waiting;
     if (waiting) {
-      // iOS Safari: reloading immediately after SKIP_WAITING doesn't activate the new SW.
-      // Wait for controllerchange before reloading, with a 2s fallback in case it never fires.
       let reloaded = false;
       const reload = () => { if (!reloaded) { reloaded = true; window.location.reload(); } };
       navigator.serviceWorker.addEventListener('controllerchange', reload, { once: true });
       waiting.postMessage({ type: 'SKIP_WAITING' });
-      setNeedRefresh(false);
       setTimeout(reload, 2000);
     } else {
-      updateServiceWorker(true);
+      window.location.reload();
     }
   };
 
