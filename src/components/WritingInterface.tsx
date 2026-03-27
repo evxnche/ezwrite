@@ -881,7 +881,19 @@ const WritingInterface = () => {
       }
     }
 
-    // Alt+Arrow move line
+    // Alt+Left/Right — switch page
+    if (e.altKey && e.key === 'ArrowLeft') {
+      e.preventDefault();
+      switchToPage(currentPageRef.current - 1);
+      return;
+    }
+    if (e.altKey && e.key === 'ArrowRight') {
+      e.preventDefault();
+      switchToPage(currentPageRef.current + 1);
+      return;
+    }
+
+    // Alt/Opt+Arrow move line
     if (e.altKey && e.key === 'ArrowUp') {
       e.preventDefault();
       if (lineIndex > 0) {
