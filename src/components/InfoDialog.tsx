@@ -188,7 +188,7 @@ const InfoDialog: React.FC<Props> = ({
                 <li><span className="text-foreground">cmd/ctrl+↑/↓</span> — move line up/down</li>
                 <li>
                   <span className="text-foreground">cmd/ctrl+←/→</span> — switch between pages<br />
-                  <span className="ml-0 text-muted-foreground">or use 2-finger swipe</span>
+                  <span className="ml-0 text-muted-foreground">(or use 2-finger swipe)</span>
                 </li>
                 <li>type <span className="text-foreground">/x</span> at end of a list item to toggle strikethrough</li>
               </ul>
