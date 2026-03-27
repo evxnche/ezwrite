@@ -185,9 +185,8 @@ const InfoDialog: React.FC<Props> = ({
               <h3 className="font-semibold mb-1.5 text-accent-foreground">shortcuts</h3>
               <ul className="space-y-1 text-muted-foreground ml-3">
                 <li><span className="text-foreground">cmd/ctrl+↑/↓</span> — move line up/down</li>
-                <li><span className="text-foreground">cmd/ctrl+←/→</span> — switch between pages</li>
+                <li><span className="text-foreground">cmd/ctrl+←/→</span> — switch between pages (or 2-finger swipe)</li>
                 <li>type <span className="text-foreground">/x</span> at end of a list item to toggle strikethrough</li>
-                <li>swipe left or right to switch between 5 pages</li>
               </ul>
             </section>
 
