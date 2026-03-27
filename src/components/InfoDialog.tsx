@@ -96,10 +96,11 @@ const InfoDialog: React.FC<Props> = ({
             </Tooltip>
           )}
           {onToggleSpellCheck && (
-            <Tooltip delayDuration={0}>
+            <Tooltip delayDuration={400}>
               <TooltipTrigger asChild>
                 <button
                   onClick={onToggleSpellCheck}
+                  tabIndex={-1}
                   className="transition-colors"
                   style={{ color: spellCheckEnabled ? 'hsl(var(--accent-foreground))' : 'hsl(var(--muted-foreground))' }}
                 >
@@ -110,10 +111,11 @@ const InfoDialog: React.FC<Props> = ({
             </Tooltip>
           )}
           {onToggleColorTheme && (
-            <Tooltip delayDuration={0}>
+            <Tooltip delayDuration={400}>
               <TooltipTrigger asChild>
                 <button
                   onClick={onToggleColorTheme}
+                  tabIndex={-1}
                   className="transition-colors"
                   style={{ color: colorTheme ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))' }}
                 >
@@ -126,10 +128,11 @@ const InfoDialog: React.FC<Props> = ({
             </Tooltip>
           )}
           {fsSupported && onPickFolder && (
-            <Tooltip delayDuration={0}>
+            <Tooltip delayDuration={400}>
               <TooltipTrigger asChild>
                 <button
                   onClick={onPickFolder}
+                  tabIndex={-1}
                   className="transition-colors"
                   style={{ color: dirName ? 'hsl(var(--accent-foreground))' : 'hsl(var(--muted-foreground))' }}
                 >
