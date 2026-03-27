@@ -85,6 +85,7 @@ const InfoDialog: React.FC<Props> = ({
               <TooltipTrigger asChild>
                 <button
                   onClick={onToggleFont}
+                  tabIndex={-1}
                   className="transition-colors font-serif text-base leading-none select-none"
                   style={{ color: useSerif ? 'hsl(var(--accent-foreground))' : 'hsl(var(--muted-foreground))' }}
                 >
