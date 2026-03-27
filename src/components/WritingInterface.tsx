@@ -1278,16 +1278,12 @@ const WritingInterface = () => {
 
       {/* Header */}
       <div className="flex justify-between items-center p-4 sm:p-6 bg-background">
-        <img
-          src={theme === 'dark'
-            ? '/logo-dark.png'
-            : colorTheme === 'blue' ? '/logo-light-blue.png'
-            : colorTheme === 'green' ? '/logo-light-green.png'
-            : colorTheme === 'red' ? '/logo-light-red.png'
-            : '/logo-light.png'}
-          alt="ezwrite"
-          className="h-9 sm:h-11 w-auto brightness-110"
-        />
+        <span
+          className="font-playfair text-xl sm:text-2xl text-foreground tracking-wide"
+          style={titleGlow}
+        >
+          ez.
+        </span>
         <div className="flex items-center gap-3 opacity-60 hover:opacity-100 transition-opacity duration-300">
           {mounted && (
             <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="text-muted-foreground hover:text-foreground transition-colors">
