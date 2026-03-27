@@ -1266,12 +1266,11 @@ const WritingInterface = () => {
 
       {/* Header */}
       <div className="flex justify-between items-center p-4 sm:p-6 opacity-60 hover:opacity-100 transition-opacity duration-300 bg-background">
-        <span
-          className="font-playfair text-xl sm:text-2xl text-foreground tracking-wide"
-          style={titleGlow}
-        >
-          ez.
-        </span>
+        <img
+          src={theme === 'dark' ? '/logo-dark.png' : '/logo-light.png'}
+          alt="ezwrite"
+          className="h-6 sm:h-7 w-auto"
+        />
         <div className="flex items-center gap-3">
           {mounted && (
             <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="text-muted-foreground hover:text-foreground transition-colors">

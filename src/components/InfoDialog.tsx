@@ -219,6 +219,7 @@ const InfoDialog: React.FC<Props> = ({
                 <li><span className="text-foreground">mac (safari, sonoma+):</span> share icon in toolbar → "add to dock"</li>
                 <li><span className="text-foreground">mac / desktop (chrome / edge):</span> install icon in the address bar</li>
               </ul>
+              <p className="mt-1.5 ml-3 text-xs text-muted-foreground">use chrome for installation (allows you to choose storage location)</p>
               {canInstall && (
                 <button
                   onClick={onInstall}
