@@ -213,13 +213,15 @@ const InfoDialog: React.FC<Props> = ({
 
             <section>
               <h3 className="font-semibold mb-1.5 text-accent-foreground">install as app</h3>
+              <div className="mb-2 px-3 py-2 rounded-lg border border-border bg-muted/40 text-xs text-foreground">
+                use chrome for installation (allows you to choose storage location)
+              </div>
               <ul className="space-y-1 text-muted-foreground ml-3 text-xs">
                 <li><span className="text-foreground">iphone / ipad:</span> tap the share icon → "add to home screen"</li>
                 <li><span className="text-foreground">android:</span> tap browser menu → "add to home screen" or "install app"</li>
                 <li><span className="text-foreground">mac (safari, sonoma+):</span> share icon in toolbar → "add to dock"</li>
                 <li><span className="text-foreground">mac / desktop (chrome / edge):</span> install icon in the address bar</li>
               </ul>
-              <p className="mt-1.5 ml-3 text-xs text-muted-foreground">use chrome for installation (allows you to choose storage location)</p>
               {canInstall && (
                 <button
                   onClick={onInstall}

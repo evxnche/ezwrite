@@ -1269,7 +1269,7 @@ const WritingInterface = () => {
         <img
           src={theme === 'dark' ? '/logo-dark.png' : '/logo-light.png'}
           alt="ezwrite"
-          className="h-6 sm:h-7 w-auto"
+          className="h-9 sm:h-11 w-auto brightness-110"
         />
         <div className="flex items-center gap-3">
           {mounted && (
