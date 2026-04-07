@@ -252,12 +252,8 @@ const WritingInterface = () => {
       resizingRef.current = null;
       if (editorRef.current) { pushUndo(true); saveContent(extractContent(editorRef.current)); }
     };
-    // Prevent browser from navigating to dropped files
-    const blockBrowserDrop = (e: DragEvent) => {
-      if (e.dataTransfer?.types && Array.from(e.dataTransfer.types).includes('Files')) {
-        e.preventDefault();
-      }
-    };
+    // Block browser's default file/URL navigation on any drop
+    const blockBrowserDrop = (e: DragEvent) => { e.preventDefault(); };
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
     document.addEventListener('dragover', blockBrowserDrop);
@@ -1149,29 +1145,47 @@ const WritingInterface = () => {
 
   // Drag-and-drop image support
   const handleDragOver = useCallback((e: React.DragEvent) => {
-    if (Array.from(e.dataTransfer.types).includes('Files')) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'copy';
-    }
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
   }, []);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
-    const files = Array.from(e.dataTransfer.files);
-    const imageFile = files.find(f => f.type.startsWith('image/'));
-    if (!imageFile) return;
     e.preventDefault();
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const base64 = ev.target?.result as string;
-      if (!base64) return;
+
+    const insertImageSrc = (src: string) => {
       const info = getCursorInfo();
       const lines = contentRef.current.split('\n');
       const lineIndex = info?.lineIndex ?? lines.length - 1;
-      lines.splice(lineIndex + 1, 0, `img::${base64}`);
+      lines.splice(lineIndex + 1, 0, `img::${src}`);
       pushUndo(true);
       structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
     };
-    reader.readAsDataURL(imageFile);
+
+    // File drop (from Finder / desktop)
+    const files = Array.from(e.dataTransfer.files);
+    const imageFile = files.find(f => f.type.startsWith('image/'));
+    if (imageFile) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const base64 = ev.target?.result as string;
+        if (base64) insertImageSrc(base64);
+      };
+      reader.readAsDataURL(imageFile);
+      return;
+    }
+
+    // URL drag (from browser — Google Images, etc.)
+    const html = e.dataTransfer.getData('text/html');
+    const uriList = e.dataTransfer.getData('text/uri-list');
+    let imgSrc = '';
+    if (html) {
+      const match = html.match(/src="([^"]+)"/);
+      if (match) imgSrc = match[1];
+    }
+    if (!imgSrc && uriList) {
+      imgSrc = uriList.split('\n').find(u => u.trim() && !u.startsWith('#'))?.trim() || '';
+    }
+    if (imgSrc) insertImageSrc(imgSrc);
   }, [getCursorInfo, pushUndo, structuralUpdate]);
 
   // Item 13: cut handler for mobile — manually copy + delete selection
