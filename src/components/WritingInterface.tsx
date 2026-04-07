@@ -252,9 +252,22 @@ const WritingInterface = () => {
       resizingRef.current = null;
       if (editorRef.current) { pushUndo(true); saveContent(extractContent(editorRef.current)); }
     };
+    // Prevent browser from navigating to dropped files
+    const blockBrowserDrop = (e: DragEvent) => {
+      if (e.dataTransfer?.types && Array.from(e.dataTransfer.types).includes('Files')) {
+        e.preventDefault();
+      }
+    };
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-    return () => { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
+    document.addEventListener('dragover', blockBrowserDrop);
+    document.addEventListener('drop', blockBrowserDrop);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('dragover', blockBrowserDrop);
+      document.removeEventListener('drop', blockBrowserDrop);
+    };
   }, [pushUndo, saveContent]);
 
   // --- Structural re-render ---
