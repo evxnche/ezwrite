@@ -256,13 +256,13 @@ const WritingInterface = () => {
     const blockBrowserDrop = (e: DragEvent) => { e.preventDefault(); };
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-    document.addEventListener('dragover', blockBrowserDrop);
-    document.addEventListener('drop', blockBrowserDrop);
+    document.addEventListener('dragover', blockBrowserDrop, true);
+    document.addEventListener('drop', blockBrowserDrop, true);
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
-      document.removeEventListener('dragover', blockBrowserDrop);
-      document.removeEventListener('drop', blockBrowserDrop);
+      document.removeEventListener('dragover', blockBrowserDrop, true);
+      document.removeEventListener('drop', blockBrowserDrop, true);
     };
   }, [pushUndo, saveContent]);
 
@@ -980,6 +980,14 @@ const WritingInterface = () => {
         // Finalize timer
         editingTimerLineRef.current = null;
         if (li >= freshLines.length - 1) freshLines.push('');
+        structuralUpdate(freshLines.join('\n'), li + 1, 0);
+        scrollToLine(li + 1);
+        return;
+      }
+
+      // Image line — never split, just insert a blank line after it
+      if (getLineType(freshLines, li) === 'image') {
+        freshLines.splice(li + 1, 0, '');
         structuralUpdate(freshLines.join('\n'), li + 1, 0);
         scrollToLine(li + 1);
         return;
