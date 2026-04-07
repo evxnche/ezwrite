@@ -471,6 +471,8 @@
   height: auto;
   border-radius: 0;
   margin: 0;
+  -webkit-user-drag: none;
+  user-drag: none;
 }
 
 .polaroid-caption {
@@ -536,4 +538,3 @@
   text-underline-offset: 2px;
   text-decoration-thickness: 1px;
 }
-

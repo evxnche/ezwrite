@@ -15,6 +15,7 @@ import TimerWidget from './TimerWidget';
 import {
   STRUCK_MARKER, LIST_EXIT, getCleanLine, isLineStruck, getLineType,
   getTimerArgs, SLASH_COMMANDS, INDENT,
+  getDropInsertionIndex, getDropTargetLineIndex,
   contentToHTML, extractContent, setCursorPosition,
   contentToMarkdown,
 } from './writing-helpers';
@@ -1154,19 +1155,22 @@ const WritingInterface = () => {
   // Drag-and-drop image support
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = 'copy';
   }, []);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
 
     const insertImageSrc = (src: string) => {
-      const info = getCursorInfo();
       const lines = contentRef.current.split('\n');
-      const lineIndex = info?.lineIndex ?? lines.length - 1;
-      lines.splice(lineIndex + 1, 0, `img::${src}`);
+      const targetLineIndex = getDropTargetLineIndex(editorRef.current, e.target);
+      const fallbackLineIndex = getCursorInfo()?.lineIndex ?? null;
+      const insertionIndex = getDropInsertionIndex(lines.length, targetLineIndex, fallbackLineIndex);
+      lines.splice(insertionIndex, 0, `img::${src}`);
       pushUndo(true);
-      structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
+      structuralUpdate(lines.join('\n'), insertionIndex, 0);
     };
 
     // File drop (from Finder / desktop)
@@ -1195,6 +1199,13 @@ const WritingInterface = () => {
     }
     if (imgSrc) insertImageSrc(imgSrc);
   }, [getCursorInfo, pushUndo, structuralUpdate]);
+
+  const handleEditorDragStart = useCallback((e: React.DragEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('.ce-image, .ce-image-img')) {
+      e.preventDefault();
+    }
+  }, []);
 
   // Item 13: cut handler for mobile — manually copy + delete selection
   const handleCut = useCallback(async (e: React.ClipboardEvent) => {
@@ -1377,6 +1388,8 @@ const WritingInterface = () => {
         data-editor-bg="true"
         className="flex-1 px-4 sm:px-8 bg-background flex flex-col cursor-text"
         onClick={handleContainerClick}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
       >
         <div className="w-full max-w-none mx-auto flex flex-col h-full" data-editor-bg="true">
           <div
@@ -1397,6 +1410,7 @@ const WritingInterface = () => {
               onCut={handleCut}
               onClick={handleEditorClick}
               onMouseDown={handleEditorMouseDown}
+              onDragStart={handleEditorDragStart}
               onDragOver={handleDragOver}
               onDrop={handleDrop}
               className={`${useSerif ? 'font-playfair' : 'font-mono'} text-base sm:text-lg font-light tracking-wide text-foreground ce-editor`}

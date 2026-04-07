@@ -14,6 +14,35 @@ export const SLASH_COMMANDS = [
   { name: 'help', description: 'Show shortcuts & commands' },
 ];
 
+export function getDropTargetLineIndex(editor: HTMLElement | null, target: EventTarget | null): number | null {
+  if (!editor || !target || typeof target !== 'object') return null;
+
+  let current = target as (HTMLElement | null);
+  while (current) {
+    const rawLine = current.dataset?.line;
+    if (rawLine && /^\d+$/.test(rawLine)) {
+      return parseInt(rawLine, 10);
+    }
+    current = current.parentElement;
+  }
+
+  const children = Array.from(editor.childNodes) as Array<Node & { contains?: (node: Node) => boolean }>;
+  const targetNode = target as Node;
+  const childIndex = children.findIndex((child) => child === targetNode || child.contains?.(targetNode));
+  return childIndex >= 0 ? childIndex : null;
+}
+
+export function getDropInsertionIndex(
+  lineCount: number,
+  targetLineIndex: number | null,
+  fallbackLineIndex: number | null,
+): number {
+  if (lineCount <= 0) return 0;
+  const baseIndex = targetLineIndex ?? fallbackLineIndex ?? (lineCount - 1);
+  const clampedBaseIndex = Math.max(-1, Math.min(baseIndex, lineCount - 1));
+  return Math.min(clampedBaseIndex + 1, lineCount);
+}
+
 export function getLineType(lines: string[], index: number): LineType {
   const line = lines[index];
   if (line.startsWith('img::')) return 'image';
@@ -123,7 +152,7 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
         const containerStyle = imgWidth ? ` style="width: ${imgWidth}px"` : ' style="width: 280px"';
         const dataWidth = imgWidth ? ` data-width="${imgWidth}"` : ' data-width="280"';
         const escapedCaption = escapeHTML(caption);
-        return `<div data-type="image" contenteditable="false" class="ce-image" data-line="${i}"${dataWidth}${containerStyle}><div class="polaroid-inner"><img src="${src}" class="ce-image-img" alt="" /><div class="polaroid-caption" contenteditable="true" data-placeholder="add a title...">${escapedCaption}</div></div><div class="ce-image-resize-handle" data-action="resize" data-line="${i}"></div><button class="ce-delete-btn" data-action="delete" data-line="${i}">✕</button></div>`;
+        return `<div data-type="image" contenteditable="false" class="ce-image" data-line="${i}"${dataWidth}${containerStyle}><div class="polaroid-inner"><img src="${src}" class="ce-image-img" alt="" draggable="false" /><div class="polaroid-caption" contenteditable="true" data-placeholder="add a title...">${escapedCaption}</div></div><div class="ce-image-resize-handle" data-action="resize" data-line="${i}"></div><button class="ce-delete-btn" data-action="delete" data-line="${i}">✕</button></div>`;
       }
       case 'list-item': {
         const struck = isLineStruck(line);
