@@ -72,6 +72,24 @@ function applyLinkHighlight(text: string): string {
   }).join('');
 }
 
+function parseImageLine(line: string): { src: string; width: string | null; caption: string } {
+  let payload = line.slice('img::'.length);
+  let caption = '';
+  const capIdx = payload.indexOf('::cap::');
+  if (capIdx !== -1) {
+    caption = payload.slice(capIdx + 7);
+    payload = payload.slice(0, capIdx);
+  }
+  const lastSep = payload.lastIndexOf('::');
+  let src = payload;
+  let width: string | null = null;
+  if (lastSep > 0) {
+    const possibleWidth = payload.slice(lastSep + 2);
+    if (/^\d+$/.test(possibleWidth)) { width = possibleWidth; src = payload.slice(0, lastSep); }
+  }
+  return { src, width, caption };
+}
+
 interface ContentToHTMLOptions {
   editingTimerLine?: number;
 }
@@ -101,17 +119,11 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
         return `<div data-type="timer" data-timer-config="${escapeHTML(getTimerArgs(line))}" data-line="${i}" contenteditable="false" class="ce-timer" data-timer-slot="${i}"></div>`;
       }
       case 'image': {
-        const payload = line.slice('img::'.length);
-        const lastSep = payload.lastIndexOf('::');
-        let src = payload;
-        let imgWidth: string | null = null;
-        if (lastSep > 0) {
-          const possibleWidth = payload.slice(lastSep + 2);
-          if (/^\d+$/.test(possibleWidth)) { imgWidth = possibleWidth; src = payload.slice(0, lastSep); }
-        }
-        const widthStyle = imgWidth ? ` style="width: ${imgWidth}px; max-width: 100%"` : '';
-        const dataWidth = imgWidth ? ` data-width="${imgWidth}"` : '';
-        return `<div data-type="image" contenteditable="false" class="ce-image" data-line="${i}"${dataWidth}><img src="${src}" class="ce-image-img" alt=""${widthStyle} /><div class="ce-image-resize-handle" data-action="resize" data-line="${i}"></div><button class="ce-delete-btn" data-action="delete" data-line="${i}">✕</button></div>`;
+        const { src, width: imgWidth, caption } = parseImageLine(line);
+        const containerStyle = imgWidth ? ` style="width: ${imgWidth}px"` : ' style="width: 280px"';
+        const dataWidth = imgWidth ? ` data-width="${imgWidth}"` : ' data-width="280"';
+        const escapedCaption = escapeHTML(caption);
+        return `<div data-type="image" contenteditable="false" class="ce-image" data-line="${i}"${dataWidth}${containerStyle}><div class="polaroid-inner"><img src="${src}" class="ce-image-img" alt="" /><div class="polaroid-caption" contenteditable="true" data-placeholder="add a title...">${escapedCaption}</div></div><div class="ce-image-resize-handle" data-action="resize" data-line="${i}"></div><button class="ce-delete-btn" data-action="delete" data-line="${i}">✕</button></div>`;
       }
       case 'list-item': {
         const struck = isLineStruck(line);
@@ -192,7 +204,12 @@ export function extractContent(editor: HTMLElement): string {
       const img = el.querySelector('img') as HTMLImageElement | null;
       const src = img?.getAttribute('src') || '';
       const width = (el as HTMLElement).dataset.width;
-      lines.push(src ? `img::${src}${width ? '::' + width : ''}` : '');
+      const captionEl = el.querySelector('.polaroid-caption') as HTMLElement | null;
+      const caption = captionEl?.textContent?.trim() || '';
+      let stored = src ? `img::${src}` : '';
+      if (width) stored += `::${width}`;
+      if (caption) stored += `::cap::${caption}`;
+      lines.push(stored);
       return;
     }
     if (type === 'heading1' || type === 'heading2') {
@@ -300,14 +317,8 @@ export function contentToMarkdown(content: string): string {
     if (type === 'divider') return '---';
     if (type === 'timer' || type === 'list-header') return '';
     if (type === 'image') {
-      const payload = line.slice('img::'.length);
-      const lastSep = payload.lastIndexOf('::');
-      let src = payload;
-      if (lastSep > 0) {
-        const possibleWidth = payload.slice(lastSep + 2);
-        if (/^\d+$/.test(possibleWidth)) src = payload.slice(0, lastSep);
-      }
-      return `![image](${src})`;
+      const { src, caption } = parseImageLine(line);
+      return `![${caption || 'image'}](${src})`;
     }
     if (type === 'list-item') {
       const struck = isLineStruck(line);

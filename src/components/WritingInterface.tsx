@@ -215,7 +215,7 @@ const WritingInterface = () => {
   }, []);
 
   // Image resize
-  const resizingRef = useRef<{ lineIndex: number; startX: number; startWidth: number; imgEl: HTMLImageElement; lineEl: HTMLElement } | null>(null);
+  const resizingRef = useRef<{ lineIndex: number; startX: number; startWidth: number; imgEl: HTMLElement; lineEl: HTMLElement } | null>(null);
 
   // Slash popup
   const [slashPopup, setSlashPopup] = useState<{ rect: DOMRect; filter: string; lineIndex: number } | null>(null);
@@ -242,10 +242,9 @@ const WritingInterface = () => {
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!resizingRef.current) return;
-      const { startX, startWidth, imgEl, lineEl } = resizingRef.current;
-      const newWidth = Math.max(50, startWidth + (e.clientX - startX));
-      imgEl.style.width = newWidth + 'px';
-      imgEl.style.maxWidth = '100%';
+      const { startX, startWidth, lineEl } = resizingRef.current;
+      const newWidth = Math.max(100, startWidth + (e.clientX - startX));
+      lineEl.style.width = newWidth + 'px';
       lineEl.dataset.width = String(Math.round(newWidth));
     };
     const handleMouseUp = () => {
@@ -527,9 +526,8 @@ const WritingInterface = () => {
     e.preventDefault();
     const lineIndex = parseInt(target.dataset.line || '0');
     const lineEl = editorRef.current?.childNodes[lineIndex] as HTMLElement | undefined;
-    const imgEl = lineEl?.querySelector('img') as HTMLImageElement | null;
-    if (!imgEl || !lineEl) return;
-    resizingRef.current = { lineIndex, startX: e.clientX, startWidth: imgEl.offsetWidth, imgEl, lineEl };
+    if (!lineEl) return;
+    resizingRef.current = { lineIndex, startX: e.clientX, startWidth: lineEl.offsetWidth, imgEl: lineEl, lineEl };
   };
 
   // Handle clicks inside editor (checkboxes, delete buttons)
@@ -772,6 +770,13 @@ const WritingInterface = () => {
 
   // Key handler
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Let polaroid captions handle their own key events
+    const targetEl = e.target as HTMLElement;
+    if (targetEl.classList.contains('polaroid-caption')) {
+      if (e.key === 'Enter') e.preventDefault(); // no newlines in caption
+      return;
+    }
+
     // Priority: pendingCursor (set by structuralUpdate, RAF not yet fired)
     //        → trackedCursor (last known-good from selectionchange)
     //        → live getCursorInfo() (may return stale state at container level)
@@ -1129,6 +1134,33 @@ const WritingInterface = () => {
     document.execCommand('insertText', false, normalized);
   }, [pushUndo, structuralUpdate]);
 
+  // Drag-and-drop image support
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (Array.from(e.dataTransfer.types).includes('Files')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    const files = Array.from(e.dataTransfer.files);
+    const imageFile = files.find(f => f.type.startsWith('image/'));
+    if (!imageFile) return;
+    e.preventDefault();
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const base64 = ev.target?.result as string;
+      if (!base64) return;
+      const info = getCursorInfo();
+      const lines = contentRef.current.split('\n');
+      const lineIndex = info?.lineIndex ?? lines.length - 1;
+      lines.splice(lineIndex + 1, 0, `img::${base64}`);
+      pushUndo(true);
+      structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
+    };
+    reader.readAsDataURL(imageFile);
+  }, [getCursorInfo, pushUndo, structuralUpdate]);
+
   // Item 13: cut handler for mobile — manually copy + delete selection
   const handleCut = useCallback(async (e: React.ClipboardEvent) => {
     const sel = window.getSelection();
@@ -1330,6 +1362,8 @@ const WritingInterface = () => {
               onCut={handleCut}
               onClick={handleEditorClick}
               onMouseDown={handleEditorMouseDown}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
               className={`${useSerif ? 'font-playfair' : 'font-mono'} text-base sm:text-lg font-light tracking-wide text-foreground ce-editor`}
               style={editorStyle}
               spellCheck={spellCheckEnabled}
