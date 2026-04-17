@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Sun, Moon, Download, Plus } from 'lucide-react';
+import { Sun, Moon, Download, Plus, Settings } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,6 +11,7 @@ import { useTheme } from 'next-themes';
 import jsPDF from 'jspdf';
 import SlashCommandPopup from './SlashCommandPopup';
 import InfoDialog from './InfoDialog';
+import SettingsDialog from './SettingsDialog';
 import TimerWidget from './TimerWidget';
 import {
   STRUCK_MARKER, LIST_EXIT, getCleanLine, isLineStruck, getLineType,
@@ -77,7 +78,10 @@ const WritingInterface = () => {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+  const savedFlashTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const [timerAlert, setTimerAlert] = useState(false);
   const [pageTransition, setPageTransition] = useState<'none' | 'slide-left' | 'slide-right'>('none');
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
@@ -131,6 +135,45 @@ const WritingInterface = () => {
     setSpellCheckEnabled(v => {
       const next = !v;
       localStorage.setItem('ezwrite-spellcheck', String(next));
+      return next;
+    });
+  };
+
+  // Dot grid background toggle (persisted)
+  const [showDotGrid, setShowDotGrid] = useState(() =>
+    localStorage.getItem('ezwrite-dot-grid') !== 'false'
+  );
+  useEffect(() => {
+    if (showDotGrid) {
+      document.body.classList.remove('dot-grid-hidden');
+      localStorage.setItem('ezwrite-dot-grid', 'true');
+    } else {
+      document.body.classList.add('dot-grid-hidden');
+      localStorage.setItem('ezwrite-dot-grid', 'false');
+    }
+  }, [showDotGrid]);
+
+  // Show stats (word/char count) toggle (persisted)
+  const [showStats, setShowStats] = useState(() =>
+    localStorage.getItem('ezwrite-show-stats') === 'true'
+  );
+  const handleToggleStats = () => {
+    setShowStats(v => {
+      const next = !v;
+      localStorage.setItem('ezwrite-show-stats', String(next));
+      return next;
+    });
+  };
+
+  // Timer alert mode (persisted)
+  const [timerAlertMode, setTimerAlertMode] = useState<'visual' | 'audio' | 'both' | 'silent'>(() =>
+    (localStorage.getItem('ezwrite-timer-alert-mode') as 'visual' | 'audio' | 'both' | 'silent') || 'both'
+  );
+  const handleToggleTimerAlertMode = () => {
+    setTimerAlertMode(v => {
+      const modes: Array<'visual' | 'audio' | 'both' | 'silent'> = ['both', 'visual', 'audio', 'silent'];
+      const next = modes[(modes.indexOf(v) + 1) % modes.length];
+      localStorage.setItem('ezwrite-timer-alert-mode', next);
       return next;
     });
   };
@@ -224,6 +267,12 @@ const WritingInterface = () => {
 
   const isDark = mounted && theme === 'dark';
 
+  const { wordCount, charCount } = useMemo(() => {
+    const text = contentRef.current || '';
+    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+    return { wordCount: words, charCount: text.length };
+  }, [contentRef.current]);
+
   // --- Save helper ---
   const saveContent = useCallback((content: string) => {
     contentRef.current = content;
@@ -237,6 +286,10 @@ const WritingInterface = () => {
     }
     // Also auto-write to OPFS (origin private file system — no permission needed)
     writeToOPFS(pagesRef.current);
+    // Auto-save feedback flash
+    clearTimeout(savedFlashTimeoutRef.current);
+    setSavedFlash(true);
+    savedFlashTimeoutRef.current = setTimeout(() => setSavedFlash(false), 800);
   }, []);
 
   // Image resize mouse handlers (declared after saveContent/pushUndo to avoid TDZ)
@@ -568,9 +621,10 @@ const WritingInterface = () => {
 
   // Timer completion
   const handleTimerComplete = useCallback(() => {
-    playChime();
-    setTimerAlert(true);
-  }, []);
+    if (timerAlertMode === 'audio' || timerAlertMode === 'both') playChime();
+    if (timerAlertMode === 'visual' || timerAlertMode === 'both') setTimerAlert(true);
+    if (timerAlertMode === 'silent') { /* no alert */ }
+  }, [timerAlertMode]);
 
   // --- Get cursor info directly from DOM ---
   const getCursorInfo = () => {
@@ -1368,6 +1422,15 @@ const WritingInterface = () => {
               {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
             </button>
           )}
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Settings size={16} />
+          </button>
+          {savedFlash && (
+            <div className="w-2 h-2 rounded-full bg-green-500 opacity-80" />
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button disabled={!contentRef.current.trim()} className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30">
@@ -1518,6 +1581,29 @@ const WritingInterface = () => {
         onToggleFont={handleToggleFont}
         colorTheme={colorTheme}
         onToggleColorTheme={handleToggleColorTheme}
+      />
+
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        wordCount={wordCount}
+        charCount={charCount}
+        showStats={showStats}
+        onToggleStats={handleToggleStats}
+        colorTheme={colorTheme}
+        onToggleColorTheme={handleToggleColorTheme}
+        useSerif={useSerif}
+        onToggleFont={handleToggleFont}
+        spellCheckEnabled={spellCheckEnabled}
+        onToggleSpellCheck={handleToggleSpellCheck}
+        showDotGrid={showDotGrid}
+        onToggleDotGrid={() => setShowDotGrid(v => !v)}
+        timerAlertMode={timerAlertMode}
+        onToggleTimerAlertMode={handleToggleTimerAlertMode}
+        dirName={getDirName(dirHandle)}
+        onPickFolder={handlePickFolder}
+        onClearFolder={handleClearFolder}
+        fsSupported={isFileSystemSupported()}
       />
     </div>
   );
