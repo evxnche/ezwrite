@@ -886,13 +886,24 @@ const WritingInterface = () => {
     if (!editorRef.current) return;
 
     pushUndo(true);
-    const { content, lineIndex, offset } = getFloatingSlashButtonCursor(contentRef.current);
-    structuralUpdate(content, lineIndex, offset, true);
 
-    requestAnimationFrame(() => {
-      editorRef.current?.focus({ preventScroll: true });
+    // If the editor already has an active cursor inside it, insert at that position.
+    // Only fall back to the bottom of the document when there is no cursor.
+    const sel = window.getSelection();
+    const hasCursor = sel && sel.rangeCount > 0 &&
+      editorRef.current.contains(sel.getRangeAt(0).startContainer);
+
+    if (hasCursor) {
+      editorRef.current.focus({ preventScroll: true });
       document.execCommand('insertText', false, '/');
-    });
+    } else {
+      const { content, lineIndex, offset } = getFloatingSlashButtonCursor(contentRef.current);
+      structuralUpdate(content, lineIndex, offset, true);
+      requestAnimationFrame(() => {
+        editorRef.current?.focus({ preventScroll: true });
+        document.execCommand('insertText', false, '/');
+      });
+    }
   }, [pushUndo, structuralUpdate]);
 
   // Key handler
