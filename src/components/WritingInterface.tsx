@@ -97,7 +97,11 @@ const WritingInterface = () => {
   const getPageContent = (index: number): string =>
     pagesRef.current[index] ?? getDefaultPage(index);
 
-  const [currentPage, setCurrentPage] = useState(0);
+  const [currentPage, setCurrentPage] = useState(() => {
+    const saved = localStorage.getItem('ezwrite-last-page');
+    if (saved) { const n = parseInt(saved, 10); if (n >= 0 && n < TOTAL_PAGES) return n; }
+    return 0;
+  });
   const currentPageRef = useRef(0);
   const contentRef = useRef(getPageContent(0));
 
@@ -527,6 +531,7 @@ const WritingInterface = () => {
     // Transition animation
     setPageTransition(newPage > currentPageRef.current ? 'slide-left' : 'slide-right');
     contentRef.current = getPageContent(newPage);
+    localStorage.setItem('ezwrite-last-page', String(newPage));
     setCurrentPage(newPage);
   }, []);
 
@@ -1170,11 +1175,16 @@ const WritingInterface = () => {
         let cleanNoIndent = clean;
         while (cleanNoIndent.startsWith(INDENT)) { listIndentLevel++; cleanNoIndent = cleanNoIndent.slice(INDENT.length); }
         const listIndentPrefix = INDENT.repeat(listIndentLevel);
-        // Enter on empty list item → exit list using invisible marker
+        // Enter on empty list item → un-indent one level if nested, else exit list
         if (!cleanNoIndent.trim()) {
-          freshLines.splice(li, 1, LIST_EXIT);
-          structuralUpdate(freshLines.join('\n'), li, 0);
-          scrollToLine(li);
+          if (listIndentLevel > 0) {
+            freshLines[li] = INDENT.repeat(listIndentLevel - 1);
+            structuralUpdate(freshLines.join('\n'), li, 0);
+          } else {
+            freshLines.splice(li, 1, LIST_EXIT);
+            structuralUpdate(freshLines.join('\n'), li, 0);
+            scrollToLine(li);
+          }
           return;
         }
         const struck = isLineStruck(currentLine);
@@ -1517,7 +1527,7 @@ const WritingInterface = () => {
       <div
         ref={containerRef}
         data-editor-bg="true"
-        className="flex-1 px-4 sm:px-8 bg-background flex flex-col cursor-text"
+        className="flex-1 px-10 sm:px-14 bg-background flex flex-col cursor-text"
         onClick={handleContainerClick}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
@@ -1606,6 +1616,8 @@ const WritingInterface = () => {
           onSelect={(name) => handleSlashSelect(name)}
           onClose={() => setSlashPopup(null)}
           rect={slashPopup.rect}
+          kbHeight={kbHeight}
+          isTouchDevice={isTouchDevice}
         />
       )}
 

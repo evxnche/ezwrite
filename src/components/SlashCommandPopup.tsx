@@ -11,6 +11,8 @@ interface Props {
   onSelect: (name: string) => void;
   onClose: () => void;
   rect: DOMRect;
+  kbHeight?: number;
+  isTouchDevice?: boolean;
 }
 
 const COMMAND_COLORS: Record<string, string> = {
@@ -20,7 +22,7 @@ const COMMAND_COLORS: Record<string, string> = {
   help:  'text-accent-foreground',
 };
 
-const SlashCommandPopup: React.FC<Props> = ({ commands, highlightIndex, onSelect, onClose, rect }) => {
+const SlashCommandPopup: React.FC<Props> = ({ commands, highlightIndex, onSelect, onClose, rect, kbHeight = 0, isTouchDevice = false }) => {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -37,7 +39,11 @@ const SlashCommandPopup: React.FC<Props> = ({ commands, highlightIndex, onSelect
     <div
       ref={ref}
       className="fixed z-50 bg-popover border border-border rounded-xl shadow-lg overflow-hidden min-w-[220px]"
-      style={{ top: rect.bottom + 6, left: rect.left }}
+      style={
+        isTouchDevice && kbHeight > 0
+          ? { bottom: kbHeight + 8, left: '50%', transform: 'translateX(-50%)' }
+          : { top: rect.bottom + 6, left: rect.left }
+      }
     >
       {commands.map((cmd, i) => (
         <button
