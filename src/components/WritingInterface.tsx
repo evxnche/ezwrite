@@ -724,6 +724,10 @@ const WritingInterface = () => {
     if (foundEl.dataset?.indent) {
       offset += parseInt(foundEl.dataset.indent) * INDENT.length;
     }
+    // Adjust for '>> ' prefix stripped from display in quote lines
+    if (foundEl.dataset?.quotePrefix) {
+      offset += 3;
+    }
 
     return { lineIndex: foundIdx, offset, lineDiv: foundEl };
   };
@@ -988,6 +992,15 @@ const WritingInterface = () => {
       return;
     }
 
+    // Backspace at start of quote visible text (offset 3 = just after '>> ') → revert to plain text
+    if (e.key === 'Backspace' && getLineType(lines, lineIndex) === 'quote' && offset <= 3) {
+      e.preventDefault();
+      pushUndo(true);
+      lines[lineIndex] = lines[lineIndex].replace(/^>> ?/, '');
+      structuralUpdate(lines.join('\n'), lineIndex, 0);
+      return;
+    }
+
     // Backspace at start - unindent, exit list, or remove list header
     if (e.key === 'Backspace' && offset === 0) {
       const lineText = lines[lineIndex] || '';
@@ -1177,6 +1190,24 @@ const WritingInterface = () => {
           scrollToLine(li + 1);
           return;
         }
+      }
+
+      // Quote: continue on Enter, exit on empty quote line
+      if (lineType === 'quote') {
+        const visibleText = currentLine.replace(/^>> ?/, '');
+        if (!visibleText.trim()) {
+          freshLines[li] = '';
+          structuralUpdate(freshLines.join('\n'), li, 0);
+          scrollToLine(li);
+          return;
+        }
+        // freshOffset is relative to stored content ('>> text'), split within visible part
+        const splitAt = Math.max(0, Math.min(freshOffset, currentLine.length) - 3);
+        freshLines[li] = '>> ' + visibleText.slice(0, splitAt);
+        freshLines.splice(li + 1, 0, '>> ' + visibleText.slice(splitAt));
+        structuralUpdate(freshLines.join('\n'), li + 1, 3);
+        scrollToLine(li + 1);
+        return;
       }
 
       // Normal enter - split line at offset

@@ -5,7 +5,7 @@ export const INDENT = '        '; // 8 spaces
 export const getCleanLine = (line: string) => line.startsWith(STRUCK_MARKER) ? line.slice(STRUCK_MARKER.length) : line;
 export const isLineStruck = (line: string) => line.startsWith(STRUCK_MARKER);
 
-export type LineType = 'text' | 'heading1' | 'heading2' | 'list-header' | 'list-item' | 'divider' | 'timer' | 'image';
+export type LineType = 'text' | 'heading1' | 'heading2' | 'list-header' | 'list-item' | 'divider' | 'timer' | 'image' | 'quote';
 
 export const SLASH_COMMANDS = [
   { name: 'list', description: 'Create a checklist' },
@@ -54,6 +54,7 @@ export function getLineType(lines: string[], index: number): LineType {
   if (/^timer(\s|$)/i.test(lower)) return 'timer';
   if (/^## /.test(clean)) return 'heading2';
   if (/^# /.test(clean)) return 'heading1';
+  if (/^>> /.test(clean) || clean === '>>') return 'quote';
 
   let emptyCount = 0;
   for (let i = index - 1; i >= 0; i--) {
@@ -154,6 +155,10 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
         const escapedCaption = escapeHTML(caption);
         return `<div data-type="image" contenteditable="false" class="ce-image" data-line="${i}"${dataWidth}${containerStyle}><div class="polaroid-inner"><img src="${src}" class="ce-image-img" alt="" draggable="false" /><div class="polaroid-caption" contenteditable="true" data-placeholder="add a title...">${escapedCaption}</div></div><div class="ce-image-resize-handle" data-action="resize" data-line="${i}"></div><button class="ce-delete-btn" data-action="delete" data-line="${i}">✕</button></div>`;
       }
+      case 'quote': {
+        const text = line.replace(/^>> ?/, '');
+        return `<div data-type="quote" data-quote-prefix="1" class="ce-quote">${applyLinkHighlight(text) || '<br>'}</div>`;
+      }
       case 'list-item': {
         const struck = isLineStruck(line);
         let clean = getCleanLine(line);
@@ -243,6 +248,10 @@ export function extractContent(editor: HTMLElement): string {
     }
     if (type === 'heading1' || type === 'heading2') {
       lines.push(extractText(el));
+      return;
+    }
+    if (type === 'quote') {
+      lines.push('>> ' + extractText(el));
       return;
     }
     if (type === 'list-item') {
@@ -354,6 +363,7 @@ export function contentToMarkdown(content: string): string {
       const clean = getCleanLine(line);
       return struck ? `- [x] ${clean}` : `- [ ] ${clean}`;
     }
+    if (type === 'quote') return '> ' + line.replace(/^>> ?/, '');
     return line.startsWith(LIST_EXIT) ? line.slice(LIST_EXIT.length) : line;
   }).filter((line, i, arr) => !(line === '' && arr[i - 1] === ''))
     .join('\n') + '\n';

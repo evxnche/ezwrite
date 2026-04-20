@@ -535,6 +535,13 @@
   text-indent: 0;
 }
 
+.ce-quote {
+  border-left: 2px solid hsl(40 55% 62% / 0.75);
+  padding-left: 1.5em;
+  font-style: italic;
+  opacity: 0.85;
+}
+
 /* Task 15: Link signifier */
 .ce-link {
   opacity: 0.6;
