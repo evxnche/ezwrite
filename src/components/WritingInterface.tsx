@@ -766,24 +766,23 @@ const WritingInterface = () => {
           }
           fixLine = idx;
         } else {
-          const info = getCursorInfo();
-          if (info) { fixLine = info.lineIndex; fixOffset = info.offset; }
+          const cur = getCursorInfo();
+          if (cur) { fixLine = cur.lineIndex; fixOffset = cur.offset; }
         }
       }
       structuralUpdate(newContent, fixLine, fixOffset);
-      return;
+      // fall through — structuralUpdate places the cursor synchronously so
+      // the slash check below still works for the common "/" case
+    } else if (newContent !== rawContent) {
+      // Swipe/gesture typing can insert leading whitespace inside an existing line div.
+      // Re-render so the DOM stays in sync with contentRef.
+      const cur = getCursorInfo();
+      structuralUpdate(newContent, cur?.lineIndex ?? 0, cur?.offset ?? 0);
+      // fall through to slash check
     }
 
-    // Swipe/gesture typing can insert leading whitespace inside an existing line div
-    // (no raw text nodes), so hasRawText won't catch it. Re-render when normalization
-    // actually changed something so the DOM stays in sync with contentRef.
-    if (newContent !== rawContent) {
-      const info = getCursorInfo();
-      structuralUpdate(newContent, info?.lineIndex ?? 0, info?.offset ?? 0);
-      return;
-    }
-
-    // Check for slash commands
+    // Check for slash commands (runs even after a structuralUpdate — cursor is placed
+    // synchronously so getCursorInfo() returns the correct position).
     const info = getCursorInfo();
     if (info) {
       const lines = newContent.split('\n');
