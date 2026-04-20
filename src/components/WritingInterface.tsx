@@ -783,7 +783,8 @@ const WritingInterface = () => {
     if (info) {
       const lines = newContent.split('\n');
       const lineText = lines[info.lineIndex] || '';
-      const trimmed = lineText.trim();
+      const visibleText = lineText.startsWith(LIST_EXIT) ? lineText.slice(LIST_EXIT.length) : lineText;
+      const trimmed = visibleText.trim();
       if (/^\/\w{0,10}$/.test(trimmed)) {
         const filter = trimmed.slice(1);
         const matches = SLASH_COMMANDS.filter(c => c.name.startsWith(filter.toLowerCase()));
