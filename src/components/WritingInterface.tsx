@@ -1527,7 +1527,7 @@ const WritingInterface = () => {
       <div
         ref={containerRef}
         data-editor-bg="true"
-        className="flex-1 px-10 sm:px-14 bg-background flex flex-col cursor-text"
+        className="flex-1 px-4 sm:px-14 bg-background flex flex-col cursor-text"
         onClick={handleContainerClick}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
