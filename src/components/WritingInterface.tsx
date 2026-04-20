@@ -19,6 +19,7 @@ import { buildTimerSlots } from './timer-identity';
 import {
   getFloatingSlashButtonCursor,
   getPageEndCursor,
+  normalizePastedPlainText,
   normalizeEditorContent,
   shouldAutoFocusAfterPageSwitch,
   splitExitedListLine,
@@ -36,7 +37,6 @@ import {
 } from '@/lib/storage';
 
 const TOTAL_PAGES = 5;
-const PARAGRAPH_BREAK_PLACEHOLDER = '__EZWRITE_PARAGRAPH_BREAK__';
 const InfoDialog = lazy(() => import('./InfoDialog'));
 const SettingsDialog = lazy(() => import('./SettingsDialog'));
 
@@ -76,7 +76,7 @@ const DEFAULT_PAGE_CONTENT = 'start writing.';
 
 const getDefaultPage = (index: number): string => {
   if (index === 0) return DEFAULT_PAGE_CONTENT;
-  return DEFAULT_PAGE_CONTENT;
+  return '';
 };
 
 const WritingInterface = () => {
@@ -89,7 +89,7 @@ const WritingInterface = () => {
     } else {
       const old = localStorage.getItem('zen-writing-content') || '';
       const welcome = old || `hi.\n\ni am evan.\n\nthinking is cool.\nwriting is thinking.\n\ni write. you write. we all write.\nwriting today is a slog.\na battle of point sizes, typefaces, and colours.\n\nhence, ezwrite.\ni like pen and paper. this is close.\n\nthere isn't much to it.\n/line splits things up.\n/list keeps you on track with checklists.\n/timer pulls up a timer + some more func.\nor just type in "/help" and you'll find all the help you need.\nbtw your data stays on your device.\n\nit's yours now. go write.\n\nto report bugs or just say hi, evanbuildsstuff@gmail.com\n\njust do things. ez.\n\n-evan`;
-      pagesRef.current = [welcome, ...Array(TOTAL_PAGES - 1).fill(DEFAULT_PAGE_CONTENT)];
+      pagesRef.current = [welcome, ...Array(TOTAL_PAGES - 1).fill('')];
     }
     while (pagesRef.current.length < TOTAL_PAGES) pagesRef.current.push('');
   }
@@ -622,10 +622,11 @@ const WritingInterface = () => {
     const target = e.target as HTMLElement;
     if (editorRef.current?.contains(target)) return;
     if (target === containerRef.current || target.dataset?.editorBg === 'true') {
-      editorRef.current?.focus();
+      editorRef.current?.focus({ preventScroll: true });
       const lines = contentRef.current.split('\n');
       const lastLine = lines.length - 1;
       setCursorPosition(editorRef.current!, lastLine, lines[lastLine]?.length || 0);
+      scrollToLine(lastLine);
     }
   };
 
@@ -1306,16 +1307,29 @@ const WritingInterface = () => {
     if (!raw) return;
     pushUndo(true);
 
-    // Collapse single newlines (line wraps from narrow window) to spaces;
-    // preserve double newlines (paragraph breaks)
-    const normalized = raw
-      .replace(/\r\n/g, '\n')
-      .replace(/\n{2,}/g, PARAGRAPH_BREAK_PLACEHOLDER)
-      .replace(/\n/g, ' ')              // collapse single newlines to space
-      .split(PARAGRAPH_BREAK_PLACEHOLDER).join('\n\n')
-      .replace(/ {2,}/g, ' ');          // clean up double spaces
+    const normalized = normalizePastedPlainText(raw);
+    const pastedLines = normalized.split('\n');
 
-    document.execCommand('insertText', false, normalized);
+    const lines = contentRef.current.split('\n');
+    const info = getCursorInfo();
+    const lineIndex = info?.lineIndex ?? lines.length - 1;
+    const offset = info?.offset ?? (lines[lineIndex]?.length ?? 0);
+    const currentLine = lines[lineIndex] ?? '';
+    const before = currentLine.slice(0, offset);
+    const after = currentLine.slice(offset);
+
+    if (pastedLines.length === 1) {
+      lines[lineIndex] = before + pastedLines[0] + after;
+      structuralUpdate(lines.join('\n'), lineIndex, offset + pastedLines[0].length);
+    } else {
+      const newLines = [
+        before + pastedLines[0],
+        ...pastedLines.slice(1, -1),
+        pastedLines[pastedLines.length - 1] + after,
+      ];
+      lines.splice(lineIndex, 1, ...newLines);
+      structuralUpdate(lines.join('\n'), lineIndex + pastedLines.length - 1, pastedLines[pastedLines.length - 1].length);
+    }
   }, [pushUndo, structuralUpdate]);
 
   // Drag-and-drop image support
@@ -1365,13 +1379,6 @@ const WritingInterface = () => {
     }
     if (imgSrc) insertImageSrc(imgSrc);
   }, [getCursorInfo, pushUndo, structuralUpdate]);
-
-  const handleEditorDragStart = useCallback((e: React.DragEvent) => {
-    const target = e.target as HTMLElement | null;
-    if (target?.closest('.ce-image, .ce-image-img')) {
-      e.preventDefault();
-    }
-  }, []);
 
   // Item 13: cut handler for mobile — manually copy + delete selection
   const handleCut = useCallback(async (e: React.ClipboardEvent) => {
@@ -1596,7 +1603,6 @@ const WritingInterface = () => {
               onCut={handleCut}
               onClick={handleEditorClick}
               onMouseDown={handleEditorMouseDown}
-              onDragStart={handleEditorDragStart}
               onDragOver={handleDragOver}
               onDrop={handleDrop}
               className={`${useSerif ? 'font-playfair' : 'font-mono'} text-base sm:text-lg font-light tracking-wide text-foreground ce-editor`}

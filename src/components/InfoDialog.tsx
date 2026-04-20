@@ -166,7 +166,6 @@ const InfoDialog: React.FC<Props> = ({
                 <li><span className="text-accent-foreground">/list</span> — checklist with checkboxes</li>
                 <li><span className="text-accent-foreground">/line</span> — horizontal divider</li>
                 <li><span className="text-accent-foreground">/timer</span> — start a timer</li>
-                <li><span className="text-accent-foreground">&gt;&gt;</span> — blockquote (type at start of empty line)</li>
               </ul>
             </section>
 
@@ -175,6 +174,7 @@ const InfoDialog: React.FC<Props> = ({
               <ul className="space-y-1 text-muted-foreground ml-3">
                 <li><span className="text-foreground"># text</span> — large heading</li>
                 <li><span className="text-foreground">## text</span> — smaller heading</li>
+                <li><span className="text-foreground">&gt;&gt; text</span> — blockquote</li>
               </ul>
             </section>
 
