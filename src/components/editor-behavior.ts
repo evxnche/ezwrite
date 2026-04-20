@@ -76,6 +76,36 @@ export function getFloatingSlashButtonCursor(content: string): {
   };
 }
 
+export function normalizePastedPlainText(text: string): string {
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n');
+}
+
+export function htmlToPlainLines(html: string): string {
+  const withBreaks = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<\/h[1-6]>/gi, '\n')
+    .replace(/<\/blockquote>/gi, '\n')
+    .replace(/<\/tr>/gi, '\n');
+  const stripped = withBreaks.replace(/<[^>]+>/g, '');
+  const decoded = stripped
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ');
+  return decoded
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export function shouldAutoFocusAfterPageSwitch(isTouchDevice: boolean): boolean {
   return !isTouchDevice;
 }

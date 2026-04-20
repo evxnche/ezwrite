@@ -20,6 +20,7 @@ import {
   getFloatingSlashButtonCursor,
   getPageEndCursor,
   normalizePastedPlainText,
+  htmlToPlainLines,
   normalizeEditorContent,
   shouldAutoFocusAfterPageSwitch,
   splitExitedListLine,
@@ -1307,7 +1308,8 @@ const WritingInterface = () => {
     if (!raw) return;
     pushUndo(true);
 
-    const normalized = normalizePastedPlainText(raw);
+    const htmlData = e.clipboardData.getData('text/html');
+    const normalized = htmlData ? htmlToPlainLines(htmlData) : normalizePastedPlainText(raw);
     const pastedLines = normalized.split('\n');
 
     const lines = contentRef.current.split('\n');
