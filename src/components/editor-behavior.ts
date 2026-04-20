@@ -47,3 +47,7 @@ export function getPageEndCursor(content: string): { lineIndex: number; offset: 
     offset: lines[lineIndex]?.length ?? 0,
   };
 }
+
+export function shouldAutoFocusAfterPageSwitch(isTouchDevice: boolean): boolean {
+  return !isTouchDevice;
+}

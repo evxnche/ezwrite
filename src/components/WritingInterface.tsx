@@ -19,6 +19,7 @@ import { buildTimerSlots } from './timer-identity';
 import {
   getPageEndCursor,
   normalizeEditorContent,
+  shouldAutoFocusAfterPageSwitch,
   splitExitedListLine,
 } from './editor-behavior';
 import {
@@ -363,7 +364,12 @@ const WritingInterface = () => {
   }, [pushUndo, saveContent]);
 
   // --- Structural re-render ---
-  const structuralUpdate = useCallback((content: string, cursorLine?: number, cursorOffset?: number) => {
+  const structuralUpdate = useCallback((
+    content: string,
+    cursorLine?: number,
+    cursorOffset?: number,
+    shouldFocus = true,
+  ) => {
     saveContent(content);
     if (!editorRef.current) return;
 
@@ -398,11 +404,11 @@ const WritingInterface = () => {
     if (cursorLine !== undefined) {
       trackedCursor.current = { lineIndex: cursorLine, offset: cursorOffset ?? 0 };
       pendingCursor.current = { lineIndex: cursorLine, offset: cursorOffset ?? 0 };
-      if (document.activeElement === editorRef.current) {
+      if (shouldFocus && document.activeElement === editorRef.current) {
         setCursorPosition(editorRef.current, cursorLine, cursorOffset ?? 0);
       }
       requestAnimationFrame(() => {
-        if (editorRef.current) {
+        if (shouldFocus && editorRef.current) {
           editorRef.current.focus({ preventScroll: true });
           setCursorPosition(editorRef.current, cursorLine, cursorOffset ?? 0);
         }
@@ -529,12 +535,15 @@ const WritingInterface = () => {
     if (!hasMounted.current) { hasMounted.current = true; return; }
     const pageContent = getPageContent(currentPage);
     const { lineIndex, offset } = getPageEndCursor(pageContent);
-    structuralUpdate(pageContent, lineIndex, offset);
+    const shouldFocus = shouldAutoFocusAfterPageSwitch(isTouchDevice);
+    structuralUpdate(pageContent, lineIndex, offset, shouldFocus);
     setTimeout(() => {
-      editorRef.current?.focus();
+      if (shouldFocus) {
+        editorRef.current?.focus();
+      }
       setPageTransition('none');
     }, 250);
-  }, [currentPage, structuralUpdate]);
+  }, [currentPage, isTouchDevice, structuralUpdate]);
 
   // --- Touch swipe ---
   const touchStartX = useRef(0);

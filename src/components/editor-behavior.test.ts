@@ -5,6 +5,7 @@ import { INDENT, LIST_EXIT } from './writing-helpers.ts';
 import {
   getPageEndCursor,
   normalizeEditorContent,
+  shouldAutoFocusAfterPageSwitch,
   splitExitedListLine,
 } from './editor-behavior.ts';
 
@@ -43,4 +44,9 @@ test('getPageEndCursor places the cursor at the end of the final line', () => {
     getPageEndCursor('first line\nsecond line'),
     { lineIndex: 1, offset: 11 },
   );
+});
+
+test('shouldAutoFocusAfterPageSwitch keeps autofocus on desktop only', () => {
+  assert.equal(shouldAutoFocusAfterPageSwitch(false), true);
+  assert.equal(shouldAutoFocusAfterPageSwitch(true), false);
 });
