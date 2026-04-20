@@ -781,13 +781,17 @@ const WritingInterface = () => {
       // fall through to slash check
     }
 
-    // Check for slash commands (runs even after a structuralUpdate — cursor is placed
-    // synchronously so getCursorInfo() returns the correct position).
-    const info = getCursorInfo();
+    // Check for slash commands.
+    // getCursorInfo() can return null immediately after a DOM reset, so fall back to
+    // pendingCursor (set synchronously by structuralUpdate) when needed.
+    const info = getCursorInfo() ?? (pendingCursor.current
+      ? { lineIndex: pendingCursor.current.lineIndex, offset: pendingCursor.current.offset, lineDiv: null as unknown as HTMLElement }
+      : null);
     if (info) {
       const lines = newContent.split('\n');
       const lineText = lines[info.lineIndex] || '';
       const visibleText = lineText.startsWith(LIST_EXIT) ? lineText.slice(LIST_EXIT.length) : lineText;
+      // Match: optional leading spaces, then /, then optional word chars — covers empty line and accidental single-space line
       const trimmed = visibleText.trim();
       if (/^\/\w{0,10}$/.test(trimmed)) {
         const filter = trimmed.slice(1);
@@ -797,7 +801,7 @@ const WritingInterface = () => {
           if (sel && sel.rangeCount) {
             const range = sel.getRangeAt(0);
             const rect = range.getBoundingClientRect();
-            if (!slashPopup) setPopupHighlight(0); // only reset highlight when popup first opens
+            if (!slashPopup) setPopupHighlight(0);
             setSlashPopup({ rect, filter, lineIndex: info.lineIndex });
           }
           return;
