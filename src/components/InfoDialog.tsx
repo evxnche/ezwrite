@@ -76,7 +76,7 @@ const InfoDialog: React.FC<Props> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[90vw] sm:max-w-md bg-popover text-popover-foreground !rounded-2xl">
+      <DialogContent className="max-w-[90vw] sm:max-w-2xl bg-popover text-popover-foreground !rounded-2xl">
         <DialogHeader>
           <DialogTitle className="font-mono text-base sm:text-lg truncate lowercase">shortcuts &amp; commands</DialogTitle>
         </DialogHeader>
@@ -157,7 +157,7 @@ const InfoDialog: React.FC<Props> = ({
           <div
             ref={scrollRef}
             onScroll={handleScroll}
-            className="font-mono space-y-5 text-sm leading-relaxed overflow-y-auto max-h-[70vh] lowercase"
+            className="font-mono space-y-5 text-sm leading-relaxed overflow-y-auto max-h-[60vh] sm:max-h-[75vh] lowercase"
           >
             <section>
               <h3 className="font-semibold mb-1.5 text-accent-foreground">/ commands</h3>
@@ -166,6 +166,7 @@ const InfoDialog: React.FC<Props> = ({
                 <li><span className="text-accent-foreground">/list</span> — checklist with checkboxes</li>
                 <li><span className="text-accent-foreground">/line</span> — horizontal divider</li>
                 <li><span className="text-accent-foreground">/timer</span> — start a timer</li>
+                <li><span className="text-accent-foreground">&gt;&gt;</span> — blockquote (type at start of empty line)</li>
               </ul>
             </section>
 
