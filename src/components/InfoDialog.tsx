@@ -41,7 +41,9 @@ const InfoDialog: React.FC<Props> = ({
     try {
       const reg = await navigator.serviceWorker?.getRegistration();
       if (reg) await reg.update();
-    } catch {}
+    } catch {
+      // Ignore update check failures and keep the dialog responsive.
+    }
     setUpdateStatus('done');
     setTimeout(() => setUpdateStatus('idle'), 3000);
   };

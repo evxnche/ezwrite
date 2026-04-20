@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Settings, X, Check } from 'lucide-react';
+import { Check } from 'lucide-react';
+import type { ColorTheme } from './preferences';
 
 interface Props {
   open: boolean;
@@ -12,8 +13,8 @@ interface Props {
   showStats?: boolean;
   onToggleStats?: () => void;
   // Theme
-  colorTheme?: string;
-  onToggleColorTheme?: () => void;
+  colorTheme?: ColorTheme;
+  onSelectColorTheme?: (theme: ColorTheme) => void;
   // Font
   useSerif?: boolean;
   onToggleFont?: () => void;
@@ -47,7 +48,7 @@ export const SettingsDialog: React.FC<Props> = ({
   showStats,
   onToggleStats,
   colorTheme,
-  onToggleColorTheme,
+  onSelectColorTheme,
   useSerif,
   onToggleFont,
   spellCheckEnabled,
@@ -125,7 +126,7 @@ export const SettingsDialog: React.FC<Props> = ({
                     <TooltipTrigger asChild>
                       <button
                         onClick={() => {
-                          if (colorTheme !== theme.id) onToggleColorTheme?.();
+                          if (colorTheme !== theme.id) onSelectColorTheme?.(theme.id as ColorTheme);
                         }}
                         className={`w-8 h-8 rounded-full border-2 transition-all ${
                           colorTheme === theme.id ? 'border-accent-foreground scale-110' : 'border-transparent hover:scale-105'

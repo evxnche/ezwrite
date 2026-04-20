@@ -67,6 +67,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "get-nonce": path.resolve(__dirname, "./src/shims/get-nonce.ts"),
     },
   },
 });

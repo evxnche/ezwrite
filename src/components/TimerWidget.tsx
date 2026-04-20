@@ -8,8 +8,12 @@ interface TimerWidgetProps {
 }
 
 type PomoPhase = 'work' | 'break';
+type ParsedTimerConfig =
+  | { mode: 'pomodoro'; initial: number; work: number; break: number }
+  | { mode: 'countdown'; initial: number }
+  | { mode: 'stopwatch'; initial: number };
 
-function parseConfig(config: string) {
+function parseConfig(config: string): ParsedTimerConfig {
   const t = config.trim().toLowerCase();
   const cp = t.match(/^(\d+)\s+(\d+)$/);
   if (cp) return { mode: 'pomodoro' as const, initial: +cp[1] * 60, work: +cp[1] * 60, break: +cp[2] * 60 };
@@ -70,7 +74,7 @@ const TimerWidget: React.FC<TimerWidgetProps> = ({ config, onRemove, onComplete 
           const np: PomoPhase = phaseRef.current === 'work' ? 'break' : 'work';
           phaseRef.current = np;
           setPhase(np);
-          const nextSecs = np === 'work' ? (parsed as any).work : (parsed as any).break;
+          const nextSecs = np === 'work' ? parsed.work : parsed.break;
           baseSecondsRef.current = nextSecs;
           epochRef.current = Date.now();
           setSeconds(nextSecs);

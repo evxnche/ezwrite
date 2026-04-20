@@ -5,6 +5,18 @@ const IDB_DB = 'ezwrite-storage';
 const IDB_STORE = 'handles';
 const IDB_KEY = 'saveDir';
 
+interface WindowWithDirectoryPicker extends Window {
+  showDirectoryPicker?: (options?: { mode?: 'read' | 'readwrite' }) => Promise<FileSystemDirectoryHandle>;
+}
+
+interface DirectoryHandleWithPermission extends FileSystemDirectoryHandle {
+  requestPermission?: (options?: { mode?: 'read' | 'readwrite' }) => Promise<PermissionState>;
+}
+
+interface WritableHandle {
+  createWritable: () => Promise<FileSystemWritableFileStream>;
+}
+
 export const isFileSystemSupported = (): boolean =>
   typeof window !== 'undefined' && 'showDirectoryPicker' in window;
 
@@ -58,7 +70,8 @@ export async function clearHandle(): Promise<void> {
 export async function pickSaveDirectory(): Promise<FileSystemDirectoryHandle | null> {
   if (!isFileSystemSupported()) return null;
   try {
-    const handle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
+    const handle = await (window as WindowWithDirectoryPicker).showDirectoryPicker?.({ mode: 'readwrite' });
+    if (!handle) return null;
     await saveHandle(handle);
     return handle;
   } catch {
@@ -77,14 +90,14 @@ export async function writePageFiles(
   try {
     // Only request permission if handle changed or not yet granted
     if (dirHandle !== lastGrantedHandle) {
-      const permission = await (dirHandle as any).requestPermission({ mode: 'readwrite' });
-      if (permission !== 'granted') return;
+      const permission = await (dirHandle as DirectoryHandleWithPermission).requestPermission?.({ mode: 'readwrite' });
+      if (permission && permission !== 'granted') return;
       lastGrantedHandle = dirHandle;
     }
     await Promise.all(markdowns.map(async (md, i) => {
       const fileName = `ezwrite-${i + 1}.md`;
       const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
-      const writable = await fileHandle.createWritable();
+      const writable = await (fileHandle as FileSystemFileHandle & WritableHandle).createWritable();
       await writable.write(md);
       await writable.close();
     }));
@@ -111,7 +124,7 @@ export async function writeToOPFS(pages: string[]): Promise<void> {
       const root = await navigator.storage.getDirectory();
       await Promise.all(pages.map(async (page, i) => {
         const fh = await root.getFileHandle(`ezwrite-${i + 1}.md`, { create: true });
-        const w = await (fh as any).createWritable();
+        const w = await (fh as FileSystemFileHandle & WritableHandle).createWritable();
         await w.write(page);
         await w.close();
       }));

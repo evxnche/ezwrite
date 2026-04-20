@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { Sun, Moon, Download, Plus, Settings } from 'lucide-react';
 import {
@@ -8,11 +8,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useTheme } from 'next-themes';
-import jsPDF from 'jspdf';
 import SlashCommandPopup from './SlashCommandPopup';
-import InfoDialog from './InfoDialog';
-import SettingsDialog from './SettingsDialog';
 import TimerWidget from './TimerWidget';
+import {
+  getNextColorTheme,
+  pickColorTheme,
+  type ColorTheme,
+} from './preferences';
+import { buildTimerSlots } from './timer-identity';
 import {
   STRUCK_MARKER, LIST_EXIT, getCleanLine, isLineStruck, getLineType,
   getTimerArgs, SLASH_COMMANDS, INDENT,
@@ -26,10 +29,24 @@ import {
 } from '@/lib/storage';
 
 const TOTAL_PAGES = 5;
+const PARAGRAPH_BREAK_PLACEHOLDER = '__EZWRITE_PARAGRAPH_BREAK__';
+const InfoDialog = lazy(() => import('./InfoDialog'));
+const SettingsDialog = lazy(() => import('./SettingsDialog'));
+
+interface WindowWithAudioContext extends Window {
+  webkitAudioContext?: typeof AudioContext;
+}
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+}
 
 const playChime = () => {
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const AudioContextCtor = window.AudioContext || (window as WindowWithAudioContext).webkitAudioContext;
+    if (!AudioContextCtor) return;
+    const ctx = new AudioContextCtor();
     [880, 1108.73, 1318.51].forEach((freq, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -43,7 +60,9 @@ const playChime = () => {
       osc.start(start);
       osc.stop(start + 1.2);
     });
-  } catch {}
+  } catch {
+    // Ignore audio failures and keep timer completion usable.
+  }
 };
 
 const DEFAULT_PAGE_CONTENT = 'start writing.';
@@ -55,7 +74,7 @@ const getDefaultPage = (index: number): string => {
 
 const WritingInterface = () => {
   // --- Pages ---
-  const pagesRef = useRef<string[]>(null as any);
+  const pagesRef = useRef<string[] | null>(null);
   if (!pagesRef.current) {
     const saved = localStorage.getItem('zen-writing-pages');
     if (saved) {
@@ -79,6 +98,7 @@ const WritingInterface = () => {
   const [mounted, setMounted] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const savedFlashTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
@@ -108,9 +128,8 @@ const WritingInterface = () => {
   }, [isTouchDevice]);
 
   // Color theme toggle — cycles: '' → 'blue' → 'green' → 'red' → ''
-  const COLOR_THEMES = ['', 'blue', 'green', 'red'] as const;
-  const [colorTheme, setColorTheme] = useState<string>(() =>
-    localStorage.getItem('ezwrite-color-theme') || ''
+  const [colorTheme, setColorTheme] = useState<ColorTheme>(() =>
+    pickColorTheme(localStorage.getItem('ezwrite-color-theme') || '')
   );
   useEffect(() => {
     if (colorTheme) {
@@ -121,10 +140,15 @@ const WritingInterface = () => {
   }, [colorTheme]);
   const handleToggleColorTheme = () => {
     setColorTheme(v => {
-      const next = COLOR_THEMES[(COLOR_THEMES.indexOf(v as typeof COLOR_THEMES[number]) + 1) % COLOR_THEMES.length];
+      const next = getNextColorTheme(v);
       localStorage.setItem('ezwrite-color-theme', next);
       return next;
     });
+  };
+  const handleSelectColorTheme = (theme: ColorTheme) => {
+    const next = pickColorTheme(theme);
+    setColorTheme(next);
+    localStorage.setItem('ezwrite-color-theme', next);
   };
 
   // Spellcheck toggle (persisted)
@@ -191,9 +215,12 @@ const WritingInterface = () => {
   };
 
   // PWA install prompt
-  const [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   useEffect(() => {
-    const handler = (e: Event) => { e.preventDefault(); setInstallPrompt(e); };
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as BeforeInstallPromptEvent);
+    };
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
@@ -237,7 +264,6 @@ const WritingInterface = () => {
   const [timerSlots, setTimerSlots] = useState<Array<{ stableId: string; config: string }>>([]);
   // Persistent portal containers keyed by stableId — survive innerHTML resets
   const timerContainers = useRef<Map<string, HTMLElement>>(new Map());
-  const timerStableIds = useRef<Map<string, string>>(new Map());
   // Tracks the cursor position set by structuralUpdate while the RAF hasn't fired yet.
   // handleKeyDown uses this instead of live getCursorInfo() during that window.
   const pendingCursor = useRef<{ lineIndex: number; offset: number } | null>(null);
@@ -250,6 +276,8 @@ const WritingInterface = () => {
   const undoStack = useRef<string[]>([]);
   const redoStack = useRef<string[]>([]);
   const lastUndoTime = useRef(0);
+  const deferredPersistTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const deferredPagesRef = useRef<string[]>([]);
   const pushUndo = useCallback((force = false) => {
     const now = Date.now();
     if (!force && now - lastUndoTime.current < 500) return;
@@ -267,11 +295,26 @@ const WritingInterface = () => {
 
   const isDark = mounted && theme === 'dark';
 
-  const { wordCount, charCount } = useMemo(() => {
-    const text = contentRef.current || '';
-    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-    return { wordCount: words, charCount: text.length };
-  }, [contentRef.current]);
+  const textForStats = contentRef.current || '';
+  const wordCount = textForStats.trim() ? textForStats.trim().split(/\s+/).length : 0;
+  const charCount = textForStats.length;
+
+  const scheduleDeferredPersistence = useCallback((pages: string[]) => {
+    deferredPagesRef.current = [...pages];
+    clearTimeout(deferredPersistTimeoutRef.current);
+    deferredPersistTimeoutRef.current = setTimeout(() => {
+      const latestPages = deferredPagesRef.current;
+      if (dirHandleRef.current) {
+        const markdowns = latestPages.map((page) => contentToMarkdown(page));
+        void writePageFiles(dirHandleRef.current, markdowns);
+      }
+      void writeToOPFS(latestPages);
+    }, 250);
+  }, []);
+
+  useEffect(() => {
+    return () => clearTimeout(deferredPersistTimeoutRef.current);
+  }, []);
 
   // --- Save helper ---
   const saveContent = useCallback((content: string) => {
@@ -279,18 +322,12 @@ const WritingInterface = () => {
     pagesRef.current[currentPageRef.current] = content;
     const serialized = JSON.stringify(pagesRef.current);
     localStorage.setItem('zen-writing-pages', serialized);
-    // Write per-page .md files to chosen folder (desktop File System API)
-    if (dirHandleRef.current) {
-      const markdowns = pagesRef.current.map(p => contentToMarkdown(p));
-      writePageFiles(dirHandleRef.current, markdowns);
-    }
-    // Also auto-write to OPFS (origin private file system — no permission needed)
-    writeToOPFS(pagesRef.current);
+    scheduleDeferredPersistence(pagesRef.current);
     // Auto-save feedback flash
     clearTimeout(savedFlashTimeoutRef.current);
     setSavedFlash(true);
     savedFlashTimeoutRef.current = setTimeout(() => setSavedFlash(false), 800);
-  }, []);
+  }, [scheduleDeferredPersistence]);
 
   // Image resize mouse handlers (declared after saveContent/pushUndo to avoid TDZ)
   useEffect(() => {
@@ -333,32 +370,20 @@ const WritingInterface = () => {
 
     // Find timer slots and re-attach persistent containers
     const lines = content.split('\n');
-    const timers: Array<{ stableId: string; config: string }> = [];
+    const timers = buildTimerSlots(lines, editingTimerLineRef.current);
     const activeIds = new Set<string>();
-    lines.forEach((line, i) => {
-      if (getLineType(lines, i) === 'timer' && editingTimerLineRef.current !== i) {
-        const config = getTimerArgs(line);
-        const idKey = config || '__stopwatch__';
-        if (!timerStableIds.current.has(idKey)) {
-          timerStableIds.current.set(idKey, `t-${Date.now()}-${Math.random()}`);
-        }
-        const stableId = timerStableIds.current.get(idKey)!;
-        activeIds.add(stableId);
-        // Get or create persistent container div
-        if (!timerContainers.current.has(stableId)) {
-          timerContainers.current.set(stableId, document.createElement('div'));
-        }
-        // Re-attach container into the fresh slot (innerHTML reset detached it)
-        const slot = editorRef.current!.querySelector(`[data-timer-slot="${i}"]`) as HTMLElement;
-        if (slot) slot.appendChild(timerContainers.current.get(stableId)!);
-        timers.push({ stableId, config });
+    timers.forEach(({ stableId, lineIndex }) => {
+      activeIds.add(stableId);
+      if (!timerContainers.current.has(stableId)) {
+        timerContainers.current.set(stableId, document.createElement('div'));
       }
+      const slot = editorRef.current!.querySelector(`[data-timer-slot="${lineIndex}"]`) as HTMLElement;
+      if (slot) slot.appendChild(timerContainers.current.get(stableId)!);
     });
     // Clean up containers for removed timers
-    timerStableIds.current.forEach((stableId, key) => {
+    Array.from(timerContainers.current.keys()).forEach((stableId) => {
       if (!activeIds.has(stableId)) {
         timerContainers.current.delete(stableId);
-        timerStableIds.current.delete(key);
       }
     });
     setTimerSlots(timers);
@@ -468,7 +493,7 @@ const WritingInterface = () => {
         if (editorRef.current) setCursorPosition(editorRef.current, lastLine, lastLen);
       }, 100);
     }
-  }, []);
+  }, [structuralUpdate]);
 
   // --- Page switching ---
   const switchToPage = useCallback((newPage: number) => {
@@ -813,7 +838,7 @@ const WritingInterface = () => {
       lines[lineIndex] = command;
       // For /list: collapse consecutive empty lines below to prevent multiple empty checkboxes
       if (command === 'list') {
-        let next = lineIndex + 1;
+        const next = lineIndex + 1;
         while (next + 1 < lines.length && lines[next] === '' && lines[next + 1] === '') {
           lines.splice(next, 1);
         }
@@ -1198,9 +1223,9 @@ const WritingInterface = () => {
     // preserve double newlines (paragraph breaks)
     const normalized = raw
       .replace(/\r\n/g, '\n')
-      .replace(/\n{2,}/g, '\u0000')    // protect paragraph breaks
+      .replace(/\n{2,}/g, PARAGRAPH_BREAK_PLACEHOLDER)
       .replace(/\n/g, ' ')              // collapse single newlines to space
-      .replace(/\u0000/g, '\n\n')       // restore paragraph breaks
+      .split(PARAGRAPH_BREAK_PLACEHOLDER).join('\n\n')
       .replace(/ {2,}/g, ' ');          // clean up double spaces
 
     document.execCommand('insertText', false, normalized);
@@ -1313,62 +1338,71 @@ const WritingInterface = () => {
 
   const saveAsPdf = () => {
     const content = contentRef.current;
-    if (!content.trim()) return;
-    const lines = content.split('\n');
-    const pdf = new jsPDF();
-    const pageH = pdf.internal.pageSize.height;
-    const pageW = pdf.internal.pageSize.width;
-    const margin = 20;
-    const lh = 6;
-    const maxW = pageW - 2 * margin;
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(11);
-    let y = margin;
+    if (!content.trim() || isExportingPdf) return;
+    setIsExportingPdf(true);
 
-    lines.forEach((line, i) => {
-      const type = getLineType(lines, i);
-      if (type === 'divider') {
-        if (y > pageH - margin) { pdf.addPage(); y = margin; }
-        pdf.setDrawColor(180); pdf.line(margin, y, pageW - margin, y);
-        y += lh;
-        return;
-      }
-      if (type === 'timer') {
-        const text = `⏱ ${getTimerArgs(line) || 'stopwatch'}`;
-        if (y > pageH - margin) { pdf.addPage(); y = margin; }
-        pdf.text(text, margin, y); y += lh;
-        return;
-      }
-      if (type === 'heading1') {
-        pdf.setFontSize(18); pdf.setFont('helvetica', 'bold');
-        const text = line.replace(/^#\s*/, '');
-        if (y > pageH - margin) { pdf.addPage(); y = margin; }
-        pdf.text(text, margin, y); y += lh * 1.8;
-        pdf.setFontSize(11); pdf.setFont('helvetica', 'normal');
-        return;
-      }
-      if (type === 'heading2') {
-        pdf.setFontSize(15); pdf.setFont('helvetica', 'bold');
-        const text = line.replace(/^##\s*/, '');
-        if (y > pageH - margin) { pdf.addPage(); y = margin; }
-        pdf.text(text, margin, y); y += lh * 1.5;
-        pdf.setFontSize(11); pdf.setFont('helvetica', 'normal');
-        return;
-      }
-      let text = cleanForExport(line);
-      if (type === 'list-header') { text = ''; y += lh * 0.5; return; }
-      if (!text.trim()) { y += lh; if (y > pageH - margin) { pdf.addPage(); y = margin; } return; }
-      const split = pdf.splitTextToSize(text, maxW);
-      split.forEach((l: string) => {
-        if (y > pageH - margin) { pdf.addPage(); y = margin; }
-        pdf.text(l, margin, y); y += lh;
-      });
-      y += lh * 0.3;
-    });
+    void (async () => {
+      try {
+        const { jsPDF } = await import('jspdf');
+        const lines = content.split('\n');
+        const pdf = new jsPDF();
+        const pageH = pdf.internal.pageSize.height;
+        const pageW = pdf.internal.pageSize.width;
+        const margin = 20;
+        const lh = 6;
+        const maxW = pageW - 2 * margin;
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(11);
+        let y = margin;
 
-    const filename = `ezwrite-${new Date().toISOString().split('T')[0]}.pdf`;
-    const pdfBlob = pdf.output('blob');
-    downloadOrShare(pdfBlob, filename);
+        lines.forEach((line, i) => {
+          const type = getLineType(lines, i);
+          if (type === 'divider') {
+            if (y > pageH - margin) { pdf.addPage(); y = margin; }
+            pdf.setDrawColor(180); pdf.line(margin, y, pageW - margin, y);
+            y += lh;
+            return;
+          }
+          if (type === 'timer') {
+            const text = `⏱ ${getTimerArgs(line) || 'stopwatch'}`;
+            if (y > pageH - margin) { pdf.addPage(); y = margin; }
+            pdf.text(text, margin, y); y += lh;
+            return;
+          }
+          if (type === 'heading1') {
+            pdf.setFontSize(18); pdf.setFont('helvetica', 'bold');
+            const text = line.replace(/^#\s*/, '');
+            if (y > pageH - margin) { pdf.addPage(); y = margin; }
+            pdf.text(text, margin, y); y += lh * 1.8;
+            pdf.setFontSize(11); pdf.setFont('helvetica', 'normal');
+            return;
+          }
+          if (type === 'heading2') {
+            pdf.setFontSize(15); pdf.setFont('helvetica', 'bold');
+            const text = line.replace(/^##\s*/, '');
+            if (y > pageH - margin) { pdf.addPage(); y = margin; }
+            pdf.text(text, margin, y); y += lh * 1.5;
+            pdf.setFontSize(11); pdf.setFont('helvetica', 'normal');
+            return;
+          }
+          let text = cleanForExport(line);
+          if (type === 'list-header') { text = ''; y += lh * 0.5; return; }
+          if (!text.trim()) { y += lh; if (y > pageH - margin) { pdf.addPage(); y = margin; } return; }
+          const split = pdf.splitTextToSize(text, maxW);
+          split.forEach((wrappedLine: string) => {
+            if (y > pageH - margin) { pdf.addPage(); y = margin; }
+            pdf.text(wrappedLine, margin, y); y += lh;
+          });
+          y += lh * 0.3;
+        });
+
+        const filename = `ezwrite-${new Date().toISOString().split('T')[0]}.pdf`;
+        const pdfBlob = pdf.output('blob');
+        await downloadOrShare(pdfBlob, filename);
+      } finally {
+        setIsExportingPdf(false);
+      }
+    })();
   };
 
   // Glow helpers — matches text hue for color themes, original warm glow otherwise
@@ -1438,7 +1472,9 @@ const WritingInterface = () => {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="bg-popover rounded-xl">
-              <DropdownMenuItem onClick={saveAsPdf} className="cursor-pointer">Download as PDF</DropdownMenuItem>
+              <DropdownMenuItem onClick={saveAsPdf} className="cursor-pointer" disabled={isExportingPdf}>
+                {isExportingPdf ? 'Preparing PDF…' : 'Download as PDF'}
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={saveAsMd} className="cursor-pointer">Download as Markdown</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -1544,7 +1580,7 @@ const WritingInterface = () => {
       )}
 
       {/* Timer portals */}
-      {timerSlots.map(({ stableId, config }) => {
+      {timerSlots.map(({ stableId, config, lineIndex }) => {
         const container = timerContainers.current.get(stableId);
         if (!container) return null;
         return createPortal(
@@ -1554,7 +1590,6 @@ const WritingInterface = () => {
             onRemove={() => {
               pushUndo(true);
               const ls = contentRef.current.split('\n');
-              const lineIndex = ls.findIndex((l, i) => getLineType(ls, i) === 'timer' && (getTimerArgs(l) || '__stopwatch__') === (config || '__stopwatch__'));
               if (lineIndex >= 0) {
                 ls.splice(lineIndex, 1);
                 if (!ls.length) ls.push('');
@@ -1568,39 +1603,45 @@ const WritingInterface = () => {
       })}
 
       {/* Info dialog */}
-      <InfoDialog
-        open={infoOpen}
-        onOpenChange={setInfoOpen}
-        dirName={getDirName(dirHandle)}
-        onPickFolder={handlePickFolder}
-        onClearFolder={handleClearFolder}
-        onInstall={handleInstall}
-        spellCheckEnabled={spellCheckEnabled}
-        onToggleSpellCheck={handleToggleSpellCheck}
-        useSerif={useSerif}
-        onToggleFont={handleToggleFont}
-        colorTheme={colorTheme}
-        onToggleColorTheme={handleToggleColorTheme}
-      />
+      <Suspense fallback={null}>
+        {(infoOpen || settingsOpen) && (
+          <>
+            <InfoDialog
+              open={infoOpen}
+              onOpenChange={setInfoOpen}
+              dirName={getDirName(dirHandle)}
+              onPickFolder={handlePickFolder}
+              onClearFolder={handleClearFolder}
+              onInstall={handleInstall}
+              spellCheckEnabled={spellCheckEnabled}
+              onToggleSpellCheck={handleToggleSpellCheck}
+              useSerif={useSerif}
+              onToggleFont={handleToggleFont}
+              colorTheme={colorTheme}
+              onToggleColorTheme={handleToggleColorTheme}
+            />
 
-      <SettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        wordCount={wordCount}
-        charCount={charCount}
-        showStats={showStats}
-        onToggleStats={handleToggleStats}
-        colorTheme={colorTheme}
-        onToggleColorTheme={handleToggleColorTheme}
-        useSerif={useSerif}
-        onToggleFont={handleToggleFont}
-        spellCheckEnabled={spellCheckEnabled}
-        onToggleSpellCheck={handleToggleSpellCheck}
-        dirName={getDirName(dirHandle)}
-        onPickFolder={handlePickFolder}
-        onClearFolder={handleClearFolder}
-        fsSupported={isFileSystemSupported()}
-      />
+            <SettingsDialog
+              open={settingsOpen}
+              onOpenChange={setSettingsOpen}
+              wordCount={wordCount}
+              charCount={charCount}
+              showStats={showStats}
+              onToggleStats={handleToggleStats}
+              colorTheme={colorTheme}
+              onSelectColorTheme={handleSelectColorTheme}
+              useSerif={useSerif}
+              onToggleFont={handleToggleFont}
+              spellCheckEnabled={spellCheckEnabled}
+              onToggleSpellCheck={handleToggleSpellCheck}
+              dirName={getDirName(dirHandle)}
+              onPickFolder={handlePickFolder}
+              onClearFolder={handleClearFolder}
+              fsSupported={isFileSystemSupported()}
+            />
+          </>
+        )}
+      </Suspense>
     </div>
   );
 };
