@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { INDENT, LIST_EXIT } from './writing-helpers.ts';
 import {
+  getFloatingSlashButtonCursor,
   getPageEndCursor,
   normalizeEditorContent,
   shouldAutoFocusAfterPageSwitch,
@@ -43,6 +44,28 @@ test('getPageEndCursor places the cursor at the end of the final line', () => {
   assert.deepEqual(
     getPageEndCursor('first line\nsecond line'),
     { lineIndex: 1, offset: 11 },
+  );
+});
+
+test('getFloatingSlashButtonCursor appends slash commands on a fresh bottom line', () => {
+  assert.deepEqual(
+    getFloatingSlashButtonCursor('first line\nsecond line'),
+    {
+      content: 'first line\nsecond line\n',
+      lineIndex: 2,
+      offset: 0,
+    },
+  );
+});
+
+test('getFloatingSlashButtonCursor reuses an existing trailing blank line', () => {
+  assert.deepEqual(
+    getFloatingSlashButtonCursor('first line\n'),
+    {
+      content: 'first line\n',
+      lineIndex: 1,
+      offset: 0,
+    },
   );
 });
 

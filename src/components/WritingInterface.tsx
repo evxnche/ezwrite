@@ -17,6 +17,7 @@ import {
 } from './preferences';
 import { buildTimerSlots } from './timer-identity';
 import {
+  getFloatingSlashButtonCursor,
   getPageEndCursor,
   normalizeEditorContent,
   shouldAutoFocusAfterPageSwitch,
@@ -865,6 +866,19 @@ const WritingInterface = () => {
     if (slashPopup && filteredCommands.length === 0) setSlashPopup(null);
   }, [slashPopup, filteredCommands.length]);
 
+  const handleFloatingSlashButton = useCallback(() => {
+    if (!editorRef.current) return;
+
+    pushUndo(true);
+    const { content, lineIndex, offset } = getFloatingSlashButtonCursor(contentRef.current);
+    structuralUpdate(content, lineIndex, offset, true);
+
+    requestAnimationFrame(() => {
+      editorRef.current?.focus({ preventScroll: true });
+      document.execCommand('insertText', false, '/');
+    });
+  }, [pushUndo, structuralUpdate]);
+
   // Key handler
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     // Let polaroid captions handle their own key events
@@ -1553,10 +1567,7 @@ const WritingInterface = () => {
         <button
           onPointerDown={(e) => {
             e.preventDefault(); // keep editor focused / keyboard up
-            if (editorRef.current) {
-              editorRef.current.focus();
-              document.execCommand('insertText', false, '/');
-            }
+            handleFloatingSlashButton();
           }}
           className="fixed right-4 z-50 w-11 h-11 rounded-full bg-popover border border-border text-muted-foreground flex items-center justify-center shadow-lg transition-colors"
           style={{ bottom: kbHeight + 20 }}

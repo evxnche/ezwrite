@@ -20,7 +20,13 @@ export function normalizeEditorContent(content: string): string {
       }
 
       if (base.startsWith(INDENT)) {
-        return line;
+        // Strip INDENT prefixes, then trim accidental whitespace from the visible portion
+        let rest = base;
+        let indentCount = 0;
+        while (rest.startsWith(INDENT)) { indentCount++; rest = rest.slice(INDENT.length); }
+        const cleanRest = trimAccidentalLeadingWhitespace(rest);
+        if (cleanRest === rest) return line;
+        return `${struck ? STRUCK_MARKER : ''}${INDENT.repeat(indentCount)}${cleanRest}`;
       }
 
       const normalized = trimAccidentalLeadingWhitespace(base);
@@ -45,6 +51,28 @@ export function getPageEndCursor(content: string): { lineIndex: number; offset: 
   return {
     lineIndex,
     offset: lines[lineIndex]?.length ?? 0,
+  };
+}
+
+export function getFloatingSlashButtonCursor(content: string): {
+  content: string;
+  lineIndex: number;
+  offset: number;
+} {
+  const lines = content.split('\n');
+
+  if (lines.length === 0) {
+    return { content: '', lineIndex: 0, offset: 0 };
+  }
+
+  if (lines[lines.length - 1] !== '') {
+    lines.push('');
+  }
+
+  return {
+    content: lines.join('\n'),
+    lineIndex: Math.max(0, lines.length - 1),
+    offset: 0,
   };
 }
 
