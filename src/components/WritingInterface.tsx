@@ -737,7 +737,8 @@ const WritingInterface = () => {
       }
     }
 
-    const newContent = normalizeEditorContent(extractContent(editorRef.current));
+    const rawContent = extractContent(editorRef.current);
+    const newContent = normalizeEditorContent(rawContent);
 
     saveContent(newContent);
     triggerTyping();
@@ -765,6 +766,15 @@ const WritingInterface = () => {
         }
       }
       structuralUpdate(newContent, fixLine, fixOffset);
+      return;
+    }
+
+    // Swipe/gesture typing can insert leading whitespace inside an existing line div
+    // (no raw text nodes), so hasRawText won't catch it. Re-render when normalization
+    // actually changed something so the DOM stays in sync with contentRef.
+    if (newContent !== rawContent) {
+      const info = getCursorInfo();
+      structuralUpdate(newContent, info?.lineIndex ?? 0, info?.offset ?? 0);
       return;
     }
 
