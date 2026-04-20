@@ -1596,10 +1596,6 @@ const WritingInterface = () => {
         onToggleFont={handleToggleFont}
         spellCheckEnabled={spellCheckEnabled}
         onToggleSpellCheck={handleToggleSpellCheck}
-        showDotGrid={showDotGrid}
-        onToggleDotGrid={() => setShowDotGrid(v => !v)}
-        timerAlertMode={timerAlertMode}
-        onToggleTimerAlertMode={handleToggleTimerAlertMode}
         dirName={getDirName(dirHandle)}
         onPickFolder={handlePickFolder}
         onClearFolder={handleClearFolder}

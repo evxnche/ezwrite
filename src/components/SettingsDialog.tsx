@@ -20,12 +20,6 @@ interface Props {
   // Spellcheck
   spellCheckEnabled?: boolean;
   onToggleSpellCheck?: () => void;
-  // Dot grid
-  showDotGrid?: boolean;
-  onToggleDotGrid?: () => void;
-  // Timer alert
-  timerAlertMode?: 'visual' | 'audio' | 'both' | 'silent';
-  onToggleTimerAlertMode?: () => void;
   // Folder
   dirName?: string;
   onPickFolder?: () => void;
@@ -45,13 +39,6 @@ const FONT_OPTIONS = [
   { id: 'mono', label: 'mono' },
 ];
 
-const TIMER_MODES = [
-  { id: 'both', label: 'visual + audio' },
-  { id: 'visual', label: 'visual only' },
-  { id: 'audio', label: 'audio only' },
-  { id: 'silent', label: 'silent' },
-] as const;
-
 export const SettingsDialog: React.FC<Props> = ({
   open,
   onOpenChange,
@@ -65,10 +52,6 @@ export const SettingsDialog: React.FC<Props> = ({
   onToggleFont,
   spellCheckEnabled,
   onToggleSpellCheck,
-  showDotGrid,
-  onToggleDotGrid,
-  timerAlertMode,
-  onToggleTimerAlertMode,
   dirName,
   onPickFolder,
   onClearFolder,
@@ -161,16 +144,6 @@ export const SettingsDialog: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* Dot grid */}
-            <div className={`flex items-center justify-between`}>
-              <span className={`text-xs text-muted-foreground`}>dot grid background</span>
-              <button
-                onClick={onToggleDotGrid}
-                className={`text-xs transition-colors ${showDotGrid ? 'text-accent-foreground' : 'text-muted-foreground'}`}
-              >
-                {showDotGrid ? <span className={`flex items-center gap-1`}><Check size={12} /> on</span> : <span>off</span>}
-              </button>
-            </div>
           </section>
 
           {/* Behavior section */}
@@ -186,28 +159,6 @@ export const SettingsDialog: React.FC<Props> = ({
               >
                 {spellCheckEnabled ? <span className={`flex items-center gap-1`}><Check size={12} /> on</span> : <span>off</span>}
               </button>
-            </div>
-
-            {/* Timer alert */}
-            <div className={`flex items-center justify-between`}>
-              <span className={`text-xs text-muted-foreground`}>timer alert</span>
-              <div className={`flex gap-1`}>
-                {TIMER_MODES.map(mode => (
-                  <button
-                    key={mode.id}
-                    onClick={() => {
-                      if (timerAlertMode !== mode.id) onToggleTimerAlertMode?.();
-                    }}
-                    className={`px-2 py-1 rounded text-xs transition-colors ${
-                      timerAlertMode === mode.id
-                        ? 'bg-accent/30 text-accent-foreground border border-accent-foreground'
-                        : 'text-muted-foreground hover:text-foreground border border-transparent'
-                    }`}
-                  >
-                    {mode.label}
-                  </button>
-                ))}
-              </div>
             </div>
           </section>
 
