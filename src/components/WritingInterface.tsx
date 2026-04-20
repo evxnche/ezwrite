@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { Sun, Moon, Download, Plus, Settings } from 'lucide-react';
+import { Sun, Moon, Download, Settings } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,6 +16,11 @@ import {
   type ColorTheme,
 } from './preferences';
 import { buildTimerSlots } from './timer-identity';
+import {
+  getPageEndCursor,
+  normalizeEditorContent,
+  splitExitedListLine,
+} from './editor-behavior';
 import {
   STRUCK_MARKER, LIST_EXIT, getCleanLine, isLineStruck, getLineType,
   getTimerArgs, SLASH_COMMANDS, INDENT,
@@ -82,7 +87,7 @@ const WritingInterface = () => {
     } else {
       const old = localStorage.getItem('zen-writing-content') || '';
       const welcome = old || `hi.\n\ni am evan.\n\nthinking is cool.\nwriting is thinking.\n\ni write. you write. we all write.\nwriting today is a slog.\na battle of point sizes, typefaces, and colours.\n\nhence, ezwrite.\ni like pen and paper. this is close.\n\nthere isn't much to it.\n/line splits things up.\n/list keeps you on track with checklists.\n/timer pulls up a timer + some more func.\nor just type in "/help" and you'll find all the help you need.\nbtw your data stays on your device.\n\nit's yours now. go write.\n\nto report bugs or just say hi, evanbuildsstuff@gmail.com\n\njust do things. ez.\n\n-evan`;
-      pagesRef.current = [welcome, ...Array(TOTAL_PAGES - 1).fill('start writing.')];
+      pagesRef.current = [welcome, ...Array(TOTAL_PAGES - 1).fill(DEFAULT_PAGE_CONTENT)];
     }
     while (pagesRef.current.length < TOTAL_PAGES) pagesRef.current.push('');
   }
@@ -522,7 +527,9 @@ const WritingInterface = () => {
   const hasMounted = useRef(false);
   useEffect(() => {
     if (!hasMounted.current) { hasMounted.current = true; return; }
-    structuralUpdate(getPageContent(currentPage), 0, 0);
+    const pageContent = getPageContent(currentPage);
+    const { lineIndex, offset } = getPageEndCursor(pageContent);
+    structuralUpdate(pageContent, lineIndex, offset);
     setTimeout(() => {
       editorRef.current?.focus();
       setPageTransition('none');
@@ -720,15 +727,7 @@ const WritingInterface = () => {
       }
     }
 
-    let newContent = extractContent(editorRef.current);
-
-    // Bug 12: strip lone leading spaces (mobile keyboard artifact) — preserve INDENT (8 spaces)
-    const stripped = newContent.split('\n').map(line =>
-      line.startsWith(' ') && !line.startsWith(INDENT) ? line.trimStart() : line
-    ).join('\n');
-    if (stripped !== newContent) {
-      newContent = stripped;
-    }
+    const newContent = normalizeEditorContent(extractContent(editorRef.current));
 
     saveContent(newContent);
     triggerTyping();
@@ -1151,10 +1150,9 @@ const WritingInterface = () => {
         freshLines.splice(li + 1, 0, listIndentPrefix + clean.slice(off));
       } else if (currentLine.startsWith(LIST_EXIT)) {
         // Keep marker pinned to this line; split only the visible text after it
-        const visible = currentLine.slice(LIST_EXIT.length);
-        const visOff = Math.max(0, clampedOffset - LIST_EXIT.length);
-        freshLines[li] = LIST_EXIT + visible.slice(0, visOff);
-        freshLines.splice(li + 1, 0, visible.slice(visOff));
+        const { current, next } = splitExitedListLine(currentLine, freshOffset);
+        freshLines[li] = current;
+        freshLines.splice(li + 1, 0, next);
       } else {
         // Carry INDENT prefix to new line if cursor is at/past the prefix
         let indentPrefix = '';
@@ -1553,8 +1551,9 @@ const WritingInterface = () => {
           }}
           className="fixed right-4 z-50 w-11 h-11 rounded-full bg-popover border border-border text-muted-foreground flex items-center justify-center shadow-lg transition-colors"
           style={{ bottom: kbHeight + 20 }}
+          aria-label="Insert slash command"
         >
-          <Plus size={18} />
+          <span className="font-mono text-lg leading-none">/</span>
         </button>
       )}
 
