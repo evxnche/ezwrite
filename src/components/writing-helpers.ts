@@ -131,12 +131,12 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
     const type = getLineType(lines, i);
     switch (type) {
       case 'heading1': {
-        const escaped = escapeHTML(line);
-        return `<div data-type="heading1" class="ce-heading1">${escaped || '<br>'}</div>`;
+        const escaped = escapeHTML(line.replace(/^# /, ''));
+        return `<div data-type="heading1" data-heading-prefix="2" class="ce-heading1">${escaped || '<br>'}</div>`;
       }
       case 'heading2': {
-        const escaped = escapeHTML(line);
-        return `<div data-type="heading2" class="ce-heading2">${escaped || '<br>'}</div>`;
+        const escaped = escapeHTML(line.replace(/^## /, ''));
+        return `<div data-type="heading2" data-heading-prefix="3" class="ce-heading2">${escaped || '<br>'}</div>`;
       }
       case 'list-header':
         return `<div data-type="list-header" contenteditable="false" class="ce-list-header"><span class="ce-lh-text">list</span><button class="ce-delete-btn" data-action="delete" data-line="${i}">✕</button></div>`;
@@ -247,7 +247,8 @@ export function extractContent(editor: HTMLElement): string {
       return;
     }
     if (type === 'heading1' || type === 'heading2') {
-      lines.push(extractText(el));
+      const prefix = type === 'heading1' ? '# ' : '## ';
+      lines.push(prefix + extractText(el));
       return;
     }
     if (type === 'quote') {
@@ -313,6 +314,9 @@ export function setCursorPosition(editor: HTMLElement, lineIndex: number, offset
   if (el.dataset?.type === 'list-item') {
     const textSpan = el.querySelector('.ce-li-text');
     if (textSpan) targetNode = textSpan;
+  }
+  if (el.dataset?.headingPrefix) {
+    remaining = Math.max(0, remaining - parseInt(el.dataset.headingPrefix));
   }
 
   function walkNodes(node: Node): boolean {

@@ -792,6 +792,9 @@ const WritingInterface = () => {
     if (foundEl.dataset?.quotePrefix) {
       offset += 3;
     }
+    if (foundEl.dataset?.headingPrefix) {
+      offset += parseInt(foundEl.dataset.headingPrefix);
+    }
 
     return { lineIndex: foundIdx, offset, lineDiv: foundEl };
   };
@@ -1061,6 +1064,21 @@ const WritingInterface = () => {
       e.preventDefault();
       pushUndo(true);
       lines[lineIndex] = lines[lineIndex].replace(/^>> ?/, '');
+      structuralUpdate(lines.join('\n'), lineIndex, 0);
+      return;
+    }
+    // Backspace at start of heading → revert to plain text
+    if (e.key === 'Backspace' && getLineType(lines, lineIndex) === 'heading1' && offset <= 2) {
+      e.preventDefault();
+      pushUndo(true);
+      lines[lineIndex] = lines[lineIndex].replace(/^# /, '');
+      structuralUpdate(lines.join('\n'), lineIndex, 0);
+      return;
+    }
+    if (e.key === 'Backspace' && getLineType(lines, lineIndex) === 'heading2' && offset <= 3) {
+      e.preventDefault();
+      pushUndo(true);
+      lines[lineIndex] = lines[lineIndex].replace(/^## /, '');
       structuralUpdate(lines.join('\n'), lineIndex, 0);
       return;
     }
@@ -1402,6 +1420,7 @@ const WritingInterface = () => {
         offset = r.toString().length;
       } catch { /* */ }
       if ((foundEl as HTMLElement).dataset?.quotePrefix) offset += 3;
+      if ((foundEl as HTMLElement).dataset?.headingPrefix) offset += parseInt((foundEl as HTMLElement).dataset.headingPrefix || '0');
       return { lineIndex: foundIdx, offset };
     };
 
