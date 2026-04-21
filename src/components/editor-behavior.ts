@@ -1,5 +1,7 @@
 import { INDENT, LIST_EXIT, STRUCK_MARKER } from './writing-helpers.ts';
 
+export type ShareCardTheme = '' | 'blue' | 'green' | 'red';
+
 const LEADING_EDITOR_WHITESPACE = /^[ \u00a0]+/;
 
 function trimAccidentalLeadingWhitespace(text: string): string {
@@ -100,6 +102,35 @@ export function getShareCardLines(content: string): string[] {
       return trimmed.replace(/^#{1,2}\s+/, '');
     })
     .filter((line): line is string => line !== null);
+}
+
+export function getShareCardPalette(colorTheme: ShareCardTheme, darkMode: boolean): {
+  background: string;
+  paper: string;
+  text: string;
+  muted: string;
+} {
+  if (colorTheme === 'blue') {
+    return darkMode
+      ? { background: '#25334B', paper: '#1B2638', text: '#EEF3FF', muted: 'rgba(238, 243, 255, 0.50)' }
+      : { background: '#4E6A9B', paper: '#EEF3FF', text: '#1F2D46', muted: 'rgba(31, 45, 70, 0.52)' };
+  }
+
+  if (colorTheme === 'green') {
+    return darkMode
+      ? { background: '#285135', paper: '#193221', text: '#EFF8EF', muted: 'rgba(239, 248, 239, 0.50)' }
+      : { background: '#DDEBDD', paper: '#FBFFF8', text: '#193221', muted: 'rgba(25, 50, 33, 0.52)' };
+  }
+
+  if (colorTheme === 'red') {
+    return darkMode
+      ? { background: '#7C3232', paper: '#2D1717', text: '#FFF1EC', muted: 'rgba(255, 241, 236, 0.50)' }
+      : { background: '#7C3232', paper: '#FFF4EE', text: '#351716', muted: 'rgba(53, 23, 22, 0.52)' };
+  }
+
+  return darkMode
+    ? { background: '#171717', paper: '#20201e', text: '#f4efe5', muted: 'rgba(244, 239, 229, 0.48)' }
+    : { background: '#f5f1e8', paper: '#fffaf0', text: '#231f1a', muted: 'rgba(35, 31, 26, 0.48)' };
 }
 
 export function htmlToPlainLines(html: string): string {

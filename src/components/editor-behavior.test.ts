@@ -8,6 +8,7 @@ import {
   getFloatingSlashButtonCursor,
   getPageEndCursor,
   getShareCardLines,
+  getShareCardPalette,
   normalizePastedPlainText,
   normalizeEditorContent,
   shouldAutoFocusAfterPageSwitch,
@@ -87,11 +88,24 @@ test('getShareCardLines formats the current page for a clean read-only card', ()
   );
 });
 
+test('getShareCardPalette follows the selected color theme', () => {
+  assert.equal(getShareCardPalette('red', false).background, '#7C3232');
+  assert.equal(getShareCardPalette('green', true).paper, '#193221');
+});
+
 test('WritingInterface exposes a current-page PNG share card export', () => {
   const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   assert.equal(source.includes('Share as PNG'), true);
+  assert.equal(source.includes('aria-label="Share current page as PNG"'), true);
   assert.equal(source.includes('saveAsShareCard'), true);
   assert.equal(source.includes('canvas.toBlob'), true);
+});
+
+test('WritingInterface keeps dark and light mode inside settings', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  assert.equal(source.includes('Sun, Moon,'), false);
+  assert.equal(source.includes('onClick={() => setTheme(theme ==='), false);
+  assert.equal(source.includes('onToggleMode'), true);
 });
 
 test('WritingInterface does not attach dragstart to the contentEditable surface', () => {

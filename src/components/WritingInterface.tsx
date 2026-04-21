@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { Sun, Moon, Download, Settings } from 'lucide-react';
+import { Download, Settings, Share2 } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +20,7 @@ import {
   getFloatingSlashButtonCursor,
   getPageEndCursor,
   getShareCardLines,
+  getShareCardPalette,
   normalizePastedPlainText,
   htmlToPlainLines,
   normalizeEditorContent,
@@ -1568,11 +1569,7 @@ const WritingInterface = () => {
         if (!ctx) return;
         ctx.scale(pixelRatio, pixelRatio);
 
-        const darkCard = theme === 'dark';
-        const background = darkCard ? '#171717' : '#f5f1e8';
-        const paper = darkCard ? '#20201e' : '#fffaf0';
-        const text = darkCard ? '#f4efe5' : '#231f1a';
-        const muted = darkCard ? 'rgba(244, 239, 229, 0.48)' : 'rgba(35, 31, 26, 0.48)';
+        const { background, paper, text, muted } = getShareCardPalette(colorTheme, theme === 'dark');
 
         ctx.fillStyle = background;
         ctx.fillRect(0, 0, width, height);
@@ -1581,11 +1578,11 @@ const WritingInterface = () => {
         ctx.fill();
 
         const lines = getShareCardLines(content);
-        const baseFontSize = lines.join('\n').length > 520 ? 38 : 46;
-        const lineHeight = Math.round(baseFontSize * 1.48);
+        const baseFontSize = lines.join('\n').length > 520 ? 34 : 40;
+        const lineHeight = Math.round(baseFontSize * 1.44);
         const maxTextWidth = width - 300;
         const wrapped = wrapShareCardLines(ctx, lines, maxTextWidth, baseFontSize, useSerif);
-        const visibleLines = wrapped.slice(0, 26);
+        const visibleLines = wrapped.slice(0, 31);
         const textHeight = visibleLines.reduce((height, line) => height + (line ? lineHeight : Math.round(lineHeight * 0.7)), 0);
         let y = Math.max(260, Math.round((height - textHeight) / 2) - 20);
 
@@ -1737,11 +1734,14 @@ const WritingInterface = () => {
           ez.
         </span>
         <div className="flex items-center gap-3 opacity-60 hover:opacity-100 transition-opacity duration-300">
-          {mounted && (
-            <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="text-muted-foreground hover:text-foreground transition-colors">
-              {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-            </button>
-          )}
+          <button
+            onClick={saveAsShareCard}
+            disabled={!contentRef.current.trim() || isExportingShareCard}
+            aria-label="Share current page as PNG"
+            className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30"
+          >
+            <Share2 size={16} />
+          </button>
           <button
             onClick={() => setSettingsOpen(true)}
             className="text-muted-foreground hover:text-foreground transition-colors"
@@ -1918,6 +1918,8 @@ const WritingInterface = () => {
               onToggleStats={handleToggleStats}
               colorTheme={colorTheme}
               onSelectColorTheme={handleSelectColorTheme}
+              mode={theme === 'dark' ? 'dark' : 'light'}
+              onToggleMode={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
               useSerif={useSerif}
               onToggleFont={handleToggleFont}
               spellCheckEnabled={spellCheckEnabled}

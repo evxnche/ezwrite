@@ -15,6 +15,8 @@ interface Props {
   // Theme
   colorTheme?: ColorTheme;
   onSelectColorTheme?: (theme: ColorTheme) => void;
+  mode?: 'dark' | 'light';
+  onToggleMode?: () => void;
   // Font
   useSerif?: boolean;
   onToggleFont?: () => void;
@@ -49,6 +51,8 @@ export const SettingsDialog: React.FC<Props> = ({
   onToggleStats,
   colorTheme,
   onSelectColorTheme,
+  mode,
+  onToggleMode,
   useSerif,
   onToggleFont,
   spellCheckEnabled,
@@ -119,7 +123,15 @@ export const SettingsDialog: React.FC<Props> = ({
 
             {/* Theme */}
             <div className={`mb-3`}>
-              <span className={`text-xs text-muted-foreground mb-1.5 block`}>theme</span>
+              <div className={`flex items-center justify-between mb-1.5`}>
+                <span className={`text-xs text-muted-foreground block`}>theme</span>
+                <button
+                  onClick={onToggleMode}
+                  className={`text-xs transition-colors ${mode ? 'text-accent-foreground' : 'text-muted-foreground'}`}
+                >
+                  {mode === 'dark' ? 'dark' : 'light'}
+                </button>
+              </div>
               <div className={`flex gap-2`}>
                 {THEMES.map(theme => (
                   <Tooltip key={theme.id} delayDuration={300}>
