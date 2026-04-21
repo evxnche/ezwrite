@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { Sun, Moon, Download, Settings } from 'lucide-react';
+import { Sun, Moon, Download, Settings, Volume2, VolumeX } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,6 +19,7 @@ import { buildTimerSlots } from './timer-identity';
 import {
   getFloatingSlashButtonCursor,
   getPageEndCursor,
+  getShareCardLines,
   normalizePastedPlainText,
   htmlToPlainLines,
   normalizeEditorContent,
@@ -80,6 +81,63 @@ const getDefaultPage = (index: number): string => {
   return '';
 };
 
+const getShareCardFont = (fontSize: number, useSerif: boolean) =>
+  `300 ${fontSize}px ${useSerif ? '"Libre Caslon Text", Georgia, serif' : '"Roboto Mono", monospace'}`;
+
+function drawRoundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+) {
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+  ctx.lineTo(x + width, y + height - radius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  ctx.lineTo(x + radius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+}
+
+function wrapShareCardLines(
+  ctx: CanvasRenderingContext2D,
+  lines: string[],
+  maxWidth: number,
+  fontSize: number,
+  useSerif: boolean,
+): string[] {
+  ctx.font = getShareCardFont(fontSize, useSerif);
+  const wrapped: string[] = [];
+
+  lines.forEach((line) => {
+    if (!line) {
+      wrapped.push('');
+      return;
+    }
+
+    const words = line.split(/\s+/);
+    let current = '';
+    words.forEach((word) => {
+      const next = current ? `${current} ${word}` : word;
+      if (ctx.measureText(next).width <= maxWidth || !current) {
+        current = next;
+        return;
+      }
+      wrapped.push(current);
+      current = word;
+    });
+    if (current) wrapped.push(current);
+  });
+
+  return wrapped;
+}
+
 const WritingInterface = () => {
   // --- Pages ---
   const pagesRef = useRef<string[] | null>(null);
@@ -111,6 +169,7 @@ const WritingInterface = () => {
   const [infoOpen, setInfoOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isExportingShareCard, setIsExportingShareCard] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const savedFlashTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
@@ -193,6 +252,46 @@ const WritingInterface = () => {
   const [showStats, setShowStats] = useState(() =>
     localStorage.getItem('ezwrite-show-stats') === 'true'
   );
+
+  // Pen sound
+  const [soundEnabled, setSoundEnabled] = useState(() =>
+    localStorage.getItem('ezwrite-sound') === 'true'
+  );
+  const soundEnabledRef = useRef(false);
+  useEffect(() => { soundEnabledRef.current = soundEnabled; localStorage.setItem('ezwrite-sound', String(soundEnabled)); }, [soundEnabled]);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  const playPenScratch = useCallback(() => {
+    if (!soundEnabledRef.current) return;
+    try {
+      const Ctor = window.AudioContext || (window as WindowWithAudioContext).webkitAudioContext;
+      if (!Ctor) return;
+      if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') audioCtxRef.current = new Ctor();
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') void ctx.resume();
+      const now = ctx.currentTime;
+      const dur = 0.035 + Math.random() * 0.03;
+      const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 3500 + Math.random() * 3500;
+      bp.Q.value = 1 + Math.random();
+      const hs = ctx.createBiquadFilter();
+      hs.type = 'highshelf';
+      hs.frequency.value = 5000;
+      hs.gain.value = 5;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.1 + Math.random() * 0.07, now + 0.002);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      src.connect(bp); bp.connect(hs); hs.connect(gain); gain.connect(ctx.destination);
+      src.start(now); src.stop(now + dur + 0.01);
+    } catch { /* fail silently */ }
+  }, []);
   const handleToggleStats = () => {
     setShowStats(v => {
       const next = !v;
@@ -924,6 +1023,11 @@ const WritingInterface = () => {
       return;
     }
 
+    // Pen scratch sound — single chars, Enter, Backspace, Space
+    if ((e.key.length === 1 || e.key === 'Enter' || e.key === 'Backspace') && !e.ctrlKey && !e.metaKey) {
+      playPenScratch();
+    }
+
     // Priority: pendingCursor (set by structuralUpdate, RAF not yet fired)
     //        → trackedCursor (last known-good from selectionchange)
     //        → live getCursorInfo() (may return stale state at container level)
@@ -1344,7 +1448,7 @@ const WritingInterface = () => {
     };
 
     const sel = window.getSelection();
-    let lines = contentRef.current.split('\n');
+    const lines = contentRef.current.split('\n');
     let insertLineIndex: number;
     let insertOffset: number;
 
@@ -1489,6 +1593,78 @@ const WritingInterface = () => {
     downloadOrShare(blob, `ezwrite-${new Date().toISOString().split('T')[0]}.md`);
   };
 
+  const saveAsShareCard = () => {
+    const content = contentRef.current;
+    if (!content.trim() || isExportingShareCard) return;
+    setIsExportingShareCard(true);
+
+    void (async () => {
+      try {
+        const canvas = document.createElement('canvas');
+        const width = 1080;
+        const height = 1920;
+        const pixelRatio = 2;
+        canvas.width = width * pixelRatio;
+        canvas.height = height * pixelRatio;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.scale(pixelRatio, pixelRatio);
+
+        const darkCard = theme === 'dark';
+        const background = darkCard ? '#171717' : '#f5f1e8';
+        const paper = darkCard ? '#20201e' : '#fffaf0';
+        const text = darkCard ? '#f4efe5' : '#231f1a';
+        const muted = darkCard ? 'rgba(244, 239, 229, 0.48)' : 'rgba(35, 31, 26, 0.48)';
+
+        ctx.fillStyle = background;
+        ctx.fillRect(0, 0, width, height);
+        ctx.fillStyle = paper;
+        drawRoundedRect(ctx, 82, 110, width - 164, height - 220, 42);
+        ctx.fill();
+
+        const lines = getShareCardLines(content);
+        const baseFontSize = lines.join('\n').length > 520 ? 38 : 46;
+        const lineHeight = Math.round(baseFontSize * 1.48);
+        const maxTextWidth = width - 300;
+        const wrapped = wrapShareCardLines(ctx, lines, maxTextWidth, baseFontSize, useSerif);
+        const visibleLines = wrapped.slice(0, 26);
+        const textHeight = visibleLines.reduce((height, line) => height + (line ? lineHeight : Math.round(lineHeight * 0.7)), 0);
+        let y = Math.max(260, Math.round((height - textHeight) / 2) - 20);
+
+        ctx.fillStyle = text;
+        ctx.font = getShareCardFont(baseFontSize, useSerif);
+        ctx.textBaseline = 'top';
+
+        visibleLines.forEach((line) => {
+          if (!line) {
+            y += Math.round(lineHeight * 0.7);
+            return;
+          }
+          ctx.fillText(line, 150, y);
+          y += lineHeight;
+        });
+
+        if (wrapped.length > visibleLines.length) {
+          ctx.fillStyle = muted;
+          ctx.fillText('...', 150, y);
+        }
+
+        ctx.fillStyle = muted;
+        ctx.font = '400 28px "Libre Caslon Text", Georgia, serif';
+        ctx.textAlign = 'right';
+        ctx.fillText('ez.', width - 150, height - 210);
+        ctx.textAlign = 'left';
+
+        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png', 0.95));
+        if (!blob) return;
+        await downloadOrShare(blob, `ezwrite-card-${new Date().toISOString().split('T')[0]}.png`);
+      } finally {
+        setIsExportingShareCard(false);
+      }
+    })();
+  };
+
   const saveAsPdf = () => {
     const content = contentRef.current;
     if (!content.trim() || isExportingPdf) return;
@@ -1609,6 +1785,9 @@ const WritingInterface = () => {
               {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
             </button>
           )}
+          <button onClick={() => setSoundEnabled(v => !v)} className="text-muted-foreground hover:text-foreground transition-colors">
+            {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+          </button>
           <button
             onClick={() => setSettingsOpen(true)}
             className="text-muted-foreground hover:text-foreground transition-colors"
@@ -1625,6 +1804,9 @@ const WritingInterface = () => {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="bg-popover rounded-xl">
+              <DropdownMenuItem onClick={saveAsShareCard} className="cursor-pointer" disabled={isExportingShareCard}>
+                {isExportingShareCard ? 'Preparing PNG...' : 'Share as PNG'}
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={saveAsPdf} className="cursor-pointer" disabled={isExportingPdf}>
                 {isExportingPdf ? 'Preparing PDF…' : 'Download as PDF'}
               </DropdownMenuItem>
