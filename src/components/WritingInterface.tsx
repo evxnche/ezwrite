@@ -1726,7 +1726,7 @@ const WritingInterface = () => {
       )}
 
       {/* Header */}
-      <div className="flex justify-between items-center px-4 py-4 sm:px-[32px] sm:py-6 bg-background">
+      <div className="flex justify-between items-center px-4 py-4 sm:px-[44px] sm:py-6 bg-background">
         <span
           className="font-playfair text-lg sm:text-xl text-foreground tracking-tight"
           style={titleGlow}
@@ -1763,7 +1763,7 @@ const WritingInterface = () => {
       <div
         ref={containerRef}
         data-editor-bg="true"
-        className="flex-1 px-4 sm:px-[32px] bg-background flex flex-col cursor-text"
+        className="flex-1 px-4 sm:px-[44px] bg-background flex flex-col cursor-text"
         onClick={handleContainerClick}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
