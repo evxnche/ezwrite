@@ -1726,7 +1726,7 @@ const WritingInterface = () => {
       )}
 
       {/* Header */}
-      <div className="flex justify-between items-center px-4 py-4 sm:px-[64px] sm:py-6 bg-background">
+      <div className="flex justify-between items-center px-4 py-4 sm:px-[64px] sm:pt-[64px] sm:pb-6 bg-background">
         <span
           className="font-playfair text-xl sm:text-2xl text-foreground tracking-tight"
           style={titleGlow}
