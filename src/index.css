@@ -562,6 +562,17 @@
   text-decoration-thickness: 1px;
 }
 
+/* Serif mode — slightly larger */
+.ce-editor.font-playfair {
+  font-size: 1.0625rem;
+}
+
+@media (min-width: 640px) {
+  .ce-editor.font-playfair {
+    font-size: 1.1875rem;
+  }
+}
+
 /* Mono mode — smaller, tighter */
 .ce-editor.font-mono {
   font-size: 0.875rem;
