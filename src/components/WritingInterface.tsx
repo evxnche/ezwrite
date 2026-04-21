@@ -1782,8 +1782,19 @@ const WritingInterface = () => {
         });
 
         const filename = `ezwrite-${new Date().toISOString().split('T')[0]}.pdf`;
+
+        // On mobile with share support, share the file; otherwise use jsPDF's
+        // own save() which handles the blob-URL lifecycle correctly.
         const pdfBlob = pdf.output('blob');
-        await downloadOrShare(pdfBlob, filename);
+        const file = new File([pdfBlob], filename, { type: 'application/pdf' });
+        if (navigator.share && navigator.canShare?.({ files: [file] })) {
+          try { await navigator.share({ files: [file], title: filename }); }
+          catch { pdf.save(filename); }
+        } else {
+          pdf.save(filename);
+        }
+      } catch (err) {
+        console.error('[ezwrite] PDF export failed:', err);
       } finally {
         setIsExportingPdf(false);
       }
