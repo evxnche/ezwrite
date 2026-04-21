@@ -38,28 +38,30 @@ const SlashCommandPopup: React.FC<Props> = ({ commands, highlightIndex, onSelect
   return (
     <div
       ref={ref}
-      className="fixed z-50 bg-popover border border-border rounded-xl shadow-lg overflow-hidden min-w-[220px]"
+      className={`fixed z-50 bg-popover border border-border rounded-xl shadow-lg overflow-hidden ${isTouchDevice ? 'min-w-[200px]' : 'min-w-[220px]'}`}
       style={
         isTouchDevice && kbHeight > 0
-          ? { bottom: kbHeight + 8, left: '50%', transform: 'translateX(-50%)' }
+          ? { bottom: kbHeight + 8, left: Math.max(16, Math.min(rect.left, (typeof window !== 'undefined' ? window.innerWidth : 400) - 216)) }
           : { top: rect.bottom + 6, left: rect.left }
       }
     >
       {commands.map((cmd, i) => (
         <button
           key={cmd.name}
-          className={`w-full text-left px-3 py-2.5 transition-colors flex items-center gap-3 ${
+          className={`w-full text-left transition-colors flex items-center gap-2 ${
+            isTouchDevice ? 'px-2.5 py-1.5' : 'px-3 py-2.5 gap-3'
+          } ${
             i === highlightIndex ? 'bg-muted/40' : 'hover:bg-muted/20'
           }`}
           onMouseDown={(e) => { e.preventDefault(); onSelect(cmd.name); }}
         >
-          <span className="flex items-center justify-center w-5 h-5 rounded-[6px] border border-border text-xs font-mono text-muted-foreground bg-background flex-shrink-0">
+          <span className={`flex items-center justify-center rounded-[6px] border border-border font-mono text-muted-foreground bg-background flex-shrink-0 ${isTouchDevice ? 'w-4 h-4 text-[10px]' : 'w-5 h-5 text-xs'}`}>
             {i + 1}
           </span>
-          <span className={`font-mono text-sm font-medium w-10 flex-shrink-0 ${COMMAND_COLORS[cmd.name] ?? 'text-foreground'}`}>
+          <span className={`font-mono font-medium flex-shrink-0 ${isTouchDevice ? 'text-xs w-8' : 'text-sm w-10'} ${COMMAND_COLORS[cmd.name] ?? 'text-foreground'}`}>
             {cmd.name}
           </span>
-          <span className="font-mono text-muted-foreground text-xs leading-snug">{cmd.description}</span>
+          <span className={`font-mono text-muted-foreground leading-snug ${isTouchDevice ? 'text-[10px]' : 'text-xs'}`}>{cmd.description}</span>
         </button>
       ))}
     </div>

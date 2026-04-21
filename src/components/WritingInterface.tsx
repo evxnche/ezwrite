@@ -190,11 +190,16 @@ const WritingInterface = () => {
     typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
   )[0];
   const [kbHeight, setKbHeight] = useState(0);
+  const kbHeightRef = useRef(0);
   useEffect(() => {
     if (!isTouchDevice) return;
     const vv = window.visualViewport;
     if (!vv) return;
-    const update = () => setKbHeight(Math.max(0, window.innerHeight - vv.height - vv.offsetTop));
+    const update = () => {
+      const h = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      kbHeightRef.current = h;
+      setKbHeight(h);
+    };
     vv.addEventListener('resize', update);
     return () => vv.removeEventListener('resize', update);
   }, [isTouchDevice]);
@@ -870,6 +875,16 @@ const WritingInterface = () => {
         if (matches.length > 0) {
           const sel = window.getSelection();
           if (sel && sel.rangeCount) {
+            // On mobile: scroll active line into position above keyboard so popup aligns to it
+            if (isTouchDevice && kbHeightRef.current > 0 && !slashPopup) {
+              const lineEl = info.lineDiv || (editorRef.current?.childNodes[info.lineIndex] as HTMLElement | undefined);
+              if (lineEl) {
+                const vp = window.visualViewport;
+                const vpHeight = vp ? vp.height : window.innerHeight;
+                const lineRect = lineEl.getBoundingClientRect();
+                window.scrollBy({ top: lineRect.top - vpHeight * 0.35, behavior: 'instant' } as ScrollToOptions);
+              }
+            }
             const range = sel.getRangeAt(0);
             const rect = range.getBoundingClientRect();
             if (!slashPopup) setPopupHighlight(0);
