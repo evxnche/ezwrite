@@ -561,3 +561,15 @@
   text-underline-offset: 2px;
   text-decoration-thickness: 1px;
 }
+
+/* Mono mode — smaller, tighter */
+.ce-editor.font-mono {
+  font-size: 0.875rem;
+  letter-spacing: 0;
+}
+
+@media (min-width: 640px) {
+  .ce-editor.font-mono {
+    font-size: 1rem;
+  }
+}
