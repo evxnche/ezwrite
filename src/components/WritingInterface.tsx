@@ -1312,25 +1312,82 @@ const WritingInterface = () => {
     const normalized = htmlData ? htmlToPlainLines(htmlData) : normalizePastedPlainText(raw);
     const pastedLines = normalized.split('\n');
 
-    const lines = contentRef.current.split('\n');
-    const info = getCursorInfo();
-    const lineIndex = info?.lineIndex ?? lines.length - 1;
-    const offset = info?.offset ?? (lines[lineIndex]?.length ?? 0);
-    const currentLine = lines[lineIndex] ?? '';
-    const before = currentLine.slice(0, offset);
-    const after = currentLine.slice(offset);
+    // Resolve selection start/end → delete selected range before inserting
+    const getLineOffsetFromDOMPoint = (container: Node, domOffset: number): { lineIndex: number; offset: number } | null => {
+      if (!editorRef.current) return null;
+      const children = Array.from(editorRef.current.childNodes) as HTMLElement[];
+      let foundIdx = -1;
+      let foundEl: HTMLElement | null = null;
+      if (container === editorRef.current) {
+        foundIdx = Math.max(0, Math.min(domOffset > 0 ? domOffset - 1 : 0, children.length - 1));
+        foundEl = children[foundIdx] || null;
+        return foundEl ? { lineIndex: foundIdx, offset: foundEl.textContent?.length ?? 0 } : null;
+      }
+      for (let i = 0; i < children.length; i++) {
+        if (children[i].contains(container)) { foundIdx = i; foundEl = children[i]; break; }
+      }
+      if (foundIdx < 0 || !foundEl) return null;
+      let textContainer: Node = foundEl;
+      if ((foundEl as HTMLElement).dataset?.type === 'list-item') {
+        const span = foundEl.querySelector('.ce-li-text');
+        if (span) textContainer = span;
+      }
+      let offset = 0;
+      try {
+        const r = document.createRange();
+        r.selectNodeContents(textContainer);
+        r.setEnd(container, domOffset);
+        offset = r.toString().length;
+      } catch { /* */ }
+      if ((foundEl as HTMLElement).dataset?.quotePrefix) offset += 3;
+      return { lineIndex: foundIdx, offset };
+    };
+
+    const sel = window.getSelection();
+    let lines = contentRef.current.split('\n');
+    let insertLineIndex: number;
+    let insertOffset: number;
+
+    if (sel && sel.rangeCount && !sel.getRangeAt(0).collapsed && editorRef.current?.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+      const range = sel.getRangeAt(0);
+      const startInfo = getLineOffsetFromDOMPoint(range.startContainer, range.startOffset);
+      const endInfo = getLineOffsetFromDOMPoint(range.endContainer, range.endOffset);
+      if (startInfo && endInfo && (startInfo.lineIndex !== endInfo.lineIndex || startInfo.offset !== endInfo.offset)) {
+        const { lineIndex: sl, offset: so } = startInfo;
+        const { lineIndex: el, offset: eo } = endInfo;
+        if (sl === el) {
+          lines[sl] = lines[sl].slice(0, so) + lines[sl].slice(eo);
+        } else {
+          lines.splice(sl, el - sl + 1, lines[sl].slice(0, so) + lines[el].slice(eo));
+        }
+        insertLineIndex = sl;
+        insertOffset = so;
+      } else {
+        const info = getCursorInfo();
+        insertLineIndex = info?.lineIndex ?? lines.length - 1;
+        insertOffset = info?.offset ?? 0;
+      }
+    } else {
+      const info = getCursorInfo();
+      insertLineIndex = info?.lineIndex ?? lines.length - 1;
+      insertOffset = info?.offset ?? (lines[info?.lineIndex ?? lines.length - 1]?.length ?? 0);
+    }
+
+    const currentLine = lines[insertLineIndex] ?? '';
+    const before = currentLine.slice(0, insertOffset);
+    const after = currentLine.slice(insertOffset);
 
     if (pastedLines.length === 1) {
-      lines[lineIndex] = before + pastedLines[0] + after;
-      structuralUpdate(lines.join('\n'), lineIndex, offset + pastedLines[0].length);
+      lines[insertLineIndex] = before + pastedLines[0] + after;
+      structuralUpdate(lines.join('\n'), insertLineIndex, insertOffset + pastedLines[0].length);
     } else {
       const newLines = [
         before + pastedLines[0],
         ...pastedLines.slice(1, -1),
         pastedLines[pastedLines.length - 1] + after,
       ];
-      lines.splice(lineIndex, 1, ...newLines);
-      structuralUpdate(lines.join('\n'), lineIndex + pastedLines.length - 1, pastedLines[pastedLines.length - 1].length);
+      lines.splice(insertLineIndex, 1, ...newLines);
+      structuralUpdate(lines.join('\n'), insertLineIndex + pastedLines.length - 1, pastedLines[pastedLines.length - 1].length);
     }
   }, [pushUndo, structuralUpdate]);
 
