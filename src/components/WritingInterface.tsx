@@ -564,6 +564,9 @@ const WritingInterface = () => {
     return () => document.removeEventListener('selectionchange', handler);
   }, []); // getCursorInfo only uses stable refs (editorRef) — closure is safe
 
+  // Pre-warm heavy export chunks so first-click latency is negligible.
+  useEffect(() => { void import('jspdf'); }, []);
+
   // --- Mount ---
   useEffect(() => {
     setMounted(true);
@@ -1663,9 +1666,9 @@ const WritingInterface = () => {
         const canvas = document.createElement('canvas');
         const width = 1080;
         const height = 1920;
-        const pixelRatio = 2;
-        canvas.width = width * pixelRatio;
-        canvas.height = height * pixelRatio;
+        const pixelRatio = 1.5;
+        canvas.width = Math.round(width * pixelRatio);
+        canvas.height = Math.round(height * pixelRatio);
 
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
