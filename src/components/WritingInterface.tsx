@@ -1728,7 +1728,7 @@ const WritingInterface = () => {
       {/* Header */}
       <div className="flex justify-between items-center p-4 sm:p-6 bg-background">
         <span
-          className="font-playfair text-xl sm:text-2xl text-foreground tracking-wide"
+          className="font-playfair text-base sm:text-lg text-foreground tracking-wide"
           style={titleGlow}
         >
           ezwrite.
@@ -1742,8 +1742,8 @@ const WritingInterface = () => {
           </button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button disabled={!contentRef.current.trim()} className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30">
-                <Download size={16} />
+              <button disabled={!contentRef.current.trim()} aria-label="Download current page" className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30">
+                <span className="download-arrow-icon text-lg leading-none">↓</span>
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="bg-popover rounded-xl">
@@ -1762,7 +1762,7 @@ const WritingInterface = () => {
             aria-label="Share current page as PNG"
             className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30"
           >
-            <Download size={16} className="download-share-icon rotate-180" />
+            <span className="download-arrow-icon text-lg leading-none">↑</span>
           </button>
         </div>
       </div>
@@ -1771,7 +1771,7 @@ const WritingInterface = () => {
       <div
         ref={containerRef}
         data-editor-bg="true"
-        className="flex-1 px-4 sm:px-14 bg-background flex flex-col cursor-text"
+        className="flex-1 pl-24 pr-4 sm:pl-36 sm:pr-14 bg-background flex flex-col cursor-text"
         onClick={handleContainerClick}
         onDragOver={handleDragOver}
         onDrop={handleDrop}

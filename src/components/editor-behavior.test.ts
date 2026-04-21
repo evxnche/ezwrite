@@ -104,9 +104,10 @@ test('WritingInterface exposes a current-page PNG share card export', () => {
   const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   assert.equal(source.includes('Share as PNG'), true);
   assert.equal(source.includes('aria-label="Share current page as PNG"'), true);
-  assert.equal(source.includes('download-share-icon'), true);
+  assert.equal(source.includes('download-arrow-icon'), true);
+  assert.equal(source.includes('download-share-icon'), false);
   assert.equal(source.includes('Share2'), false);
-  assert.match(source, /<DropdownMenu>[\s\S]*<DropdownMenuTrigger[\s\S]*<Download size=\{16\} \/>[\s\S]*<\/DropdownMenu>[\s\S]*aria-label="Share current page as PNG"/);
+  assert.match(source, /aria-label="Download current page"[\s\S]*download-arrow-icon[\s\S]*aria-label="Share current page as PNG"[\s\S]*download-arrow-icon/);
   assert.equal(source.includes('saveAsShareCard'), true);
   assert.equal(source.includes('canvas.toBlob'), true);
 });
@@ -114,7 +115,9 @@ test('WritingInterface exposes a current-page PNG share card export', () => {
 test('WritingInterface uses ezwrite branding in the header and share card', () => {
   const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   assert.equal(source.includes("ctx.fillText('ezwrite.', width - 150, height - 210);"), true);
+  assert.match(source, /className="font-playfair text-base sm:text-lg text-foreground tracking-wide"/);
   assert.match(source, />\s*ezwrite\.\s*<\/span>/);
+  assert.match(source, /className="flex-1 pl-24 pr-4 sm:pl-36 sm:pr-14 bg-background flex flex-col cursor-text"/);
 });
 
 test('WritingInterface keeps dark and light mode inside settings', () => {
