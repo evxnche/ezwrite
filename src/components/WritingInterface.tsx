@@ -32,7 +32,7 @@ import {
   getTimerArgs, SLASH_COMMANDS, INDENT,
   getDropInsertionIndex, getDropTargetLineIndex,
   contentToHTML, extractContent, setCursorPosition,
-  contentToMarkdown,
+  contentToMarkdown, markdownToContent,
 } from './writing-helpers';
 import {
   isFileSystemSupported, getSavedHandle, pickSaveDirectory,
@@ -1405,7 +1405,9 @@ const WritingInterface = () => {
     pushUndo(true);
 
     const htmlData = e.clipboardData.getData('text/html');
-    const normalized = htmlData ? htmlToPlainLines(htmlData) : normalizePastedPlainText(raw);
+    const plain = htmlData ? htmlToPlainLines(htmlData) : normalizePastedPlainText(raw);
+    // Re-hydrate markdown checklists back into ezWrite's internal list representation.
+    const normalized = markdownToContent(plain);
     const pastedLines = normalized.split('\n');
 
     // Resolve selection start/end → delete selected range before inserting
@@ -1474,6 +1476,22 @@ const WritingInterface = () => {
     const before = currentLine.slice(0, insertOffset);
     const after = currentLine.slice(insertOffset);
 
+    // If the pasted block contains a list header, keep it on its own line so
+    // `getLineType` recognises the following items as list-items rather than
+    // concatenating the header into surrounding prose.
+    const hasListHeader = pastedLines.some(l => l === 'list');
+    if (hasListHeader && (before !== '' || after !== '')) {
+      const newLines: string[] = [];
+      if (before !== '') newLines.push(before);
+      newLines.push(...pastedLines);
+      if (after !== '') newLines.push(after);
+      lines.splice(insertLineIndex, 1, ...newLines);
+      const cursorLineOffset = (before !== '' ? 1 : 0) + pastedLines.length - 1;
+      const cursorLine = insertLineIndex + cursorLineOffset;
+      structuralUpdate(lines.join('\n'), cursorLine, pastedLines[pastedLines.length - 1].length);
+      return;
+    }
+
     if (pastedLines.length === 1) {
       lines[insertLineIndex] = before + pastedLines[0] + after;
       structuralUpdate(lines.join('\n'), insertLineIndex, insertOffset + pastedLines[0].length);
@@ -1536,20 +1554,69 @@ const WritingInterface = () => {
     if (imgSrc) insertImageSrc(imgSrc);
   }, [getCursorInfo, pushUndo, structuralUpdate]);
 
+  // Resolve the line index in contentRef that a DOM node belongs to.
+  const resolveLineIndexFromNode = useCallback((node: Node | null): number | null => {
+    const editor = editorRef.current;
+    if (!editor || !node) return null;
+    let el: Node | null = node;
+    while (el && el !== editor) {
+      if (el.nodeType === Node.ELEMENT_NODE) {
+        const ds = (el as HTMLElement).dataset;
+        if (ds?.line && /^\d+$/.test(ds.line)) return parseInt(ds.line, 10);
+      }
+      el = el.parentNode;
+    }
+    const children = Array.from(editor.childNodes);
+    const idx = children.findIndex(c => c === node || (c as Node).contains?.(node));
+    return idx >= 0 ? idx : null;
+  }, []);
+
+  // Build markdown for the lines covered by the current selection.
+  // Returns null when the selection is collapsed, outside the editor, or
+  // fully within a single non-list line (letting native plain-text copy handle it).
+  const buildMarkdownForSelection = useCallback((): string | null => {
+    const editor = editorRef.current;
+    const sel = window.getSelection();
+    if (!editor || !sel || sel.isCollapsed || sel.rangeCount === 0) return null;
+    const range = sel.getRangeAt(0);
+    if (!editor.contains(range.commonAncestorContainer)) return null;
+    const sLine = resolveLineIndexFromNode(range.startContainer);
+    const eLine = resolveLineIndexFromNode(range.endContainer);
+    if (sLine === null || eLine === null) return null;
+    const start = Math.min(sLine, eLine);
+    const end = Math.max(sLine, eLine);
+    const lines = contentRef.current.split('\n');
+    const touchesListItem = lines
+      .slice(start, end + 1)
+      .some((_, i) => getLineType(lines, start + i) === 'list-item');
+    // Single-line selection in plain text: defer to native copy so partial
+    // selections aren't silently expanded to the full line.
+    if (start === end && !touchesListItem) return null;
+    return contentToMarkdown(contentRef.current, { start, end });
+  }, [resolveLineIndexFromNode]);
+
+  const handleCopy = useCallback((e: React.ClipboardEvent) => {
+    const md = buildMarkdownForSelection();
+    if (md === null) return;
+    e.preventDefault();
+    e.clipboardData.setData('text/plain', md);
+  }, [buildMarkdownForSelection]);
+
   // Item 13: cut handler for mobile — manually copy + delete selection
   const handleCut = useCallback(async (e: React.ClipboardEvent) => {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed) return;
-    const text = sel.toString();
+    const md = buildMarkdownForSelection();
+    const text = md ?? sel.toString();
     try {
-      await navigator.clipboard.writeText(text);
       e.preventDefault();
+      e.clipboardData.setData('text/plain', text);
       document.execCommand('delete');
       if (editorRef.current) saveContent(extractContent(editorRef.current));
     } catch {
-      // let browser handle it natively
+      try { await navigator.clipboard.writeText(text); } catch { /* */ }
     }
-  }, [saveContent]);
+  }, [buildMarkdownForSelection, saveContent]);
 
   // Item 11: download or share (Web Share API for mobile, anchor fallback for desktop)
   const downloadOrShare = async (blob: Blob, filename: string) => {
@@ -1819,6 +1886,7 @@ const WritingInterface = () => {
               onKeyDown={handleKeyDown}
               onBeforeInput={handleBeforeInput}
               onPaste={handlePaste}
+              onCopy={handleCopy}
               onCut={handleCut}
               onClick={handleEditorClick}
               onMouseDown={handleEditorMouseDown}

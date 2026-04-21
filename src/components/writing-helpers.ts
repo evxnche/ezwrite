@@ -351,10 +351,15 @@ export function setCursorPosition(editor: HTMLElement, lineIndex: number, offset
 }
 
 // Task 16: reusable markdown export utility
-export function contentToMarkdown(content: string): string {
+// Optional range: when provided, only lines in [start, end] (inclusive) are emitted,
+// but full content is used for getLineType context so list-items are still detected.
+export function contentToMarkdown(
+  content: string,
+  range?: { start: number; end: number },
+): string {
   if (!content.trim()) return '';
   const lines = content.split('\n');
-  return lines.map((line, i) => {
+  const rendered = lines.map((line, i) => {
     const type = getLineType(lines, i);
     if (type === 'divider') return '---';
     if (type === 'timer' || type === 'list-header') return '';
@@ -364,11 +369,61 @@ export function contentToMarkdown(content: string): string {
     }
     if (type === 'list-item') {
       const struck = isLineStruck(line);
-      const clean = getCleanLine(line);
-      return struck ? `- [x] ${clean}` : `- [ ] ${clean}`;
+      let clean = getCleanLine(line);
+      let indent = 0;
+      while (clean.startsWith(INDENT)) { indent++; clean = clean.slice(INDENT.length); }
+      const pad = '  '.repeat(indent);
+      return struck ? `${pad}- [x] ${clean}` : `${pad}- [ ] ${clean}`;
     }
     if (type === 'quote') return '> ' + line.replace(/^>> ?/, '');
     return line.startsWith(LIST_EXIT) ? line.slice(LIST_EXIT.length) : line;
-  }).filter((line, i, arr) => !(line === '' && arr[i - 1] === ''))
-    .join('\n') + '\n';
+  });
+
+  const start = range ? Math.max(0, range.start) : 0;
+  const end = range ? Math.min(lines.length - 1, range.end) : lines.length - 1;
+  let slice = rendered.slice(start, end + 1);
+  // Drop empty lines produced by headers/timers at the boundaries so the
+  // exported markdown has no surprising leading/trailing blank lines.
+  while (slice.length && slice[0] === '') slice.shift();
+  while (slice.length && slice[slice.length - 1] === '') slice.pop();
+  const out = slice.filter((line, i, arr) => !(line === '' && arr[i - 1] === ''))
+    .join('\n');
+  return range ? out : out + '\n';
+}
+
+// Parse markdown back into ezWrite's internal line representation.
+// Recognises checklist syntax (`- [ ]` / `- [x]` with optional 2-space indent nesting)
+// and wraps contiguous checklist blocks with a `list` header so the editor re-hydrates
+// them as interactive list-items with struck state preserved.
+export function markdownToContent(md: string): string {
+  const input = md.split('\n');
+  const out: string[] = [];
+  let inChecklist = false;
+
+  const flushChecklistEnd = () => {
+    if (inChecklist) inChecklist = false;
+  };
+
+  for (const raw of input) {
+    const m = raw.match(/^(\s*)[-*+]\s+\[([ xX])\]\s?(.*)$/);
+    if (m) {
+      if (!inChecklist) {
+        out.push('list');
+        inChecklist = true;
+      }
+      const leading = m[1] ?? '';
+      // 2 spaces or a tab per nesting level
+      const indentUnits = leading.replace(/\t/g, '  ').length;
+      const level = Math.floor(indentUnits / 2);
+      const struck = m[2] !== ' ';
+      const text = m[3] ?? '';
+      out.push((struck ? STRUCK_MARKER : '') + INDENT.repeat(level) + text);
+      continue;
+    }
+    flushChecklistEnd();
+    if (/^\s*---\s*$/.test(raw)) { out.push('line'); continue; }
+    if (/^>\s?/.test(raw)) { out.push('>> ' + raw.replace(/^>\s?/, '')); continue; }
+    out.push(raw);
+  }
+  return out.join('\n');
 }
