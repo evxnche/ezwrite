@@ -1607,7 +1607,7 @@ const WritingInterface = () => {
         ctx.fillStyle = muted;
         ctx.font = '400 28px "Libre Caslon Text", Georgia, serif';
         ctx.textAlign = 'right';
-        ctx.fillText('ez.', width - 150, height - 210);
+        ctx.fillText('ezwrite.', width - 150, height - 210);
         ctx.textAlign = 'left';
 
         const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png', 0.95));
@@ -1731,17 +1731,9 @@ const WritingInterface = () => {
           className="font-playfair text-xl sm:text-2xl text-foreground tracking-wide"
           style={titleGlow}
         >
-          ez.
+          ezwrite.
         </span>
         <div className="flex items-center gap-3 opacity-60 hover:opacity-100 transition-opacity duration-300">
-          <button
-            onClick={saveAsShareCard}
-            disabled={!contentRef.current.trim() || isExportingShareCard}
-            aria-label="Share current page as PNG"
-            className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30"
-          >
-            <Download size={16} className="download-share-icon rotate-180" />
-          </button>
           <button
             onClick={() => setSettingsOpen(true)}
             className="text-muted-foreground hover:text-foreground transition-colors"
@@ -1764,6 +1756,14 @@ const WritingInterface = () => {
               <DropdownMenuItem onClick={saveAsMd} className="cursor-pointer">Download as Markdown</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <button
+            onClick={saveAsShareCard}
+            disabled={!contentRef.current.trim() || isExportingShareCard}
+            aria-label="Share current page as PNG"
+            className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30"
+          >
+            <Download size={16} className="download-share-icon rotate-180" />
+          </button>
         </div>
       </div>
 

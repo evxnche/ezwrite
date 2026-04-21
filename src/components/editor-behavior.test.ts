@@ -89,9 +89,15 @@ test('getShareCardLines formats the current page for a clean read-only card', ()
 });
 
 test('getShareCardPalette follows the selected color theme', () => {
-  assert.equal(getShareCardPalette('red', false).background, '#FFF4EE');
-  assert.equal(getShareCardPalette('red', true).paper, '#FFF4EE');
-  assert.equal(getShareCardPalette('green', true).paper, '#193221');
+  assert.deepEqual(
+    getShareCardPalette('red', false),
+    { background: '#FFF4EE', paper: '#FFF4EE', text: '#351716', muted: 'rgba(53, 23, 22, 0.52)' },
+  );
+  assert.deepEqual(
+    getShareCardPalette('red', true),
+    { background: '#7C3232', paper: '#7C3232', text: '#FFF1EC', muted: 'rgba(255, 241, 236, 0.56)' },
+  );
+  assert.equal(getShareCardPalette('green', true).paper, getShareCardPalette('green', true).background);
 });
 
 test('WritingInterface exposes a current-page PNG share card export', () => {
@@ -100,8 +106,15 @@ test('WritingInterface exposes a current-page PNG share card export', () => {
   assert.equal(source.includes('aria-label="Share current page as PNG"'), true);
   assert.equal(source.includes('download-share-icon'), true);
   assert.equal(source.includes('Share2'), false);
+  assert.match(source, /<DropdownMenu>[\s\S]*<DropdownMenuTrigger[\s\S]*<Download size=\{16\} \/>[\s\S]*<\/DropdownMenu>[\s\S]*aria-label="Share current page as PNG"/);
   assert.equal(source.includes('saveAsShareCard'), true);
   assert.equal(source.includes('canvas.toBlob'), true);
+});
+
+test('WritingInterface uses ezwrite branding in the header and share card', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  assert.equal(source.includes("ctx.fillText('ezwrite.', width - 150, height - 210);"), true);
+  assert.match(source, />\s*ezwrite\.\s*<\/span>/);
 });
 
 test('WritingInterface keeps dark and light mode inside settings', () => {

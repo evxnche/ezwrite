@@ -112,23 +112,25 @@ export function getShareCardPalette(colorTheme: ShareCardTheme, darkMode: boolea
 } {
   if (colorTheme === 'blue') {
     return darkMode
-      ? { background: '#25334B', paper: '#1B2638', text: '#EEF3FF', muted: 'rgba(238, 243, 255, 0.50)' }
-      : { background: '#4E6A9B', paper: '#EEF3FF', text: '#1F2D46', muted: 'rgba(31, 45, 70, 0.52)' };
+      ? { background: '#4E6A9B', paper: '#4E6A9B', text: '#EEF3FF', muted: 'rgba(238, 243, 255, 0.56)' }
+      : { background: '#EAE7D0', paper: '#EAE7D0', text: '#4E6A9B', muted: 'rgba(78, 106, 155, 0.56)' };
   }
 
   if (colorTheme === 'green') {
     return darkMode
-      ? { background: '#285135', paper: '#193221', text: '#EFF8EF', muted: 'rgba(239, 248, 239, 0.50)' }
-      : { background: '#DDEBDD', paper: '#FBFFF8', text: '#193221', muted: 'rgba(25, 50, 33, 0.52)' };
+      ? { background: '#285135', paper: '#285135', text: '#EFF8EF', muted: 'rgba(239, 248, 239, 0.56)' }
+      : { background: '#EAE7D0', paper: '#EAE7D0', text: '#285135', muted: 'rgba(40, 81, 53, 0.56)' };
   }
 
   if (colorTheme === 'red') {
-    return { background: '#FFF4EE', paper: '#FFF4EE', text: '#351716', muted: 'rgba(53, 23, 22, 0.52)' };
+    return darkMode
+      ? { background: '#7C3232', paper: '#7C3232', text: '#FFF1EC', muted: 'rgba(255, 241, 236, 0.56)' }
+      : { background: '#FFF4EE', paper: '#FFF4EE', text: '#351716', muted: 'rgba(53, 23, 22, 0.52)' };
   }
 
   return darkMode
-    ? { background: '#171717', paper: '#20201e', text: '#f4efe5', muted: 'rgba(244, 239, 229, 0.48)' }
-    : { background: '#f5f1e8', paper: '#fffaf0', text: '#231f1a', muted: 'rgba(35, 31, 26, 0.48)' };
+    ? { background: '#171717', paper: '#171717', text: '#f4efe5', muted: 'rgba(244, 239, 229, 0.48)' }
+    : { background: '#EAE7D0', paper: '#EAE7D0', text: '#231f1a', muted: 'rgba(35, 31, 26, 0.48)' };
 }
 
 export function htmlToPlainLines(html: string): string {
