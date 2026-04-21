@@ -1728,7 +1728,7 @@ const WritingInterface = () => {
       {/* Header */}
       <div className="flex justify-between items-center p-4 sm:p-6 bg-background">
         <span
-          className="font-playfair text-base sm:text-lg text-foreground tracking-tight"
+          className="font-playfair text-lg sm:text-xl text-foreground tracking-tight"
           style={titleGlow}
         >
           ezwrite.
@@ -1771,7 +1771,7 @@ const WritingInterface = () => {
       <div
         ref={containerRef}
         data-editor-bg="true"
-        className="flex-1 pl-16 pr-4 sm:pl-24 sm:pr-14 bg-background flex flex-col cursor-text"
+        className="flex-1 px-4 sm:px-14 bg-background flex flex-col cursor-text"
         onClick={handleContainerClick}
         onDragOver={handleDragOver}
         onDrop={handleDrop}

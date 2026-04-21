@@ -115,9 +115,9 @@ test('WritingInterface exposes a current-page PNG share card export', () => {
 test('WritingInterface uses ezwrite branding in the header and share card', () => {
   const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   assert.equal(source.includes("ctx.fillText('ezwrite.', width - 150, height - 210);"), true);
-  assert.match(source, /className="font-playfair text-base sm:text-lg text-foreground tracking-tight"/);
+  assert.match(source, /className="font-playfair text-lg sm:text-xl text-foreground tracking-tight"/);
   assert.match(source, />\s*ezwrite\.\s*<\/span>/);
-  assert.match(source, /className="flex-1 pl-16 pr-4 sm:pl-24 sm:pr-14 bg-background flex flex-col cursor-text"/);
+  assert.match(source, /className="flex-1 px-4 sm:px-14 bg-background flex flex-col cursor-text"/);
 });
 
 test('WritingInterface keeps dark and light mode inside settings', () => {
