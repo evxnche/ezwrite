@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { Sun, Moon, Download, Settings, Volume2, VolumeX } from 'lucide-react';
+import { Sun, Moon, Download, Settings } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -253,45 +253,7 @@ const WritingInterface = () => {
     localStorage.getItem('ezwrite-show-stats') === 'true'
   );
 
-  // Pen sound
-  const [soundEnabled, setSoundEnabled] = useState(() =>
-    localStorage.getItem('ezwrite-sound') === 'true'
-  );
-  const soundEnabledRef = useRef(false);
-  useEffect(() => { soundEnabledRef.current = soundEnabled; localStorage.setItem('ezwrite-sound', String(soundEnabled)); }, [soundEnabled]);
-  const audioCtxRef = useRef<AudioContext | null>(null);
 
-  const playPenScratch = useCallback(() => {
-    if (!soundEnabledRef.current) return;
-    try {
-      const Ctor = window.AudioContext || (window as WindowWithAudioContext).webkitAudioContext;
-      if (!Ctor) return;
-      if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') audioCtxRef.current = new Ctor();
-      const ctx = audioCtxRef.current;
-      if (ctx.state === 'suspended') void ctx.resume();
-      const now = ctx.currentTime;
-      const dur = 0.035 + Math.random() * 0.03;
-      const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
-      const data = buf.getChannelData(0);
-      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-      const src = ctx.createBufferSource();
-      src.buffer = buf;
-      const bp = ctx.createBiquadFilter();
-      bp.type = 'bandpass';
-      bp.frequency.value = 3500 + Math.random() * 3500;
-      bp.Q.value = 1 + Math.random();
-      const hs = ctx.createBiquadFilter();
-      hs.type = 'highshelf';
-      hs.frequency.value = 5000;
-      hs.gain.value = 5;
-      const gain = ctx.createGain();
-      gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.1 + Math.random() * 0.07, now + 0.002);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
-      src.connect(bp); bp.connect(hs); hs.connect(gain); gain.connect(ctx.destination);
-      src.start(now); src.stop(now + dur + 0.01);
-    } catch { /* fail silently */ }
-  }, []);
   const handleToggleStats = () => {
     setShowStats(v => {
       const next = !v;
@@ -1021,11 +983,6 @@ const WritingInterface = () => {
     if (targetEl.classList.contains('polaroid-caption')) {
       if (e.key === 'Enter') e.preventDefault(); // no newlines in caption
       return;
-    }
-
-    // Pen scratch sound — single chars, Enter, Backspace, Space
-    if ((e.key.length === 1 || e.key === 'Enter' || e.key === 'Backspace') && !e.ctrlKey && !e.metaKey) {
-      playPenScratch();
     }
 
     // Priority: pendingCursor (set by structuralUpdate, RAF not yet fired)
@@ -1785,9 +1742,6 @@ const WritingInterface = () => {
               {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
             </button>
           )}
-          <button onClick={() => setSoundEnabled(v => !v)} className="text-muted-foreground hover:text-foreground transition-colors">
-            {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
-          </button>
           <button
             onClick={() => setSettingsOpen(true)}
             className="text-muted-foreground hover:text-foreground transition-colors"
