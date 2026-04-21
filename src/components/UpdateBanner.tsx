@@ -2,18 +2,13 @@ import React from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 
 const UpdateBanner: React.FC = () => {
-  const { needRefresh: [needRefresh, setNeedRefresh], updateServiceWorker, registration } = useRegisterSW();
+  const { needRefresh: [needRefresh, setNeedRefresh], updateServiceWorker } = useRegisterSW();
 
   if (!needRefresh) return null;
 
   const handleUpdate = () => {
     setNeedRefresh(false);
-    const waiting = registration.current?.waiting;
-    if (waiting) {
-      waiting.postMessage({ type: 'SKIP_WAITING' });
-    }
-    // Give the SW a moment to activate, then reload unconditionally
-    setTimeout(() => window.location.reload(), 400);
+    void updateServiceWorker(true);
   };
 
   return (

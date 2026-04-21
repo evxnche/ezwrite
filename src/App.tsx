@@ -2,11 +2,11 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "next-themes";
 import WritingInterface from "./components/WritingInterface";
+import UpdateBanner from "./components/UpdateBanner";
 
 const Analytics = lazy(() =>
   import("@vercel/analytics/react").then((module) => ({ default: module.Analytics })),
 );
-const UpdateBanner = lazy(() => import("./components/UpdateBanner"));
 
 const App = () => {
   const [showDeferredUi, setShowDeferredUi] = useState(false);
@@ -21,11 +21,7 @@ const App = () => {
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
       <TooltipProvider>
-        {showDeferredUi && (
-          <Suspense fallback={null}>
-            <UpdateBanner />
-          </Suspense>
-        )}
+        <UpdateBanner />
         <WritingInterface />
         {showDeferredUi && (
           <Suspense fallback={null}>

@@ -1,10 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 
 import { INDENT, LIST_EXIT } from './writing-helpers.ts';
 import {
   getFloatingSlashButtonCursor,
   getPageEndCursor,
+  getShareCardLines,
+  normalizePastedPlainText,
   normalizeEditorContent,
   shouldAutoFocusAfterPageSwitch,
   splitExitedListLine,
@@ -67,6 +71,57 @@ test('getFloatingSlashButtonCursor reuses an existing trailing blank line', () =
       offset: 0,
     },
   );
+});
+
+test('normalizePastedPlainText preserves line breaks from plain-text paste', () => {
+  assert.equal(
+    normalizePastedPlainText('first line\nsecond line\n\nthird line'),
+    'first line\nsecond line\n\nthird line',
+  );
+});
+
+test('getShareCardLines formats the current page for a clean read-only card', () => {
+  assert.deepEqual(
+    getShareCardLines('# Title\n\nlist\nfirst task\nline\ntimer 10m\nimg::data\nnormal line'),
+    ['Title', '', 'first task', '', 'normal line'],
+  );
+});
+
+test('WritingInterface exposes a current-page PNG share card export', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  assert.equal(source.includes('Share as PNG'), true);
+  assert.equal(source.includes('saveAsShareCard'), true);
+  assert.equal(source.includes('canvas.toBlob'), true);
+});
+
+test('WritingInterface does not attach dragstart to the contentEditable surface', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  assert.equal(source.includes('onDragStart={handleEditorDragStart}'), false);
+});
+
+test('WritingInterface seeds default copy only on page 1', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  assert.equal(source.includes("Array(TOTAL_PAGES - 1).fill(DEFAULT_PAGE_CONTENT)"), false);
+});
+
+test('WritingInterface container taps focus without scrolling the page to the top', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  assert.match(
+    source,
+    /const handleContainerClick = \(e: React\.MouseEvent\) => \{[\s\S]*?editorRef\.current\?\.focus\(\{ preventScroll: true \}\);[\s\S]*?scrollToLine\(lastLine\);/,
+  );
+});
+
+test('App mounts UpdateBanner outside deferred idle UI gating', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/App.tsx'), 'utf8');
+  const deferredCount = (source.match(/showDeferredUi && \(/g) || []).length;
+  assert.equal(deferredCount, 1);
+});
+
+test('UpdateBanner refreshes through the service-worker update helper', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/UpdateBanner.tsx'), 'utf8');
+  assert.equal(source.includes('updateServiceWorker(true)'), true);
+  assert.equal(source.includes('window.location.reload()'), false);
 });
 
 test('shouldAutoFocusAfterPageSwitch keeps autofocus on desktop only', () => {
