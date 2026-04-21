@@ -875,16 +875,6 @@ const WritingInterface = () => {
         if (matches.length > 0) {
           const sel = window.getSelection();
           if (sel && sel.rangeCount) {
-            // On mobile: scroll active line into position above keyboard so popup aligns to it
-            if (isTouchDevice && kbHeightRef.current > 0 && !slashPopup) {
-              const lineEl = info.lineDiv || (editorRef.current?.childNodes[info.lineIndex] as HTMLElement | undefined);
-              if (lineEl) {
-                const vp = window.visualViewport;
-                const vpHeight = vp ? vp.height : window.innerHeight;
-                const lineRect = lineEl.getBoundingClientRect();
-                window.scrollBy({ top: lineRect.top - vpHeight * 0.35, behavior: 'instant' } as ScrollToOptions);
-              }
-            }
             const range = sel.getRangeAt(0);
             const rect = range.getBoundingClientRect();
             if (!slashPopup) setPopupHighlight(0);
@@ -984,6 +974,17 @@ const WritingInterface = () => {
 
     if (hasCursor) {
       editorRef.current.focus({ preventScroll: true });
+      // On mobile: scroll line to upper portion of viewport before inserting /
+      // so the popup rect is stable and the cursor doesn't visually jump
+      if (isTouchDevice && kbHeightRef.current > 0) {
+        const info = getCursorInfo();
+        if (info?.lineDiv) {
+          const vp = window.visualViewport;
+          const vpHeight = vp ? vp.height : window.innerHeight;
+          const lineRect = info.lineDiv.getBoundingClientRect();
+          window.scrollBy({ top: lineRect.top - vpHeight * 0.35, behavior: 'instant' } as ScrollToOptions);
+        }
+      }
       document.execCommand('insertText', false, '/');
     } else {
       const { content, lineIndex, offset } = getFloatingSlashButtonCursor(contentRef.current);
