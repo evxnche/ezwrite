@@ -32,7 +32,7 @@ interface Props {
 
 const THEMES = [
   { id: '', label: 'orig', swatch: 'bg-[#171717] dark:bg-[#fafaf9]' },
-  { id: 'blue', label: 'blue', swatch: 'bg-[#4E6A9B]' },
+  { id: 'blue', label: 'blue', swatch: 'bg-[#0623ad]' },
   { id: 'green', label: 'green', swatch: 'bg-[#285135]' },
   { id: 'red', label: 'red', swatch: 'bg-[#7C3232]' },
 ];
@@ -145,7 +145,7 @@ export const SettingsDialog: React.FC<Props> = ({
                         }`}
                         style={{ background: theme.id === '' ? (document.documentElement.classList.contains('dark') ? '#171717' : '#EAE7D0') : undefined }}
                       >
-                        {theme.id === 'blue' && <div className={`w-full h-full rounded-full bg-[#4E6A9B]`} />}
+                        {theme.id === 'blue' && <div className={`w-full h-full rounded-full bg-[#0623ad]`} />}
                         {theme.id === 'green' && <div className={`w-full h-full rounded-full bg-[#285135]`} />}
                         {theme.id === 'red' && <div className={`w-full h-full rounded-full bg-[#7C3232]`} />}
                         {theme.id === '' && <div className={`w-full h-full rounded-full`} />}

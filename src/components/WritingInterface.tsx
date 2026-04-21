@@ -1690,7 +1690,7 @@ const WritingInterface = () => {
 
   // Glow helpers — matches text hue for color themes, original warm glow otherwise
   const glowHsl = colorTheme
-    ? (isDark ? '53 38% 87%' : colorTheme === 'blue' ? '218 33% 46%' : colorTheme === 'green' ? '139 34% 24%' : '0 43% 34%')
+    ? (isDark ? '53 38% 87%' : colorTheme === 'blue' ? '230 93% 35%' : colorTheme === 'green' ? '139 34% 24%' : '0 43% 34%')
     : null;
   const titleGlow: React.CSSProperties = glowHsl
     ? { textShadow: `0 0 20px hsl(${glowHsl} / 0.28), 0 0 40px hsl(${glowHsl} / 0.13)` }

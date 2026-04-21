@@ -112,8 +112,8 @@ export function getShareCardPalette(colorTheme: ShareCardTheme, darkMode: boolea
 } {
   if (colorTheme === 'blue') {
     return darkMode
-      ? { background: '#4E6A9B', paper: '#4E6A9B', text: '#EEF3FF', muted: 'rgba(238, 243, 255, 0.56)' }
-      : { background: '#EAE7D0', paper: '#EAE7D0', text: '#4E6A9B', muted: 'rgba(78, 106, 155, 0.56)' };
+      ? { background: '#0623ad', paper: '#0623ad', text: '#EEF3FF', muted: 'rgba(238, 243, 255, 0.56)' }
+      : { background: '#EAE7D0', paper: '#EAE7D0', text: '#0623ad', muted: 'rgba(6, 35, 173, 0.56)' };
   }
 
   if (colorTheme === 'green') {
