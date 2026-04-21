@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { Download, Settings, Share2 } from 'lucide-react';
+import { Download, Settings } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1740,7 +1740,7 @@ const WritingInterface = () => {
             aria-label="Share current page as PNG"
             className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30"
           >
-            <Share2 size={16} />
+            <Download size={16} className="download-share-icon rotate-180" />
           </button>
           <button
             onClick={() => setSettingsOpen(true)}

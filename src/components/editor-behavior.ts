@@ -123,9 +123,7 @@ export function getShareCardPalette(colorTheme: ShareCardTheme, darkMode: boolea
   }
 
   if (colorTheme === 'red') {
-    return darkMode
-      ? { background: '#7C3232', paper: '#2D1717', text: '#FFF1EC', muted: 'rgba(255, 241, 236, 0.50)' }
-      : { background: '#7C3232', paper: '#FFF4EE', text: '#351716', muted: 'rgba(53, 23, 22, 0.52)' };
+    return { background: '#FFF4EE', paper: '#FFF4EE', text: '#351716', muted: 'rgba(53, 23, 22, 0.52)' };
   }
 
   return darkMode
