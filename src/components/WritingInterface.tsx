@@ -1683,13 +1683,14 @@ const WritingInterface = () => {
         ctx.fill();
 
         const lines = getShareCardLines(content);
-        const baseFontSize = lines.join('\n').length > 520 ? 34 : 40;
-        const lineHeight = Math.round(baseFontSize * 1.44);
-        const maxTextWidth = width - 300;
+        const baseFontSize = lines.join('\n').length > 300 ? 24 : 28;
+        const lineHeight = Math.round(baseFontSize * 1.5);
+        const maxTextWidth = width - 260;
         const wrapped = wrapShareCardLines(ctx, lines, maxTextWidth, baseFontSize, useSerif);
-        const visibleLines = wrapped.slice(0, 31);
-        const textHeight = visibleLines.reduce((height, line) => height + (line ? lineHeight : Math.round(lineHeight * 0.7)), 0);
-        let y = Math.max(260, Math.round((height - textHeight) / 2) - 20);
+        const maxLines = Math.floor((height - 280) / lineHeight);
+        const visibleLines = wrapped.slice(0, maxLines);
+        const textHeight = visibleLines.reduce((h, line) => h + (line ? lineHeight : Math.round(lineHeight * 0.7)), 0);
+        let y = Math.max(160, Math.round((height - textHeight) / 2) - 10);
 
         ctx.fillStyle = text;
         ctx.font = getShareCardFont(baseFontSize, useSerif);
@@ -1710,9 +1711,9 @@ const WritingInterface = () => {
         }
 
         ctx.fillStyle = muted;
-        ctx.font = '400 28px "Libre Caslon Text", Georgia, serif';
+        ctx.font = '400 20px "Libre Caslon Text", Georgia, serif';
         ctx.textAlign = 'right';
-        ctx.fillText('ezwrite.', width - 150, height - 210);
+        ctx.fillText('ezwrite.', width - 150, height - 150);
         ctx.textAlign = 'left';
 
         const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png', 0.95));
