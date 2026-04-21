@@ -1748,9 +1748,6 @@ const WritingInterface = () => {
           >
             <Settings size={16} />
           </button>
-          {savedFlash && (
-            <div className="w-2 h-2 rounded-full bg-green-500 opacity-80" />
-          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button disabled={!contentRef.current.trim()} className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30">
