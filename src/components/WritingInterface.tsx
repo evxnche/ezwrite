@@ -1742,8 +1742,8 @@ const WritingInterface = () => {
           </button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button disabled={!contentRef.current.trim()} aria-label="Download current page" className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30">
-                <span className="download-arrow-icon text-lg leading-none">↓</span>
+              <button disabled={!contentRef.current.trim()} aria-label="Share or export current page" className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30">
+                <span className="share-export-icon text-lg leading-none">↗</span>
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="bg-popover rounded-xl">
@@ -1756,14 +1756,6 @@ const WritingInterface = () => {
               <DropdownMenuItem onClick={saveAsMd} className="cursor-pointer">Download as Markdown</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <button
-            onClick={saveAsShareCard}
-            disabled={!contentRef.current.trim() || isExportingShareCard}
-            aria-label="Share current page as PNG"
-            className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30"
-          >
-            <span className="download-arrow-icon text-lg leading-none">↑</span>
-          </button>
         </div>
       </div>
 

@@ -103,11 +103,12 @@ test('getShareCardPalette follows the selected color theme', () => {
 test('WritingInterface exposes a current-page PNG share card export', () => {
   const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   assert.equal(source.includes('Share as PNG'), true);
-  assert.equal(source.includes('aria-label="Share current page as PNG"'), true);
-  assert.equal(source.includes('download-arrow-icon'), true);
+  assert.equal(source.includes('aria-label="Share or export current page"'), true);
+  assert.equal(source.includes('share-export-icon'), true);
+  assert.equal(source.includes('download-arrow-icon'), false);
   assert.equal(source.includes('download-share-icon'), false);
   assert.equal(source.includes('Share2'), false);
-  assert.match(source, /aria-label="Download current page"[\s\S]*download-arrow-icon[\s\S]*aria-label="Share current page as PNG"[\s\S]*download-arrow-icon/);
+  assert.equal((source.match(/share-export-icon/g) || []).length, 1);
   assert.equal(source.includes('saveAsShareCard'), true);
   assert.equal(source.includes('canvas.toBlob'), true);
 });
