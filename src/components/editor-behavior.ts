@@ -82,6 +82,26 @@ export function normalizePastedPlainText(text: string): string {
     .replace(/\r/g, '\n');
 }
 
+export function getShareCardLines(content: string): string[] {
+  return content
+    .split('\n')
+    .map((rawLine) => {
+      let line = rawLine;
+      if (line.startsWith(STRUCK_MARKER)) line = line.slice(STRUCK_MARKER.length);
+      if (line.startsWith(LIST_EXIT)) line = line.slice(LIST_EXIT.length);
+      while (line.startsWith(INDENT)) line = line.slice(INDENT.length);
+
+      const trimmed = line.trim();
+      if (!trimmed) return '';
+      if (trimmed === 'list') return null;
+      if (trimmed === 'line') return '';
+      if (/^timer(\s|$)/i.test(trimmed)) return null;
+      if (trimmed.startsWith('img::')) return null;
+      return trimmed.replace(/^#{1,2}\s+/, '');
+    })
+    .filter((line): line is string => line !== null);
+}
+
 export function htmlToPlainLines(html: string): string {
   const withBreaks = html
     .replace(/<br\s*\/?>/gi, '\n')
