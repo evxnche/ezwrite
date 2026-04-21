@@ -1665,7 +1665,7 @@ const WritingInterface = () => {
       try {
         const canvas = document.createElement('canvas');
         const width = 1080;
-        const height = 1920;
+        const height = 1350;
         const pixelRatio = 1.5;
         canvas.width = Math.round(width * pixelRatio);
         canvas.height = Math.round(height * pixelRatio);
