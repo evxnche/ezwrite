@@ -1728,7 +1728,7 @@ const WritingInterface = () => {
       {/* Header */}
       <div className="flex justify-between items-center px-4 py-4 sm:px-[64px] sm:py-6 bg-background">
         <span
-          className="font-playfair text-lg sm:text-xl text-foreground tracking-tight"
+          className="font-playfair text-xl sm:text-2xl text-foreground tracking-tight"
           style={titleGlow}
         >
           ezwrite.
