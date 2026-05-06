@@ -28,6 +28,7 @@ import {
   splitExitedListLine,
   getMarkdownRangeForSelection,
   getExactSlashCommand,
+  getClosestLineIndexForClick,
 } from './editor-behavior';
 import {
   STRUCK_MARKER, LIST_EXIT, getCleanLine, isLineStruck, getLineType,
@@ -728,10 +729,20 @@ const WritingInterface = () => {
     }
     if (target === containerRef.current || target.dataset?.editorBg === 'true') {
       editorRef.current?.focus({ preventScroll: true });
+      const lineNodes = Array.from(editorRef.current!.childNodes) as HTMLElement[];
+      const lineRects = lineNodes.map((lineNode) => lineNode.getBoundingClientRect());
+      const lineIndex = getClosestLineIndexForClick(e.clientY, lineRects);
+
+      if (lineIndex !== null) {
+        const lineRect = lineRects[lineIndex];
+        const offset = e.clientX <= lineRect.left ? 0 : (lineNodes[lineIndex]?.textContent?.length ?? 0);
+        setCursorPosition(editorRef.current!, lineIndex, offset);
+        return;
+      }
+
       const lines = contentRef.current.split('\n');
       const lastLine = lines.length - 1;
       setCursorPosition(editorRef.current!, lastLine, lines[lastLine]?.length || 0);
-      scrollToLine(lastLine);
     }
   };
 
@@ -2018,7 +2029,7 @@ const WritingInterface = () => {
               onMouseDown={handleEditorMouseDown}
               onDragOver={handleDragOver}
               onDrop={handleDrop}
-              className={`${useSerif ? 'font-playfair' : 'font-mono'} text-base sm:text-lg font-light tracking-wide text-foreground ce-editor`}
+              className={`${useSerif ? 'font-playfair' : 'font-mono'} text-base sm:text-lg font-light tracking-normal text-foreground ce-editor`}
               style={editorStyle}
               spellCheck={spellCheckEnabled}
             />

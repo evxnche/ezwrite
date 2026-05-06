@@ -15,6 +15,7 @@ import {
   splitExitedListLine,
   getMarkdownRangeForSelection,
   getExactSlashCommand,
+  getClosestLineIndexForClick,
 } from './editor-behavior.ts';
 
 test('normalizeEditorContent removes accidental leading regular spaces', () => {
@@ -145,8 +146,9 @@ test('WritingInterface container taps focus without scrolling the page to the to
   const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   assert.match(
     source,
-    /const handleContainerClick = \(e: React\.MouseEvent\) => \{[\s\S]*?editorRef\.current\?\.focus\(\{ preventScroll: true \}\);[\s\S]*?scrollToLine\(lastLine\);/,
+    /const handleContainerClick = \(e: React\.MouseEvent\) => \{[\s\S]*?editorRef\.current\?\.focus\(\{ preventScroll: true \}\);[\s\S]*?getClosestLineIndexForClick\(e\.clientY, lineRects\);[\s\S]*?setCursorPosition\(editorRef\.current!, lineIndex, offset\);/,
   );
+  assert.equal(source.includes('scrollToLine(lastLine);'), false);
 });
 
 test('App mounts UpdateBanner outside deferred idle UI gating', () => {
@@ -164,6 +166,19 @@ test('UpdateBanner refreshes through the service-worker update helper', () => {
 test('shouldAutoFocusAfterPageSwitch keeps autofocus on desktop only', () => {
   assert.equal(shouldAutoFocusAfterPageSwitch(false), true);
   assert.equal(shouldAutoFocusAfterPageSwitch(true), false);
+});
+
+test('getClosestLineIndexForClick picks the nearest line for a background click', () => {
+  const rects = [
+    { top: 100, bottom: 130 },
+    { top: 160, bottom: 190 },
+    { top: 220, bottom: 250 },
+  ];
+
+  assert.equal(getClosestLineIndexForClick(110, rects), 0);
+  assert.equal(getClosestLineIndexForClick(150, rects), 1);
+  assert.equal(getClosestLineIndexForClick(80, rects), 0);
+  assert.equal(getClosestLineIndexForClick(280, rects), 2);
 });
 
 test('getExactSlashCommand recognizes complete slash commands only', () => {

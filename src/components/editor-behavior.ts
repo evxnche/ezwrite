@@ -161,6 +161,33 @@ export function shouldAutoFocusAfterPageSwitch(isTouchDevice: boolean): boolean 
   return !isTouchDevice;
 }
 
+export function getClosestLineIndexForClick(
+  clientY: number,
+  lineRects: Array<{ top: number; bottom: number }>,
+): number | null {
+  if (lineRects.length === 0) return null;
+
+  let closestIndex = 0;
+  let closestDistance = Number.POSITIVE_INFINITY;
+
+  lineRects.forEach((rect, index) => {
+    if (clientY >= rect.top && clientY <= rect.bottom) {
+      closestIndex = index;
+      closestDistance = 0;
+      return;
+    }
+
+    const centerY = (rect.top + rect.bottom) / 2;
+    const distance = Math.abs(clientY - centerY);
+    if (distance < closestDistance) {
+      closestIndex = index;
+      closestDistance = distance;
+    }
+  });
+
+  return closestIndex;
+}
+
 export function getExactSlashCommand(line: string): string | null {
   const visibleLine = line.startsWith(LIST_EXIT) ? line.slice(LIST_EXIT.length) : line;
   const trimmed = visibleLine.trim().toLowerCase();
