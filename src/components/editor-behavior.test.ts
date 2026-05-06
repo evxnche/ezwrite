@@ -13,6 +13,8 @@ import {
   normalizeEditorContent,
   shouldAutoFocusAfterPageSwitch,
   splitExitedListLine,
+  getMarkdownRangeForSelection,
+  getExactSlashCommand,
 } from './editor-behavior.ts';
 
 test('normalizeEditorContent removes accidental leading regular spaces', () => {
@@ -115,10 +117,11 @@ test('WritingInterface exposes a current-page PNG share card export', () => {
 
 test('WritingInterface uses ezwrite branding in the header and share card', () => {
   const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
-  assert.equal(source.includes("ctx.fillText('ezwrite.', width - 150, height - 210);"), true);
-  assert.match(source, /className="font-playfair text-lg sm:text-xl text-foreground tracking-tight"/);
+  assert.equal(source.includes("ctx.fillText('ezwrite.', width - 110, height - 130);"), true);
+  assert.match(source, /className="font-playfair text-xl sm:text-2xl text-foreground tracking-tighter"/);
   assert.match(source, />\s*ezwrite\.\s*<\/span>/);
-  assert.match(source, /className="flex-1 px-4 sm:px-14 bg-background flex flex-col cursor-text"/);
+  assert.match(source, /className="flex-1 px-4 sm:px-\[64px\] bg-background flex flex-col cursor-text"/);
+  assert.equal(source.includes("VISUAL_METRICS_PRESET: 'classic' | 'tuned' = 'tuned'"), true);
 });
 
 test('WritingInterface keeps dark and light mode inside settings', () => {
@@ -161,4 +164,35 @@ test('UpdateBanner refreshes through the service-worker update helper', () => {
 test('shouldAutoFocusAfterPageSwitch keeps autofocus on desktop only', () => {
   assert.equal(shouldAutoFocusAfterPageSwitch(false), true);
   assert.equal(shouldAutoFocusAfterPageSwitch(true), false);
+});
+
+test('getExactSlashCommand recognizes complete slash commands only', () => {
+  assert.equal(getExactSlashCommand('/line'), 'line');
+  assert.equal(getExactSlashCommand('  /list  '), 'list');
+  assert.equal(getExactSlashCommand(`${LIST_EXIT}/timer`), 'timer');
+  assert.equal(getExactSlashCommand('/li'), null);
+  assert.equal(getExactSlashCommand('/line extra'), null);
+  assert.equal(getExactSlashCommand('not /line'), null);
+});
+
+test('getMarkdownRangeForSelection excludes an untouched trailing line', () => {
+  assert.deepEqual(
+    getMarkdownRangeForSelection(
+      { lineIndex: 1, offset: 0 },
+      { lineIndex: 2, offset: 0 },
+      ['list', 'first task', 'second task'],
+    ),
+    { start: 1, end: 1 },
+  );
+});
+
+test('getMarkdownRangeForSelection lets native copy handle plain prose', () => {
+  assert.equal(
+    getMarkdownRangeForSelection(
+      { lineIndex: 0, offset: 2 },
+      { lineIndex: 1, offset: 3 },
+      ['plain one', 'plain two'],
+    ),
+    null,
+  );
 });

@@ -26,6 +26,8 @@ import {
   normalizeEditorContent,
   shouldAutoFocusAfterPageSwitch,
   splitExitedListLine,
+  getMarkdownRangeForSelection,
+  getExactSlashCommand,
 } from './editor-behavior';
 import {
   STRUCK_MARKER, LIST_EXIT, getCleanLine, isLineStruck, getLineType,
@@ -82,8 +84,33 @@ const getDefaultPage = (index: number): string => {
   return '';
 };
 
-const getShareCardFont = (fontSize: number, useSerif: boolean) =>
-  `300 ${fontSize}px ${useSerif ? '"Libre Caslon Text", Georgia, serif' : '"Roboto Mono", monospace'}`;
+const getShareCardFont = (fontSize: number) =>
+  `400 ${fontSize}px "Instrument Serif", Georgia, serif`;
+
+const VISUAL_METRICS_PRESET: 'classic' | 'tuned' = 'tuned';
+
+const VISUAL_METRICS = {
+  classic: {
+    editorMaxWidth: 'none',
+    editorFontSize: '1.1875rem',
+    editorLineHeight: '1.8',
+    themedTitleGlow: { near: 0.28, far: 0.13 },
+    themedEditorGlow: { near: 0.18, far: 0.10 },
+    warmTitleGlow: '0 0 20px hsl(40 60% 70% / 0.2), 0 0 40px hsl(35 50% 60% / 0.10)',
+    warmEditorGlow: '0 0 10px hsl(40 60% 70% / 0.22), 0 0 25px hsl(35 50% 60% / 0.12)',
+    darkTextColor: undefined,
+  },
+  tuned: {
+    editorMaxWidth: 'none',
+    editorFontSize: '17px',
+    editorLineHeight: '1.65',
+    themedTitleGlow: { near: 0.14, far: 0.06 },
+    themedEditorGlow: { near: 0.08, far: 0.04 },
+    warmTitleGlow: '0 0 12px hsl(40 45% 68% / 0.10), 0 0 24px hsl(35 38% 58% / 0.05)',
+    warmEditorGlow: '0 0 7px hsl(40 45% 68% / 0.10), 0 0 16px hsl(35 38% 58% / 0.05)',
+    darkTextColor: 'hsl(48 32% 84%)',
+  },
+} as const;
 
 function drawRoundedRect(
   ctx: CanvasRenderingContext2D,
@@ -113,7 +140,7 @@ function wrapShareCardLines(
   fontSize: number,
   useSerif: boolean,
 ): string[] {
-  ctx.font = getShareCardFont(fontSize, useSerif);
+  ctx.font = getShareCardFont(fontSize);
   const wrapped: string[] = [];
 
   lines.forEach((line) => {
@@ -180,6 +207,8 @@ const WritingInterface = () => {
   const editorRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const editingTimerLineRef = useRef<number | null>(null);
+  const backgroundPointerStartRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressNextBackgroundFocusRef = useRef(false);
 
   // Page dots — show briefly on page switch
   const [showDots, setShowDots] = useState(false);
@@ -340,7 +369,7 @@ const WritingInterface = () => {
   useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
 
   // Track timers for portal rendering
-  const [timerSlots, setTimerSlots] = useState<Array<{ stableId: string; config: string }>>([]);
+  const [timerSlots, setTimerSlots] = useState<Array<{ stableId: string; config: string; lineIndex: number }>>([]);
   // Persistent portal containers keyed by stableId — survive innerHTML resets
   const timerContainers = useRef<Map<string, HTMLElement>>(new Map());
   // Tracks the cursor position set by structuralUpdate while the RAF hasn't fired yet.
@@ -692,6 +721,11 @@ const WritingInterface = () => {
   const handleContainerClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (editorRef.current?.contains(target)) return;
+    const selection = window.getSelection();
+    if (suppressNextBackgroundFocusRef.current || (selection && !selection.isCollapsed && selection.toString())) {
+      suppressNextBackgroundFocusRef.current = false;
+      return;
+    }
     if (target === containerRef.current || target.dataset?.editorBg === 'true') {
       editorRef.current?.focus({ preventScroll: true });
       const lines = contentRef.current.split('\n');
@@ -699,6 +733,26 @@ const WritingInterface = () => {
       setCursorPosition(editorRef.current!, lastLine, lines[lastLine]?.length || 0);
       scrollToLine(lastLine);
     }
+  };
+
+  const handleContainerMouseDown = (e: React.MouseEvent) => {
+    backgroundPointerStartRef.current = { x: e.clientX, y: e.clientY };
+    suppressNextBackgroundFocusRef.current = false;
+  };
+
+  const handleContainerMouseMove = (e: React.MouseEvent) => {
+    const start = backgroundPointerStartRef.current;
+    if (!start) return;
+    if (Math.abs(e.clientX - start.x) > 4 || Math.abs(e.clientY - start.y) > 4) {
+      suppressNextBackgroundFocusRef.current = true;
+    }
+  };
+
+  const handleContainerMouseUp = () => {
+    if (window.getSelection()?.toString()) {
+      suppressNextBackgroundFocusRef.current = true;
+    }
+    backgroundPointerStartRef.current = null;
   };
 
   // Handle mousedown for image resize handles
@@ -926,12 +980,10 @@ const WritingInterface = () => {
     if (slashPopup) setSlashPopup(null);
   }, [slashPopup, pushUndo, structuralUpdate, saveContent]);
 
-  // Slash command select
-  const handleSlashSelect = useCallback((command: string) => {
-    if (!slashPopup) return;
-    const { lineIndex } = slashPopup;
+  const applySlashCommand = useCallback((command: string, lineIndex: number) => {
     // Bug 7: use fresh DOM content instead of potentially stale contentRef
     const lines = editorRef.current ? extractContent(editorRef.current).split('\n') : contentRef.current.split('\n');
+    if (lineIndex < 0 || lineIndex >= lines.length) return;
     pushUndo(true);
     if (command === 'help') {
       lines[lineIndex] = '';
@@ -954,7 +1006,13 @@ const WritingInterface = () => {
       structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
     }
     setSlashPopup(null);
-  }, [slashPopup, pushUndo, structuralUpdate]);
+  }, [pushUndo, structuralUpdate]);
+
+  // Slash command select
+  const handleSlashSelect = useCallback((command: string) => {
+    if (!slashPopup) return;
+    applySlashCommand(command, slashPopup.lineIndex);
+  }, [applySlashCommand, slashPopup]);
 
   const filteredCommands = slashPopup
     ? SLASH_COMMANDS.filter(c => c.name.startsWith(slashPopup.filter.toLowerCase()))
@@ -1213,13 +1271,18 @@ const WritingInterface = () => {
     // Enter
     if (e.key === 'Enter') {
       e.preventDefault();
-      pushUndo(true);
 
       const freshContent = extractContent(editorRef.current!);
       const freshLines = freshContent.split('\n');
       const freshOffset = offset;
       const li = Math.min(lineIndex, freshLines.length - 1);
       const currentLine = freshLines[li] || '';
+      const exactSlashCommand = getExactSlashCommand(currentLine);
+      if (exactSlashCommand) {
+        applySlashCommand(exactSlashCommand, li);
+        return;
+      }
+      pushUndo(true);
 
       // Timer editing mode
       if (editingTimerLineRef.current === li) {
@@ -1557,21 +1620,53 @@ const WritingInterface = () => {
     if (imgSrc) insertImageSrc(imgSrc);
   }, [getCursorInfo, pushUndo, structuralUpdate]);
 
-  // Resolve the line index in contentRef that a DOM node belongs to.
-  const resolveLineIndexFromNode = useCallback((node: Node | null): number | null => {
+  const getLinePointFromDOMPoint = useCallback((container: Node, domOffset: number): { lineIndex: number; offset: number } | null => {
     const editor = editorRef.current;
-    if (!editor || !node) return null;
-    let el: Node | null = node;
-    while (el && el !== editor) {
-      if (el.nodeType === Node.ELEMENT_NODE) {
-        const ds = (el as HTMLElement).dataset;
-        if (ds?.line && /^\d+$/.test(ds.line)) return parseInt(ds.line, 10);
-      }
-      el = el.parentNode;
+    if (!editor) return null;
+    const children = Array.from(editor.childNodes) as HTMLElement[];
+    let lineIndex = -1;
+    let lineEl: HTMLElement | null = null;
+
+    if (container === editor) {
+      lineIndex = Math.max(0, Math.min(domOffset > 0 ? domOffset - 1 : 0, children.length - 1));
+      lineEl = children[lineIndex] || null;
+      return lineEl ? {
+        lineIndex,
+        offset: domOffset > lineIndex ? (lineEl.textContent?.length ?? 0) : 0,
+      } : null;
     }
-    const children = Array.from(editor.childNodes);
-    const idx = children.findIndex(c => c === node || (c as Node).contains?.(node));
-    return idx >= 0 ? idx : null;
+
+    for (let i = 0; i < children.length; i++) {
+      if (children[i].contains(container)) {
+        lineIndex = i;
+        lineEl = children[i];
+        break;
+      }
+    }
+
+    if (lineIndex < 0 || !lineEl) return null;
+
+    let textContainer: Node = lineEl;
+    if (lineEl.dataset?.type === 'list-item') {
+      const textSpan = lineEl.querySelector('.ce-li-text');
+      if (textSpan) textContainer = textSpan;
+    }
+
+    let offset = 0;
+    try {
+      const lineRange = document.createRange();
+      lineRange.selectNodeContents(textContainer);
+      lineRange.setEnd(container, domOffset);
+      offset = lineRange.toString().length;
+    } catch {
+      offset = 0;
+    }
+
+    if (lineEl.dataset?.indent) offset += parseInt(lineEl.dataset.indent) * INDENT.length;
+    if (lineEl.dataset?.quotePrefix) offset += 3;
+    if (lineEl.dataset?.headingPrefix) offset += parseInt(lineEl.dataset.headingPrefix);
+
+    return { lineIndex, offset };
   }, []);
 
   // Build markdown for the lines covered by the current selection.
@@ -1583,20 +1678,14 @@ const WritingInterface = () => {
     if (!editor || !sel || sel.isCollapsed || sel.rangeCount === 0) return null;
     const range = sel.getRangeAt(0);
     if (!editor.contains(range.commonAncestorContainer)) return null;
-    const sLine = resolveLineIndexFromNode(range.startContainer);
-    const eLine = resolveLineIndexFromNode(range.endContainer);
-    if (sLine === null || eLine === null) return null;
-    const start = Math.min(sLine, eLine);
-    const end = Math.max(sLine, eLine);
+    const startPoint = getLinePointFromDOMPoint(range.startContainer, range.startOffset);
+    const endPoint = getLinePointFromDOMPoint(range.endContainer, range.endOffset);
+    if (!startPoint || !endPoint) return null;
     const lines = contentRef.current.split('\n');
-    const touchesListItem = lines
-      .slice(start, end + 1)
-      .some((_, i) => getLineType(lines, start + i) === 'list-item');
-    // Single-line selection in plain text: defer to native copy so partial
-    // selections aren't silently expanded to the full line.
-    if (start === end && !touchesListItem) return null;
-    return contentToMarkdown(contentRef.current, { start, end });
-  }, [resolveLineIndexFromNode]);
+    const markdownRange = getMarkdownRangeForSelection(startPoint, endPoint, lines);
+    if (!markdownRange) return null;
+    return contentToMarkdown(contentRef.current, markdownRange);
+  }, [getLinePointFromDOMPoint]);
 
   const handleCopy = useCallback((e: React.ClipboardEvent) => {
     const md = buildMarkdownForSelection();
@@ -1683,17 +1772,17 @@ const WritingInterface = () => {
         ctx.fill();
 
         const lines = getShareCardLines(content);
-        const baseFontSize = lines.join('\n').length > 300 ? 24 : 28;
+        const baseFontSize = lines.join('\n').length > 300 ? 20 : 24;
         const lineHeight = Math.round(baseFontSize * 1.5);
-        const maxTextWidth = width - 260;
+        const maxTextWidth = width - 200;
         const wrapped = wrapShareCardLines(ctx, lines, maxTextWidth, baseFontSize, useSerif);
-        const maxLines = Math.floor((height - 280) / lineHeight);
+        const maxLines = Math.floor((height - 240) / lineHeight);
         const visibleLines = wrapped.slice(0, maxLines);
         const textHeight = visibleLines.reduce((h, line) => h + (line ? lineHeight : Math.round(lineHeight * 0.7)), 0);
-        let y = Math.max(160, Math.round((height - textHeight) / 2) - 10);
+        let y = Math.max(140, Math.round((height - textHeight) / 2) - 10);
 
         ctx.fillStyle = text;
-        ctx.font = getShareCardFont(baseFontSize, useSerif);
+        ctx.font = getShareCardFont(baseFontSize);
         ctx.textBaseline = 'top';
 
         visibleLines.forEach((line) => {
@@ -1701,24 +1790,31 @@ const WritingInterface = () => {
             y += Math.round(lineHeight * 0.7);
             return;
           }
-          ctx.fillText(line, 150, y);
+          ctx.fillText(line, 110, y);
           y += lineHeight;
         });
 
         if (wrapped.length > visibleLines.length) {
           ctx.fillStyle = muted;
-          ctx.fillText('...', 150, y);
+          ctx.fillText('...', 110, y);
         }
 
         ctx.fillStyle = muted;
-        ctx.font = '400 20px "Libre Caslon Text", Georgia, serif';
+        ctx.font = '400 20px "Instrument Serif", Georgia, serif';
         ctx.textAlign = 'right';
-        ctx.fillText('ezwrite.', width - 150, height - 150);
+        ctx.fillText('ezwrite.', width - 110, height - 130);
         ctx.textAlign = 'left';
 
         const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png', 0.95));
         if (!blob) return;
-        await downloadOrShare(blob, `ezwrite-card-${new Date().toISOString().split('T')[0]}.png`);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ezwrite-card-${new Date().toISOString().split('T')[0]}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
       } finally {
         setIsExportingShareCard(false);
       }
@@ -1809,20 +1905,32 @@ const WritingInterface = () => {
   const glowHsl = colorTheme
     ? (isDark ? '53 38% 87%' : colorTheme === 'blue' ? '230 93% 35%' : colorTheme === 'green' ? '139 34% 24%' : '0 43% 34%')
     : null;
+  const visualMetrics = VISUAL_METRICS[VISUAL_METRICS_PRESET];
+  const visualTextStyle: React.CSSProperties = isDark && visualMetrics.darkTextColor
+    ? { color: visualMetrics.darkTextColor }
+    : {};
   const titleGlow: React.CSSProperties = glowHsl
-    ? { textShadow: `0 0 20px hsl(${glowHsl} / 0.28), 0 0 40px hsl(${glowHsl} / 0.13)` }
-    : isDark ? { textShadow: '0 0 20px hsl(40 60% 70% / 0.2), 0 0 40px hsl(35 50% 60% / 0.10)' } : {};
+    ? {
+        ...visualTextStyle,
+        textShadow: `0 0 20px hsl(${glowHsl} / ${visualMetrics.themedTitleGlow.near}), 0 0 40px hsl(${glowHsl} / ${visualMetrics.themedTitleGlow.far})`,
+      }
+    : isDark ? { ...visualTextStyle, textShadow: visualMetrics.warmTitleGlow } : {};
+  const editorShellStyle: React.CSSProperties = {
+    maxWidth: visualMetrics.editorMaxWidth,
+  };
 
   // Editor styles
   const editorStyle: React.CSSProperties = {
-    lineHeight: '1.8',
+    ...visualTextStyle,
+    fontSize: visualMetrics.editorFontSize,
+    lineHeight: visualMetrics.editorLineHeight,
     caretColor: glowHsl ? `hsl(${glowHsl})` : (isDark ? 'hsl(40 60% 85%)' : 'hsl(0 0% 25%)'),
     outline: 'none',
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-word',
     ...(glowHsl
-      ? { textShadow: `0 0 10px hsl(${glowHsl} / 0.18), 0 0 25px hsl(${glowHsl} / 0.10)` }
-      : isDark ? { textShadow: '0 0 10px hsl(40 60% 70% / 0.22), 0 0 25px hsl(35 50% 60% / 0.12)' } : {}),
+      ? { textShadow: `0 0 10px hsl(${glowHsl} / ${visualMetrics.themedEditorGlow.near}), 0 0 25px hsl(${glowHsl} / ${visualMetrics.themedEditorGlow.far})` }
+      : isDark ? { textShadow: visualMetrics.warmEditorGlow } : {}),
   };
 
   return (
@@ -1845,7 +1953,7 @@ const WritingInterface = () => {
       {/* Header */}
       <div className="flex justify-between items-center px-4 py-4 sm:px-[64px] sm:pt-[64px] sm:pb-6 bg-background">
         <span
-          className="font-playfair text-xl sm:text-2xl text-foreground tracking-tight"
+          className="font-playfair text-xl sm:text-2xl text-foreground tracking-tighter"
           style={titleGlow}
         >
           ezwrite.
@@ -1882,10 +1990,13 @@ const WritingInterface = () => {
         data-editor-bg="true"
         className="flex-1 px-4 sm:px-[64px] bg-background flex flex-col cursor-text"
         onClick={handleContainerClick}
+        onMouseDown={handleContainerMouseDown}
+        onMouseMove={handleContainerMouseMove}
+        onMouseUp={handleContainerMouseUp}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
-        <div className="w-full max-w-none mx-auto flex flex-col h-full" data-editor-bg="true">
+        <div className="w-full mx-auto flex flex-col h-full" style={editorShellStyle} data-editor-bg="true">
           <div
             className={`relative pt-4 sm:pt-6 flex-1 pb-[200px] ${
               pageTransition === 'slide-left' ? 'animate-slide-left' :

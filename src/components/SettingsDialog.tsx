@@ -113,7 +113,7 @@ export const SettingsDialog: React.FC<Props> = ({
                         ? 'border-accent-foreground bg-accent/30 text-accent-foreground'
                         : 'border-border text-muted-foreground hover:border-muted-foreground'
                     }`}
-                    style={opt.id === 'serif' ? { fontFamily: `'Libre Caslon Text', serif` } : {}}
+                    style={opt.id === 'serif' ? { fontFamily: `'Instrument Serif', serif` } : {}}
                   >
                     {opt.label}
                   </button>

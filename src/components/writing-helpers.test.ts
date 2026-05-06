@@ -81,7 +81,7 @@ test('extractContent keeps text typed as a top-level node in the first line', ()
   (globalThis as typeof globalThis & { Node: { ELEMENT_NODE: number; TEXT_NODE: number } }).Node = {
     ELEMENT_NODE,
     TEXT_NODE,
-  };
+  } as unknown as typeof Node;
 
   const editor = element({
     childNodes: [text('rewritten first line')],
@@ -135,7 +135,7 @@ test('contentToMarkdown emits checklist items with task markers and struck state
   const md = contentToMarkdown(content);
   assert.match(md, /- \[ \] open item/);
   assert.match(md, /- \[x\] done item/);
-  assert.match(md, /  - \[ \] nested open/);
+  assert.match(md, / {2}- \[ \] nested open/);
 });
 
 test('contentToMarkdown range option limits output to selected lines', () => {

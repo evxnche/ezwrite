@@ -381,7 +381,7 @@ export function contentToMarkdown(
 
   const start = range ? Math.max(0, range.start) : 0;
   const end = range ? Math.min(lines.length - 1, range.end) : lines.length - 1;
-  let slice = rendered.slice(start, end + 1);
+  const slice = rendered.slice(start, end + 1);
   // Drop empty lines produced by headers/timers at the boundaries so the
   // exported markdown has no surprising leading/trailing blank lines.
   while (slice.length && slice[0] === '') slice.shift();

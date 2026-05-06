@@ -1,4 +1,4 @@
-import { INDENT, LIST_EXIT, STRUCK_MARKER } from './writing-helpers.ts';
+import { getLineType, INDENT, LIST_EXIT, SLASH_COMMANDS, STRUCK_MARKER } from './writing-helpers.ts';
 
 export type ShareCardTheme = '' | 'blue' | 'green' | 'red';
 
@@ -159,4 +159,53 @@ export function htmlToPlainLines(html: string): string {
 
 export function shouldAutoFocusAfterPageSwitch(isTouchDevice: boolean): boolean {
   return !isTouchDevice;
+}
+
+export function getExactSlashCommand(line: string): string | null {
+  const visibleLine = line.startsWith(LIST_EXIT) ? line.slice(LIST_EXIT.length) : line;
+  const trimmed = visibleLine.trim().toLowerCase();
+  if (!trimmed.startsWith('/')) return null;
+
+  const command = trimmed.slice(1);
+  return SLASH_COMMANDS.some(item => item.name === command) ? command : null;
+}
+
+export interface SelectedLinePoint {
+  lineIndex: number;
+  offset: number;
+}
+
+export function getMarkdownRangeForSelection(
+  startPoint: SelectedLinePoint,
+  endPoint: SelectedLinePoint,
+  lines: string[],
+): { start: number; end: number } | null {
+  const startsFirst = startPoint.lineIndex < endPoint.lineIndex ||
+    (startPoint.lineIndex === endPoint.lineIndex && startPoint.offset <= endPoint.offset);
+  const first = startsFirst ? startPoint : endPoint;
+  const last = startsFirst ? endPoint : startPoint;
+  const start = first.lineIndex;
+  let end = last.lineIndex;
+
+  // Browser selections that end at the start of the next line report that next
+  // line as the range end. For line-based markdown export, that line was not
+  // actually selected and must not be copied.
+  if (last.offset === 0 && end > start) {
+    end -= 1;
+  }
+
+  if (end < start) return null;
+
+  const touchesStructuredLine = lines
+    .slice(start, end + 1)
+    .some((_, i) => {
+      const type = getLineType(lines, start + i);
+      return type !== 'text';
+    });
+
+  // Plain text should use the browser's native selection. It is more precise
+  // than our line-based markdown conversion and avoids copying adjacent text.
+  if (!touchesStructuredLine) return null;
+
+  return { start, end };
 }
