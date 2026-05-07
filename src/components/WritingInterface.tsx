@@ -103,7 +103,7 @@ const VISUAL_METRICS = {
   },
   tuned: {
     editorMaxWidth: 'none',
-    editorFontSize: '17px',
+    editorFontSize: '18px',
     editorLineHeight: '1.65',
     themedTitleGlow: { near: 0.14, far: 0.06 },
     themedEditorGlow: { near: 0.08, far: 0.04 },
@@ -1935,6 +1935,7 @@ const WritingInterface = () => {
     ...visualTextStyle,
     fontSize: visualMetrics.editorFontSize,
     lineHeight: visualMetrics.editorLineHeight,
+    letterSpacing: '0.10em',
     caretColor: glowHsl ? `hsl(${glowHsl})` : (isDark ? 'hsl(40 60% 85%)' : 'hsl(0 0% 25%)'),
     outline: 'none',
     whiteSpace: 'pre-wrap',
@@ -2029,7 +2030,7 @@ const WritingInterface = () => {
               onMouseDown={handleEditorMouseDown}
               onDragOver={handleDragOver}
               onDrop={handleDrop}
-              className={`${useSerif ? 'font-playfair' : 'font-mono'} text-base sm:text-lg font-light tracking-normal text-foreground ce-editor`}
+              className={`${useSerif ? 'font-playfair' : 'font-mono'} text-base sm:text-lg font-light text-foreground ce-editor`}
               style={editorStyle}
               spellCheck={spellCheckEnabled}
             />
