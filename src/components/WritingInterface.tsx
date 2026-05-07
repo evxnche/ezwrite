@@ -85,10 +85,10 @@ const getDefaultPage = (index: number): string => {
   return '';
 };
 
-const getShareCardFont = (fontSize: number) =>
-  `400 ${fontSize}px "Instrument Serif", Georgia, serif`;
+const getShareCardFont = (fontSize: number, useSerif: boolean) =>
+  `300 ${fontSize}px ${useSerif ? '"Libre Caslon Text", Georgia, serif' : '"Roboto Mono", monospace'}`;
 
-const VISUAL_METRICS_PRESET: 'classic' | 'tuned' = 'tuned';
+const VISUAL_METRICS_PRESET: 'classic' | 'tuned' = 'classic';
 
 const VISUAL_METRICS = {
   classic: {
@@ -141,7 +141,7 @@ function wrapShareCardLines(
   fontSize: number,
   useSerif: boolean,
 ): string[] {
-  ctx.font = getShareCardFont(fontSize);
+  ctx.font = getShareCardFont(fontSize, useSerif);
   const wrapped: string[] = [];
 
   lines.forEach((line) => {
@@ -1793,7 +1793,7 @@ const WritingInterface = () => {
         let y = Math.max(140, Math.round((height - textHeight) / 2) - 10);
 
         ctx.fillStyle = text;
-        ctx.font = getShareCardFont(baseFontSize);
+        ctx.font = getShareCardFont(baseFontSize, useSerif);
         ctx.textBaseline = 'top';
 
         visibleLines.forEach((line) => {
@@ -1811,7 +1811,7 @@ const WritingInterface = () => {
         }
 
         ctx.fillStyle = muted;
-        ctx.font = '400 20px "Instrument Serif", Georgia, serif';
+        ctx.font = '400 20px "Libre Caslon Text", Georgia, serif';
         ctx.textAlign = 'right';
         ctx.fillText('ezwrite.', width - 110, height - 130);
         ctx.textAlign = 'left';
@@ -1935,7 +1935,6 @@ const WritingInterface = () => {
     ...visualTextStyle,
     fontSize: visualMetrics.editorFontSize,
     lineHeight: visualMetrics.editorLineHeight,
-    letterSpacing: '0.10em',
     caretColor: glowHsl ? `hsl(${glowHsl})` : (isDark ? 'hsl(40 60% 85%)' : 'hsl(0 0% 25%)'),
     outline: 'none',
     whiteSpace: 'pre-wrap',
@@ -2030,7 +2029,7 @@ const WritingInterface = () => {
               onMouseDown={handleEditorMouseDown}
               onDragOver={handleDragOver}
               onDrop={handleDrop}
-              className={`${useSerif ? 'font-playfair' : 'font-mono'} text-base sm:text-lg font-light text-foreground ce-editor`}
+              className={`${useSerif ? 'font-playfair' : 'font-mono'} text-base sm:text-lg font-light tracking-wide text-foreground ce-editor`}
               style={editorStyle}
               spellCheck={spellCheckEnabled}
             />

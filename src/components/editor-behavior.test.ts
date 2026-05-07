@@ -122,7 +122,7 @@ test('WritingInterface uses ezwrite branding in the header and share card', () =
   assert.match(source, /className="font-playfair text-xl sm:text-2xl text-foreground tracking-tighter"/);
   assert.match(source, />\s*ezwrite\.\s*<\/span>/);
   assert.match(source, /className="flex-1 px-4 sm:px-\[64px\] bg-background flex flex-col cursor-text"/);
-  assert.equal(source.includes("VISUAL_METRICS_PRESET: 'classic' | 'tuned' = 'tuned'"), true);
+  assert.equal(source.includes("VISUAL_METRICS_PRESET: 'classic' | 'tuned' = 'classic'"), true);
 });
 
 test('WritingInterface keeps dark and light mode inside settings', () => {
