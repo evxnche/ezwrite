@@ -86,31 +86,17 @@ const getDefaultPage = (index: number): string => {
 };
 
 const getShareCardFont = (fontSize: number, useSerif: boolean) =>
-  `300 ${fontSize}px ${useSerif ? '"Libre Caslon Text", Georgia, serif' : '"Roboto Mono", monospace'}`;
-
-const VISUAL_METRICS_PRESET: 'classic' | 'tuned' = 'classic';
+  `400 ${fontSize}px ${useSerif ? '"Playfair Display", Georgia, serif' : '"Roboto Mono", monospace'}`;
 
 const VISUAL_METRICS = {
-  classic: {
-    editorMaxWidth: 'none',
-    editorFontSize: '1.1875rem',
-    editorLineHeight: '1.8',
-    themedTitleGlow: { near: 0.28, far: 0.13 },
-    themedEditorGlow: { near: 0.18, far: 0.10 },
-    warmTitleGlow: '0 0 20px hsl(40 60% 70% / 0.2), 0 0 40px hsl(35 50% 60% / 0.10)',
-    warmEditorGlow: '0 0 10px hsl(40 60% 70% / 0.22), 0 0 25px hsl(35 50% 60% / 0.12)',
-    darkTextColor: undefined,
-  },
-  tuned: {
-    editorMaxWidth: 'none',
-    editorFontSize: '18px',
-    editorLineHeight: '1.65',
-    themedTitleGlow: { near: 0.14, far: 0.06 },
-    themedEditorGlow: { near: 0.08, far: 0.04 },
-    warmTitleGlow: '0 0 12px hsl(40 45% 68% / 0.10), 0 0 24px hsl(35 38% 58% / 0.05)',
-    warmEditorGlow: '0 0 7px hsl(40 45% 68% / 0.10), 0 0 16px hsl(35 38% 58% / 0.05)',
-    darkTextColor: 'hsl(48 32% 84%)',
-  },
+  editorMaxWidth: 'none',
+  editorFontSize: '18px',
+  editorLineHeight: '1.8',
+  themedTitleGlow: { near: 0.28, far: 0.13 },
+  themedEditorGlow: { near: 0.18, far: 0.10 },
+  warmTitleGlow: '0 0 20px hsl(40 60% 70% / 0.2), 0 0 40px hsl(35 50% 60% / 0.10)',
+  warmEditorGlow: '0 0 10px hsl(40 60% 70% / 0.22), 0 0 25px hsl(35 50% 60% / 0.12)',
+  darkTextColor: undefined as string | undefined,
 } as const;
 
 function drawRoundedRect(
@@ -1811,9 +1797,12 @@ const WritingInterface = () => {
         }
 
         ctx.fillStyle = muted;
-        ctx.font = '400 20px "Libre Caslon Text", Georgia, serif';
+        ctx.font = '400 26px "Instrument Serif", Georgia, serif';
         ctx.textAlign = 'right';
+        const prevSpacing = (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing;
+        (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = '-0.04em';
         ctx.fillText('ezwrite.', width - 110, height - 130);
+        (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = prevSpacing ?? 'normal';
         ctx.textAlign = 'left';
 
         const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png', 0.95));
@@ -1916,7 +1905,7 @@ const WritingInterface = () => {
   const glowHsl = colorTheme
     ? (isDark ? '53 38% 87%' : colorTheme === 'blue' ? '230 93% 35%' : colorTheme === 'green' ? '139 34% 24%' : '0 43% 34%')
     : null;
-  const visualMetrics = VISUAL_METRICS[VISUAL_METRICS_PRESET];
+  const visualMetrics = VISUAL_METRICS;
   const visualTextStyle: React.CSSProperties = isDark && visualMetrics.darkTextColor
     ? { color: visualMetrics.darkTextColor }
     : {};
@@ -1964,8 +1953,8 @@ const WritingInterface = () => {
       {/* Header */}
       <div className="flex justify-between items-center px-4 py-4 sm:px-[64px] sm:pt-[64px] sm:pb-6 bg-background">
         <span
-          className="font-playfair text-xl sm:text-2xl text-foreground tracking-tighter"
-          style={titleGlow}
+          className="text-xl sm:text-2xl text-foreground"
+          style={{ ...titleGlow, letterSpacing: '-0.04em', fontFamily: "'Instrument Serif', serif", fontSize: '26px' }}
         >
           ezwrite.
         </span>

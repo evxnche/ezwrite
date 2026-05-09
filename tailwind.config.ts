@@ -21,7 +21,7 @@ export default {
     	extend: {
     		fontFamily: {
     			playfair: [
-    				'Playfair Display',
+    				'Instrument Serif',
     				'serif'
     			],
     			sans: [
@@ -37,7 +37,7 @@ export default {
     				'sans-serif'
     			],
     			serif: [
-    				'Libre Caslon Text',
+    				'Instrument Serif',
     				'ui-serif',
     				'Georgia',
     				'Cambria',
