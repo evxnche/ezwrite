@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { INDENT, LIST_EXIT } from './writing-helpers.ts';
+import { INDENT, LIST_EXIT } from './writing-helpers';
 import {
   getFloatingSlashButtonCursor,
   getPageEndCursor,

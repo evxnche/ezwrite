@@ -15,13 +15,6 @@ interface Props {
   isTouchDevice?: boolean;
 }
 
-const COMMAND_COLORS: Record<string, string> = {
-  list:  'text-accent-foreground',
-  line:  'text-accent-foreground',
-  timer: 'text-accent-foreground',
-  help:  'text-accent-foreground',
-};
-
 const SlashCommandPopup: React.FC<Props> = ({ commands, highlightIndex, onSelect, onClose, rect, kbHeight = 0, isTouchDevice = false }) => {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -58,7 +51,7 @@ const SlashCommandPopup: React.FC<Props> = ({ commands, highlightIndex, onSelect
           <span className={`flex items-center justify-center rounded-[6px] border border-border font-mono text-muted-foreground bg-background flex-shrink-0 ${isTouchDevice ? 'w-4 h-4 text-[10px]' : 'w-5 h-5 text-xs'}`}>
             {i + 1}
           </span>
-          <span className={`font-mono font-medium flex-shrink-0 ${isTouchDevice ? 'text-xs w-8' : 'text-sm w-10'} ${COMMAND_COLORS[cmd.name] ?? 'text-foreground'}`}>
+          <span className={`font-mono font-medium flex-shrink-0 ${isTouchDevice ? 'text-xs w-8' : 'text-sm w-10'} text-accent-foreground`}>
             {cmd.name}
           </span>
           <span className={`font-mono text-muted-foreground leading-snug ${isTouchDevice ? 'text-[10px]' : 'text-xs'}`}>{cmd.description}</span>

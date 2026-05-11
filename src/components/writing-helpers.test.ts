@@ -10,7 +10,7 @@ import {
   markdownToContent,
   STRUCK_MARKER,
   INDENT,
-} from './writing-helpers.ts';
+} from './writing-helpers';
 
 type MockNode = MockTextNode | MockElementNode;
 

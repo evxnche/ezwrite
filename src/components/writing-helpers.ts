@@ -89,7 +89,6 @@ export function escapeHTML(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
-// Wrap URLs in a styled span for visual signifier (Task 15)
 function applyLinkHighlight(text: string): string {
   const urlRegex = /(https?:\/\/[^\s]+)/g;
   const parts = text.split(urlRegex);
@@ -174,7 +173,6 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
         let displayLine = isListExit ? line.slice(LIST_EXIT.length) : line;
         const attr = isListExit ? ' data-list-exit="1"' : '';
 
-        // Task 14: detect and strip indent prefix, apply CSS padding
         let indentLevel = 0;
         while (displayLine.startsWith(INDENT)) {
           indentLevel++;
@@ -184,7 +182,6 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
           ? ` data-indent="${indentLevel}" style="padding-left: ${indentLevel * 2}em"`
           : '';
 
-        // Task 15: apply URL highlighting
         const html = applyLinkHighlight(displayLine);
 
         return `<div data-type="text"${attr}${indentAttr}>${html || '<br>'}</div>`;
@@ -266,7 +263,6 @@ export function extractContent(editor: HTMLElement): string {
     }
     // text type
     const text = extractText(el);
-    // Task 14: prepend INDENT sequences if data-indent is set
     const indentLevel = el.dataset.indent ? parseInt(el.dataset.indent) || 0 : 0;
     const result = indentLevel > 0 ? INDENT.repeat(indentLevel) + text : text;
     lines.push(el.dataset.listExit === '1' ? LIST_EXIT + result : result);
@@ -350,7 +346,6 @@ export function setCursorPosition(editor: HTMLElement, lineIndex: number, offset
   sel.addRange(range);
 }
 
-// Task 16: reusable markdown export utility
 // Optional range: when provided, only lines in [start, end] (inclusive) are emitted,
 // but full content is used for getLineType context so list-items are still detected.
 export function contentToMarkdown(

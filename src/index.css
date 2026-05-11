@@ -1,4 +1,7 @@
 @import url("https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:wght@400;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;450;500;700&display=swap");
 
 @font-face {
   font-family: 'Instrument Serif';
@@ -15,9 +18,6 @@
   font-style: italic;
   font-display: swap;
 }
-@import url("https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap");
-@import url("https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:wght@400;700&display=swap");
-@import url("https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;450;500;700&display=swap");
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -318,7 +318,7 @@
   -webkit-user-select: text;
   touch-action: auto; /* allows text selection drag on mobile */
   font-family: 'Playfair Display', serif;
-  font-size: 18px !important;
+  font-size: 18px;
   letter-spacing: 0;
 }
 
@@ -562,7 +562,6 @@
   opacity: 1;
 }
 
-/* Task 14: Indented text — prevent double indent from text-indent */
 .ce-editor > [data-indent] {
   text-indent: 0;
 }
@@ -574,7 +573,6 @@
   opacity: 0.85;
 }
 
-/* Task 15: Link signifier */
 .ce-link {
   opacity: 0.6;
   text-decoration: underline;
@@ -582,21 +580,12 @@
   text-decoration-thickness: 1px;
 }
 
-/* Serif mode — slightly larger */
-.ce-editor.font-playfair {
-  font-size: 1.0625rem;
-}
 
-@media (min-width: 640px) {
-  .ce-editor.font-playfair {
-    font-size: 1.1875rem;
-  }
-}
 
 /* Mono mode — smaller, tighter */
 .ce-editor.font-mono {
-  font-family: 'Roboto Mono', monospace !important;
-  font-size: 15px !important;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 15px;
   font-weight: 450;
   letter-spacing: 0;
 }

@@ -35,8 +35,8 @@ export async function getSavedHandle(): Promise<FileSystemDirectoryHandle | null
     return new Promise((resolve, reject) => {
       const tx = db.transaction(IDB_STORE, 'readonly');
       const req = tx.objectStore(IDB_STORE).get(IDB_KEY);
-      req.onsuccess = () => resolve(req.result ?? null);
-      req.onerror = () => reject(req.error);
+      req.onsuccess = () => { db.close(); resolve(req.result ?? null); };
+      req.onerror = () => { db.close(); reject(req.error); };
     });
   } catch {
     return null;
@@ -48,8 +48,8 @@ export async function saveHandle(handle: FileSystemDirectoryHandle): Promise<voi
   return new Promise((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, 'readwrite');
     const req = tx.objectStore(IDB_STORE).put(handle, IDB_KEY);
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
+    req.onsuccess = () => { db.close(); resolve(); };
+    req.onerror = () => { db.close(); reject(req.error); };
   });
 }
 
@@ -59,8 +59,8 @@ export async function clearHandle(): Promise<void> {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(IDB_STORE, 'readwrite');
       const req = tx.objectStore(IDB_STORE).delete(IDB_KEY);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
+      req.onsuccess = () => { db.close(); resolve(); };
+      req.onerror = () => { db.close(); reject(req.error); };
     });
   } catch {
     // ignore

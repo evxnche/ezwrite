@@ -1,4 +1,4 @@
-import { getLineType, INDENT, LIST_EXIT, SLASH_COMMANDS, STRUCK_MARKER } from './writing-helpers.ts';
+import { getLineType, INDENT, LIST_EXIT, SLASH_COMMANDS, STRUCK_MARKER } from './writing-helpers';
 
 export type ShareCardTheme = '' | 'blue' | 'green' | 'red';
 
