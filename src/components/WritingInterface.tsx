@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { Download, Settings } from 'lucide-react';
+import { Download, Settings, Trash2 } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,9 +42,10 @@ import {
   writePageFiles, clearHandle, getDirName, writeToOPFS,
 } from '@/lib/storage';
 
-const TOTAL_PAGES = 5;
+
 const InfoDialog = lazy(() => import('./InfoDialog'));
 const SettingsDialog = lazy(() => import('./SettingsDialog'));
+const NotesPanel = lazy(() => import('./NotesPanel'));
 
 interface WindowWithAudioContext extends Window {
   webkitAudioContext?: typeof AudioContext;
@@ -159,21 +160,26 @@ const WritingInterface = () => {
   if (!pagesRef.current) {
     const saved = localStorage.getItem('zen-writing-pages');
     if (saved) {
-      try { pagesRef.current = JSON.parse(saved); } catch { pagesRef.current = Array(TOTAL_PAGES).fill(''); }
+      try { const parsed = JSON.parse(saved); pagesRef.current = Array.isArray(parsed) && parsed.length > 0 ? parsed : ['']; } catch { pagesRef.current = ['']; }
     } else {
       const old = localStorage.getItem('zen-writing-content') || '';
       const welcome = old || `hi.\n\ni am evan.\n\nthinking is cool.\nwriting is thinking.\n\ni write. you write. we all write.\nwriting today is a slog.\na battle of point sizes, typefaces, and colours.\n\nhence, ezwrite.\ni like pen and paper. this is close.\n\nthere isn't much to it.\n/line splits things up.\n/list keeps you on track with checklists.\n/timer pulls up a timer + some more func.\nor just type in "/help" and you'll find all the help you need.\nbtw your data stays on your device.\n\nit's yours now. go write.\n\nto report bugs or just say hi, evanbuildsstuff@gmail.com\n\njust do things. ez.\n\n-evan`;
-      pagesRef.current = [welcome, ...Array(TOTAL_PAGES - 1).fill('')];
+      pagesRef.current = [welcome];
     }
-    while (pagesRef.current.length < TOTAL_PAGES) pagesRef.current.push('');
   }
 
   const getPageContent = (index: number): string =>
     pagesRef.current[index] ?? getDefaultPage(index);
 
+  const [pageCount, setPageCount] = useState(() => pagesRef.current?.length ?? 1);
+  const [isPageEmpty, setIsPageEmpty] = useState(() => (pagesRef.current?.[0] ?? '').trim() === '');
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [timestamps, setTimestamps] = useState<number[]>(() => {
+    try { return JSON.parse(localStorage.getItem('ezwrite-page-timestamps') || '[]'); } catch { return []; }
+  });
   const [currentPage, setCurrentPage] = useState(() => {
     const saved = localStorage.getItem('ezwrite-last-page');
-    if (saved) { const n = parseInt(saved, 10); if (n >= 0 && n < TOTAL_PAGES) return n; }
+    if (saved) { const n = parseInt(saved, 10); if (n >= 0 && n < (pagesRef.current?.length ?? 1)) return n; }
     return 0;
   });
   const currentPageRef = useRef(0);
@@ -418,10 +424,13 @@ const WritingInterface = () => {
     const serialized = JSON.stringify(pagesRef.current);
     localStorage.setItem('zen-writing-pages', serialized);
     scheduleDeferredPersistence(pagesRef.current);
-    // Auto-save feedback flash
-    clearTimeout(savedFlashTimeoutRef.current);
-    setSavedFlash(true);
-    savedFlashTimeoutRef.current = setTimeout(() => setSavedFlash(false), 800);
+    setIsPageEmpty(content.trim() === '');
+    setTimestamps(prev => {
+      const next = [...prev];
+      next[currentPageRef.current] = Date.now();
+      localStorage.setItem('ezwrite-page-timestamps', JSON.stringify(next));
+      return next;
+    });
   }, [scheduleDeferredPersistence]);
 
   // Image resize mouse handlers (declared after saveContent/pushUndo to avoid TDZ)
@@ -600,7 +609,13 @@ const WritingInterface = () => {
 
   // --- Page switching ---
   const switchToPage = useCallback((newPage: number) => {
-    if (newPage < 0 || newPage >= TOTAL_PAGES || newPage === currentPageRef.current) return;
+    if (newPage < 0 || newPage === currentPageRef.current) return;
+    if (newPage > pagesRef.current.length) return;
+    if (newPage === pagesRef.current.length) {
+      pagesRef.current.push('');
+      setPageCount(pagesRef.current.length);
+      localStorage.setItem('zen-writing-pages', JSON.stringify(pagesRef.current));
+    }
     // Save current page
     if (editorRef.current) {
       pagesRef.current[currentPageRef.current] = extractContent(editorRef.current);
@@ -630,6 +645,7 @@ const WritingInterface = () => {
     const { lineIndex, offset } = getPageEndCursor(pageContent);
     const shouldFocus = shouldAutoFocusAfterPageSwitch(isTouchDevice);
     structuralUpdate(pageContent, lineIndex, offset, shouldFocus);
+    setIsPageEmpty(pageContent.trim() === '');
     setTimeout(() => {
       if (shouldFocus) {
         editorRef.current?.focus();
@@ -637,6 +653,36 @@ const WritingInterface = () => {
       setPageTransition('none');
     }, 250);
   }, [currentPage, isTouchDevice, structuralUpdate]);
+
+  // --- Delete page ---
+  const deletePage = useCallback((pageIndex: number) => {
+    if (pagesRef.current.length <= 1) return;
+    if (editorRef.current) {
+      pagesRef.current[currentPageRef.current] = extractContent(editorRef.current);
+    }
+    pagesRef.current.splice(pageIndex, 1);
+    const newPage = Math.min(pageIndex, pagesRef.current.length - 1);
+    const newContent = pagesRef.current[newPage] ?? '';
+    setPageCount(pagesRef.current.length);
+    localStorage.setItem('zen-writing-pages', JSON.stringify(pagesRef.current));
+    localStorage.setItem('ezwrite-last-page', String(newPage));
+    if (dirHandleRef.current) {
+      void writePageFiles(dirHandleRef.current, pagesRef.current.map(p => contentToMarkdown(p)));
+    }
+    void writeToOPFS(pagesRef.current);
+    editingTimerLineRef.current = null;
+    undoStack.current = [];
+    redoStack.current = [];
+    setShowDots(true);
+    clearTimeout(dotsTimeoutRef.current);
+    dotsTimeoutRef.current = setTimeout(() => setShowDots(false), 500);
+    contentRef.current = newContent;
+    currentPageRef.current = newPage;
+    const { lineIndex, offset } = getPageEndCursor(newContent);
+    structuralUpdate(newContent, lineIndex, offset, !isTouchDevice);
+    setIsPageEmpty(newContent.trim() === '');
+    setCurrentPage(newPage);
+  }, [structuralUpdate, isTouchDevice]);
 
   // --- Touch swipe ---
   const touchStartX = useRef(0);
@@ -986,6 +1032,14 @@ const WritingInterface = () => {
       lines[lineIndex] = '';
       structuralUpdate(lines.join('\n'), lineIndex, 0);
       setInfoOpen(true);
+    } else if (command === 'settings') {
+      lines[lineIndex] = '';
+      structuralUpdate(lines.join('\n'), lineIndex, 0);
+      setSettingsOpen(true);
+    } else if (command === 'notes') {
+      lines[lineIndex] = '';
+      structuralUpdate(lines.join('\n'), lineIndex, 0);
+      setNotesOpen(true);
     } else if (command === 'timer') {
       lines[lineIndex] = 'timer ';
       editingTimerLineRef.current = lineIndex;
@@ -1117,6 +1171,32 @@ const WritingInterface = () => {
         undoStack.current.push(contentRef.current);
         structuralUpdate(redoStack.current.pop()!, lineIndex, offset);
       }
+      return;
+    }
+
+    // Cmd+D — delete current page
+    if ((e.metaKey || e.ctrlKey) && e.key === 'd') {
+      e.preventDefault();
+      deletePage(currentPageRef.current);
+      return;
+    }
+
+    // Cmd+S / Ctrl+S — explicit save
+    if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      e.preventDefault();
+      if (editorRef.current) {
+        const content = extractContent(editorRef.current);
+        pagesRef.current[currentPageRef.current] = content;
+        contentRef.current = content;
+        localStorage.setItem('zen-writing-pages', JSON.stringify(pagesRef.current));
+      }
+      if (dirHandleRef.current) {
+        void writePageFiles(dirHandleRef.current, pagesRef.current.map(p => contentToMarkdown(p)));
+      }
+      void writeToOPFS(pagesRef.current);
+      clearTimeout(savedFlashTimeoutRef.current);
+      setSavedFlash(true);
+      savedFlashTimeoutRef.current = setTimeout(() => setSavedFlash(false), 1500);
       return;
     }
 
@@ -2032,20 +2112,46 @@ const WritingInterface = () => {
       <div
         className={`fixed bottom-10 left-0 right-0 flex justify-center items-center gap-2 pointer-events-none transition-opacity duration-500 ${showDots ? 'opacity-60' : 'opacity-0'}`}
       >
-        {Array.from({ length: TOTAL_PAGES }).map((_, i) => (
-          <button
-            key={i}
-            onClick={() => switchToPage(i)}
-            className="pointer-events-auto transition-all duration-200 rounded-full bg-foreground"
-            style={{
-              width: currentPage === i ? '6px' : '4px',
-              height: currentPage === i ? '6px' : '4px',
-              opacity: currentPage === i ? 1 : 0.4,
-            }}
-            aria-label={`Go to page ${i + 1}`}
-          />
-        ))}
+        {pageCount <= 8 ? (
+          Array.from({ length: pageCount }).map((_, i) => (
+            <button
+              key={i}
+              onClick={() => switchToPage(i)}
+              className="pointer-events-auto transition-all duration-200 rounded-full bg-foreground"
+              style={{
+                width: currentPage === i ? '6px' : '4px',
+                height: currentPage === i ? '6px' : '4px',
+                opacity: currentPage === i ? 1 : 0.4,
+              }}
+              aria-label={`Go to page ${i + 1}`}
+            />
+          ))
+        ) : (
+          <span className="font-mono text-[10px] pointer-events-auto" style={{ opacity: 0.5 }}>
+            {currentPage + 1} / {pageCount}
+          </span>
+        )}
       </div>
+
+      {/* Empty page delete button */}
+      {isPageEmpty && pageCount > 1 && (
+        <div className="fixed bottom-20 left-0 right-0 flex justify-center pointer-events-none">
+          <button
+            onClick={() => deletePage(currentPage)}
+            className="pointer-events-auto flex items-center gap-1.5 font-mono text-xs text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors"
+          >
+            <Trash2 size={11} />
+            delete page
+          </button>
+        </div>
+      )}
+
+      {/* Save indicator */}
+      {savedFlash && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 font-mono text-[10px] text-foreground/40 pointer-events-none select-none">
+          saved
+        </div>
+      )}
 
       {/* Floating / button — mobile only, inserts / to trigger command popup */}
       {isTouchDevice && !slashPopup && (
@@ -2107,6 +2213,19 @@ const WritingInterface = () => {
           container
         );
       })}
+
+      {/* Notes panel */}
+      <Suspense fallback={null}>
+        <NotesPanel
+          open={notesOpen}
+          pages={pagesRef.current ?? []}
+          timestamps={timestamps}
+          currentPage={currentPage}
+          onSelectPage={(i) => switchToPage(i)}
+          onNewPage={() => { setNotesOpen(false); switchToPage(pageCount); }}
+          onClose={() => setNotesOpen(false)}
+        />
+      </Suspense>
 
       {/* Info dialog */}
       <Suspense fallback={null}>

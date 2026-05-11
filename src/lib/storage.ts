@@ -79,7 +79,7 @@ export async function pickSaveDirectory(): Promise<FileSystemDirectoryHandle | n
   }
 }
 
-// Write each page as a separate markdown file: ezwrite-1.md through ezwrite-5.md
+// Write each page as a separate markdown file: ezwrite-1.md, ezwrite-2.md, …
 // markdowns: array of pre-converted markdown strings (one per page)
 let lastGrantedHandle: FileSystemDirectoryHandle | null = null;
 
