@@ -5,7 +5,7 @@ export const INDENT = '        '; // 8 spaces
 export const getCleanLine = (line: string) => line.startsWith(STRUCK_MARKER) ? line.slice(STRUCK_MARKER.length) : line;
 export const isLineStruck = (line: string) => line.startsWith(STRUCK_MARKER);
 
-export type LineType = 'text' | 'heading1' | 'heading2' | 'list-header' | 'list-item' | 'divider' | 'timer' | 'image' | 'quote';
+export type LineType = 'text' | 'heading1' | 'heading2' | 'list-header' | 'list-item' | 'divider' | 'timer' | 'quote';
 
 export const SLASH_COMMANDS = [
   { name: 'list', description: 'Create a checklist' },
@@ -16,38 +16,15 @@ export const SLASH_COMMANDS = [
   { name: 'settings', description: 'Open settings' },
 ];
 
-export function getDropTargetLineIndex(editor: HTMLElement | null, target: EventTarget | null): number | null {
-  if (!editor || !target || typeof target !== 'object') return null;
-
-  let current = target as (HTMLElement | null);
-  while (current) {
-    const rawLine = current.dataset?.line;
-    if (rawLine && /^\d+$/.test(rawLine)) {
-      return parseInt(rawLine, 10);
-    }
-    current = current.parentElement;
-  }
-
-  const children = Array.from(editor.childNodes) as Array<Node & { contains?: (node: Node) => boolean }>;
-  const targetNode = target as Node;
-  const childIndex = children.findIndex((child) => child === targetNode || child.contains?.(targetNode));
-  return childIndex >= 0 ? childIndex : null;
-}
-
-export function getDropInsertionIndex(
-  lineCount: number,
-  targetLineIndex: number | null,
-  fallbackLineIndex: number | null,
-): number {
-  if (lineCount <= 0) return 0;
-  const baseIndex = targetLineIndex ?? fallbackLineIndex ?? (lineCount - 1);
-  const clampedBaseIndex = Math.max(-1, Math.min(baseIndex, lineCount - 1));
-  return Math.min(clampedBaseIndex + 1, lineCount);
+export function stripLegacyImageLines(content: string): string {
+  return content
+    .split('\n')
+    .filter((line) => !line.startsWith('img::'))
+    .join('\n');
 }
 
 export function getLineType(lines: string[], index: number): LineType {
   const line = lines[index];
-  if (line.startsWith('img::')) return 'image';
   if (line.startsWith(LIST_EXIT)) return 'text';
   const clean = getCleanLine(line).trim();
   const lower = clean.toLowerCase();
@@ -103,24 +80,6 @@ function applyLinkHighlight(text: string): string {
   }).join('');
 }
 
-function parseImageLine(line: string): { src: string; width: string | null; caption: string } {
-  let payload = line.slice('img::'.length);
-  let caption = '';
-  const capIdx = payload.indexOf('::cap::');
-  if (capIdx !== -1) {
-    caption = payload.slice(capIdx + 7);
-    payload = payload.slice(0, capIdx);
-  }
-  const lastSep = payload.lastIndexOf('::');
-  let src = payload;
-  let width: string | null = null;
-  if (lastSep > 0) {
-    const possibleWidth = payload.slice(lastSep + 2);
-    if (/^\d+$/.test(possibleWidth)) { width = possibleWidth; src = payload.slice(0, lastSep); }
-  }
-  return { src, width, caption };
-}
-
 interface ContentToHTMLOptions {
   editingTimerLine?: number;
 }
@@ -148,13 +107,6 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
           return `<div data-type="text">${escapeHTML(line) || '<br>'}</div>`;
         }
         return `<div data-type="timer" data-timer-config="${escapeHTML(getTimerArgs(line))}" data-line="${i}" contenteditable="false" class="ce-timer" data-timer-slot="${i}"></div>`;
-      }
-      case 'image': {
-        const { src, width: imgWidth, caption } = parseImageLine(line);
-        const containerStyle = imgWidth ? ` style="width: ${imgWidth}px"` : ' style="width: 280px"';
-        const dataWidth = imgWidth ? ` data-width="${imgWidth}"` : ' data-width="280"';
-        const escapedCaption = escapeHTML(caption);
-        return `<div data-type="image" contenteditable="false" class="ce-image" data-line="${i}"${dataWidth}${containerStyle}><div class="polaroid-inner"><img src="${src}" class="ce-image-img" alt="" draggable="false" /><div class="polaroid-caption" contenteditable="true" data-placeholder="add a title...">${escapedCaption}</div></div><div class="ce-image-resize-handle" data-action="resize" data-line="${i}"></div><button class="ce-delete-btn" data-action="delete" data-line="${i}">✕</button></div>`;
       }
       case 'quote': {
         const text = line.replace(/^>> ?/, '');
@@ -231,18 +183,6 @@ export function extractContent(editor: HTMLElement): string {
     if (type === 'timer') {
       const config = el.dataset.timerConfig || '';
       lines.push(config ? `timer ${config}` : 'timer');
-      return;
-    }
-    if (type === 'image') {
-      const img = el.querySelector('img') as HTMLImageElement | null;
-      const src = img?.getAttribute('src') || '';
-      const width = (el as HTMLElement).dataset.width;
-      const captionEl = el.querySelector('.polaroid-caption') as HTMLElement | null;
-      const caption = captionEl?.textContent?.trim() || '';
-      let stored = src ? `img::${src}` : '';
-      if (width) stored += `::${width}`;
-      if (caption) stored += `::cap::${caption}`;
-      lines.push(stored);
       return;
     }
     if (type === 'heading1' || type === 'heading2') {
@@ -360,10 +300,6 @@ export function contentToMarkdown(
     const type = getLineType(lines, i);
     if (type === 'divider') return '---';
     if (type === 'timer' || type === 'list-header') return '';
-    if (type === 'image') {
-      const { src, caption } = parseImageLine(line);
-      return `![${caption || 'image'}](${src})`;
-    }
     if (type === 'list-item') {
       const struck = isLineStruck(line);
       let clean = getCleanLine(line);

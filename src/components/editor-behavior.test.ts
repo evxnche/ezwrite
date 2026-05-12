@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { INDENT, LIST_EXIT } from './writing-helpers';
+import { INDENT, LIST_EXIT } from './writing-helpers.ts';
 import {
   getFloatingSlashButtonCursor,
   getPageEndCursor,
@@ -86,7 +86,7 @@ test('normalizePastedPlainText preserves line breaks from plain-text paste', () 
 
 test('getShareCardLines formats the current page for a clean read-only card', () => {
   assert.deepEqual(
-    getShareCardLines('# Title\n\nlist\nfirst task\nline\ntimer 10m\nimg::data\nnormal line'),
+    getShareCardLines('# Title\n\nlist\nfirst task\nline\ntimer 10m\nnormal line'),
     ['Title', '', 'first task', '', 'normal line'],
   );
 });
@@ -119,10 +119,10 @@ test('WritingInterface exposes a current-page PNG share card export', () => {
 test('WritingInterface uses ezwrite branding in the header and share card', () => {
   const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   assert.equal(source.includes("ctx.fillText('ezwrite.', width - 110, height - 130);"), true);
-  assert.match(source, /className="font-playfair text-xl sm:text-2xl text-foreground tracking-tighter"/);
+  assert.match(source, /fontFamily: "'Instrument Serif', serif"/);
   assert.match(source, />\s*ezwrite\.\s*<\/span>/);
   assert.match(source, /className="flex-1 px-4 sm:px-\[64px\] bg-background flex flex-col cursor-text"/);
-  assert.equal(source.includes("VISUAL_METRICS_PRESET: 'classic' | 'tuned' = 'classic'"), true);
+  assert.equal(source.includes('const VISUAL_METRICS'), true);
 });
 
 test('WritingInterface keeps dark and light mode inside settings', () => {

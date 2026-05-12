@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { Download, Settings, Trash2, ChevronLeft } from 'lucide-react';
+import { Settings, Trash2, ChevronLeft } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,8 +32,7 @@ import {
 } from './editor-behavior';
 import {
   STRUCK_MARKER, LIST_EXIT, getCleanLine, isLineStruck, getLineType,
-  getTimerArgs, SLASH_COMMANDS, INDENT,
-  getDropInsertionIndex, getDropTargetLineIndex,
+  getTimerArgs, SLASH_COMMANDS, INDENT, stripLegacyImageLines,
   contentToHTML, extractContent, setCursorPosition,
   contentToMarkdown, markdownToContent,
 } from './writing-helpers';
@@ -160,9 +159,18 @@ const WritingInterface = () => {
   if (!pagesRef.current) {
     const saved = localStorage.getItem('zen-writing-pages');
     if (saved) {
-      try { const parsed = JSON.parse(saved); pagesRef.current = Array.isArray(parsed) && parsed.length > 0 ? parsed : ['']; } catch { pagesRef.current = ['']; }
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          pagesRef.current = parsed.map((page) => stripLegacyImageLines(String(page ?? '')));
+        } else {
+          pagesRef.current = [''];
+        }
+      } catch {
+        pagesRef.current = [''];
+      }
     } else {
-      const old = localStorage.getItem('zen-writing-content') || '';
+      const old = stripLegacyImageLines(localStorage.getItem('zen-writing-content') || '');
       const welcome = old || `hi.\n\ni am evan.\n\nthinking is cool.\nwriting is thinking.\n\ni write. you write. we all write.\nwriting today is a slog.\na battle of point sizes, typefaces, and colours.\n\nhence, ezwrite.\ni like pen and paper. this is close.\n\nthere isn't much to it.\n/line splits things up.\n/list keeps you on track with checklists.\n/timer pulls up a timer + some more func.\nor just type in "/help" and you'll find all the help you need.\nbtw your data stays on your device.\n\nit's yours now. go write.\n\nto report bugs or just say hi, evanbuildsstuff@gmail.com\n\njust do things. ez.\n\n-evan`;
       pagesRef.current = [welcome];
     }
@@ -387,9 +395,6 @@ const WritingInterface = () => {
     lastUndoTime.current = now;
   }, []);
 
-  // Image resize
-  const resizingRef = useRef<{ lineIndex: number; startX: number; startWidth: number; imgEl: HTMLElement; lineEl: HTMLElement } | null>(null);
-
   // Slash popup
   const [slashPopup, setSlashPopup] = useState<{ rect: DOMRect; filter: string; lineIndex: number } | null>(null);
   const [popupHighlight, setPopupHighlight] = useState(0);
@@ -432,34 +437,6 @@ const WritingInterface = () => {
       return next;
     });
   }, [scheduleDeferredPersistence]);
-
-  // Image resize mouse handlers (declared after saveContent/pushUndo to avoid TDZ)
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!resizingRef.current) return;
-      const { startX, startWidth, lineEl } = resizingRef.current;
-      const newWidth = Math.max(100, startWidth + (e.clientX - startX));
-      lineEl.style.width = newWidth + 'px';
-      lineEl.dataset.width = String(Math.round(newWidth));
-    };
-    const handleMouseUp = () => {
-      if (!resizingRef.current) return;
-      resizingRef.current = null;
-      if (editorRef.current) { pushUndo(true); saveContent(extractContent(editorRef.current)); }
-    };
-    // Block browser's default file/URL navigation on any drop
-    const blockBrowserDrop = (e: DragEvent) => { e.preventDefault(); };
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-    document.addEventListener('dragover', blockBrowserDrop, true);
-    document.addEventListener('drop', blockBrowserDrop, true);
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.removeEventListener('dragover', blockBrowserDrop, true);
-      document.removeEventListener('drop', blockBrowserDrop, true);
-    };
-  }, [pushUndo, saveContent]);
 
   // --- Structural re-render ---
   const structuralUpdate = useCallback((
@@ -660,8 +637,16 @@ const WritingInterface = () => {
     if (editorRef.current) {
       pagesRef.current[currentPageRef.current] = extractContent(editorRef.current);
     }
+    const current = currentPageRef.current;
     pagesRef.current.splice(pageIndex, 1);
-    const newPage = Math.min(pageIndex, pagesRef.current.length - 1);
+    let newPage: number;
+    if (pageIndex < current) {
+      newPage = current - 1;
+    } else if (pageIndex === current) {
+      newPage = Math.min(current, pagesRef.current.length - 1);
+    } else {
+      newPage = current;
+    }
     const newContent = pagesRef.current[newPage] ?? '';
     setPageCount(pagesRef.current.length);
     localStorage.setItem('zen-writing-pages', JSON.stringify(pagesRef.current));
@@ -678,10 +663,12 @@ const WritingInterface = () => {
     dotsTimeoutRef.current = setTimeout(() => setShowDots(false), 500);
     contentRef.current = newContent;
     currentPageRef.current = newPage;
-    const { lineIndex, offset } = getPageEndCursor(newContent);
-    structuralUpdate(newContent, lineIndex, offset, !isTouchDevice);
     setIsPageEmpty(newContent.trim() === '');
     setCurrentPage(newPage);
+    if (pageIndex === current && newPage === current) {
+      const { lineIndex, offset } = getPageEndCursor(newContent);
+      structuralUpdate(newContent, lineIndex, offset, !isTouchDevice);
+    }
   }, [structuralUpdate, isTouchDevice]);
 
   // --- Touch swipe ---
@@ -798,22 +785,11 @@ const WritingInterface = () => {
     backgroundPointerStartRef.current = null;
   };
 
-  // Handle mousedown for image resize handles
-  const handleEditorMouseDown = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.dataset.action !== 'resize') return;
-    e.preventDefault();
-    const lineIndex = parseInt(target.dataset.line || '0');
-    const lineEl = editorRef.current?.childNodes[lineIndex] as HTMLElement | undefined;
-    if (!lineEl) return;
-    resizingRef.current = { lineIndex, startX: e.clientX, startWidth: lineEl.offsetWidth, imgEl: lineEl, lineEl };
-  };
-
   // Handle clicks inside editor (checkboxes, delete buttons)
   const handleEditorClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     const action = target.dataset.action;
-    if (!action || action === 'resize') return;
+    if (!action) return;
 
     const lineIndex = parseInt(target.dataset.line || '0');
     if (action === 'toggle') {
@@ -1110,13 +1086,6 @@ const WritingInterface = () => {
 
   // Key handler
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    // Let polaroid captions handle their own key events
-    const targetEl = e.target as HTMLElement;
-    if (targetEl.classList.contains('polaroid-caption')) {
-      if (e.key === 'Enter') e.preventDefault(); // no newlines in caption
-      return;
-    }
-
     // Priority: pendingCursor (set by structuralUpdate, RAF not yet fired)
     //        → trackedCursor (last known-good from selectionchange)
     //        → live getCursorInfo() (may return stale state at container level)
@@ -1371,14 +1340,6 @@ const WritingInterface = () => {
         return;
       }
 
-      // Image line — never split, just insert a blank line after it
-      if (getLineType(freshLines, li) === 'image') {
-        freshLines.splice(li + 1, 0, '');
-        structuralUpdate(freshLines.join('\n'), li + 1, 0);
-        scrollToLine(li + 1);
-        return;
-      }
-
       // Check for /x at end of list item before splitting
       const lineType = getLineType(freshLines, li);
       const cleanLine = getCleanLine(currentLine);
@@ -1520,29 +1481,6 @@ const WritingInterface = () => {
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     e.preventDefault();
 
-    // Check for image paste first
-    const items = Array.from(e.clipboardData.items);
-    const imageItem = items.find(item => item.type.startsWith('image/'));
-    if (imageItem) {
-      const file = imageItem.getAsFile();
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          const base64 = ev.target?.result as string;
-          if (!base64) return;
-          const info = getCursorInfo();
-          const lines = contentRef.current.split('\n');
-          const lineIndex = info?.lineIndex ?? lines.length - 1;
-          // Insert img:: line after current line
-          lines.splice(lineIndex + 1, 0, `img::${base64}`);
-          pushUndo(true);
-          structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
-        };
-        reader.readAsDataURL(file);
-        return;
-      }
-    }
-
     const raw = e.clipboardData.getData('text/plain');
     if (!raw) return;
     pushUndo(true);
@@ -1649,53 +1587,16 @@ const WritingInterface = () => {
     }
   }, [pushUndo, structuralUpdate]);
 
-  // Drag-and-drop image support
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    e.dataTransfer.dropEffect = 'copy';
+    e.dataTransfer.dropEffect = 'none';
   }, []);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-
-    const insertImageSrc = (src: string) => {
-      const lines = contentRef.current.split('\n');
-      const targetLineIndex = getDropTargetLineIndex(editorRef.current, e.target);
-      const fallbackLineIndex = getCursorInfo()?.lineIndex ?? null;
-      const insertionIndex = getDropInsertionIndex(lines.length, targetLineIndex, fallbackLineIndex);
-      lines.splice(insertionIndex, 0, `img::${src}`);
-      pushUndo(true);
-      structuralUpdate(lines.join('\n'), insertionIndex, 0);
-    };
-
-    // File drop (from Finder / desktop)
-    const files = Array.from(e.dataTransfer.files);
-    const imageFile = files.find(f => f.type.startsWith('image/'));
-    if (imageFile) {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const base64 = ev.target?.result as string;
-        if (base64) insertImageSrc(base64);
-      };
-      reader.readAsDataURL(imageFile);
-      return;
-    }
-
-    // URL drag (from browser — Google Images, etc.)
-    const html = e.dataTransfer.getData('text/html');
-    const uriList = e.dataTransfer.getData('text/uri-list');
-    let imgSrc = '';
-    if (html) {
-      const match = html.match(/src="([^"]+)"/);
-      if (match) imgSrc = match[1];
-    }
-    if (!imgSrc && uriList) {
-      imgSrc = uriList.split('\n').find(u => u.trim() && !u.startsWith('#'))?.trim() || '';
-    }
-    if (imgSrc) insertImageSrc(imgSrc);
-  }, [getCursorInfo, pushUndo, structuralUpdate]);
+  }, []);
 
   const getLinePointFromDOMPoint = useCallback((container: Node, domOffset: number): { lineIndex: number; offset: number } | null => {
     const editor = editorRef.current;
@@ -2102,7 +2003,6 @@ const WritingInterface = () => {
               onCopy={handleCopy}
               onCut={handleCut}
               onClick={handleEditorClick}
-              onMouseDown={handleEditorMouseDown}
               onDragOver={handleDragOver}
               onDrop={handleDrop}
               className={`${useSerif ? 'font-playfair' : 'font-mono'} text-base sm:text-lg font-light tracking-wide text-foreground ce-editor`}

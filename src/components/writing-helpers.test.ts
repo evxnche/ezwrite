@@ -5,12 +5,11 @@ import {
   contentToHTML,
   contentToMarkdown,
   extractContent,
-  getDropInsertionIndex,
-  getDropTargetLineIndex,
   markdownToContent,
+  stripLegacyImageLines,
   STRUCK_MARKER,
   INDENT,
-} from './writing-helpers';
+} from './writing-helpers.ts';
 
 type MockNode = MockTextNode | MockElementNode;
 
@@ -90,39 +89,11 @@ test('extractContent keeps text typed as a top-level node in the first line', ()
   assert.equal(extractContent(editor as unknown as HTMLElement), 'rewritten first line');
 });
 
-test('getDropTargetLineIndex uses the closest explicit data-line ancestor first', () => {
-  const caption = element();
-  const image = element({
-    dataset: { line: '2' },
-    childNodes: [caption],
-  });
-  const editor = element({
-    childNodes: [element(), element(), image],
-  });
-
+test('stripLegacyImageLines removes stored image markers from legacy content', () => {
   assert.equal(
-    getDropTargetLineIndex(editor as unknown as HTMLElement, caption as unknown as EventTarget),
-    2,
+    stripLegacyImageLines('first\nimg::data:image/png;base64,abc\nsecond'),
+    'first\nsecond',
   );
-});
-
-test('getDropTargetLineIndex falls back to the containing editor child for plain text lines', () => {
-  const nestedText = element();
-  const textLine = element({
-    childNodes: [nestedText],
-  });
-  const editor = element({
-    childNodes: [element(), textLine, element()],
-  });
-
-  assert.equal(
-    getDropTargetLineIndex(editor as unknown as HTMLElement, nestedText as unknown as EventTarget),
-    1,
-  );
-});
-
-test('getDropInsertionIndex prefers the drop target over the caret and appends after that line', () => {
-  assert.equal(getDropInsertionIndex(4, 2, 0), 3);
 });
 
 test('contentToMarkdown emits checklist items with task markers and struck state', () => {
@@ -160,9 +131,9 @@ test('copy-then-paste round-trip preserves checklist state', () => {
   assert.equal(roundTripped, original);
 });
 
-test('contentToHTML renders image blocks with native dragging disabled', () => {
-  const html = contentToHTML('img::https://example.com/polaroid.jpg');
+test('contentToHTML treats plain img:: text as normal editor text after image removal', () => {
+  const html = contentToHTML('img::placeholder');
 
-  assert.match(html, /class="ce-image-img"/);
-  assert.match(html, /draggable="false"/);
+  assert.match(html, /data-type="text"/);
+  assert.doesNotMatch(html, /ce-image/);
 });

@@ -1,4 +1,4 @@
-import { getLineType, INDENT, LIST_EXIT, SLASH_COMMANDS, STRUCK_MARKER } from './writing-helpers';
+import { getLineType, INDENT, LIST_EXIT, SLASH_COMMANDS, STRUCK_MARKER } from './writing-helpers.ts';
 
 export type ShareCardTheme = '' | 'blue' | 'green' | 'red';
 
@@ -98,7 +98,6 @@ export function getShareCardLines(content: string): string[] {
       if (trimmed === 'list') return null;
       if (trimmed === 'line') return '';
       if (/^timer(\s|$)/i.test(trimmed)) return null;
-      if (trimmed.startsWith('img::')) return null;
       return trimmed.replace(/^#{1,2}\s+/, '');
     })
     .filter((line): line is string => line !== null);

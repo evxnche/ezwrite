@@ -18,7 +18,6 @@ function getPageTitle(content: string): string {
   for (const line of content.split('\n')) {
     let clean = line.trim();
     if (!clean || clean === 'list' || clean === 'line' || /^timer(\s|$)/i.test(clean)) continue;
-    if (clean.startsWith('img::')) continue;
     clean = clean.replace(/^#{1,2}\s+/, '').replace(/^>> ?/, '');
     if (clean.startsWith(STRUCK_MARKER)) clean = clean.slice(STRUCK_MARKER.length);
     if (clean.startsWith(LIST_EXIT)) clean = clean.slice(LIST_EXIT.length);
@@ -34,7 +33,7 @@ function getPagePreview(content: string, title: string): string {
     let clean = line.trim();
     if (!clean) continue;
     clean = clean.replace(/^#{1,2}\s+/, '').replace(/^>> ?/, '');
-    if (clean.startsWith('img::') || clean === 'list' || clean === 'line' || /^timer(\s|$)/i.test(clean)) continue;
+    if (clean === 'list' || clean === 'line' || /^timer(\s|$)/i.test(clean)) continue;
     if (clean.startsWith(STRUCK_MARKER)) clean = clean.slice(STRUCK_MARKER.length);
     if (clean.startsWith(LIST_EXIT)) clean = clean.slice(LIST_EXIT.length);
     clean = clean.startsWith(INDENT) ? clean.replace(/^\s+/, '') : clean;

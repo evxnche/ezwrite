@@ -6,8 +6,8 @@ import {
   getNextTimerAlertMode,
   pickColorTheme,
   pickTimerAlertMode,
-} from './preferences';
-import { buildTimerSlots } from './timer-identity';
+} from './preferences.ts';
+import { buildTimerSlots } from './timer-identity.ts';
 
 test('pickColorTheme returns the exact theme that was clicked', () => {
   assert.equal(pickColorTheme('green'), 'green');
