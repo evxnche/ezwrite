@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { Download, Settings, Trash2 } from 'lucide-react';
+import { Download, Settings, Trash2, ChevronLeft } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -2061,6 +2061,13 @@ const WritingInterface = () => {
               <DropdownMenuItem onClick={saveAsMd} className="cursor-pointer">Download as Markdown</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <button
+            onClick={() => setNotesOpen(true)}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Open pages"
+          >
+            <ChevronLeft size={16} />
+          </button>
         </div>
       </div>
 
@@ -2221,8 +2228,9 @@ const WritingInterface = () => {
           pages={pagesRef.current ?? []}
           timestamps={timestamps}
           currentPage={currentPage}
-          onSelectPage={(i) => switchToPage(i)}
-          onNewPage={() => { setNotesOpen(false); switchToPage(pageCount); }}
+          onSelectPage={(i) => { switchToPage(i); setNotesOpen(false); }}
+          onNewPage={() => switchToPage(pageCount)}
+          onDeletePage={(i) => deletePage(i)}
           onClose={() => setNotesOpen(false)}
         />
       </Suspense>

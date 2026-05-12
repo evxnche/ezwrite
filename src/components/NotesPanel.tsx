@@ -1,5 +1,5 @@
-import React from 'react';
-import { X, Plus } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, Plus, Trash2 } from 'lucide-react';
 import { STRUCK_MARKER, LIST_EXIT, INDENT } from './writing-helpers';
 
 interface Props {
@@ -9,6 +9,7 @@ interface Props {
   currentPage: number;
   onSelectPage: (index: number) => void;
   onNewPage: () => void;
+  onDeletePage: (index: number) => void;
   onClose: () => void;
 }
 
@@ -58,13 +59,15 @@ function timeAgo(ts: number): string {
   return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-const NotesPanel: React.FC<Props> = ({ open, pages, timestamps, currentPage, onSelectPage, onNewPage, onClose }) => {
+const NotesPanel: React.FC<Props> = ({ open, pages, timestamps, currentPage, onSelectPage, onNewPage, onDeletePage, onClose }) => {
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+
   if (!open) return null;
 
   return (
     <>
       <div className="fixed inset-0 z-40 bg-background/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="fixed left-0 top-0 bottom-0 z-50 w-72 bg-popover border-r border-border flex flex-col shadow-2xl">
+      <div className="fixed right-0 top-0 bottom-0 z-50 w-72 bg-popover border-l border-border flex flex-col shadow-2xl">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border/50">
           <span className="font-mono text-[10px] text-muted-foreground/50 uppercase tracking-widest">pages</span>
           <div className="flex items-center gap-1">
@@ -90,28 +93,44 @@ const NotesPanel: React.FC<Props> = ({ open, pages, timestamps, currentPage, onS
             const preview = getPagePreview(content, title);
             const ts = timestamps[i];
             const isActive = i === currentPage;
+            const isHovered = hoveredIndex === i;
             return (
-              <button
+              <div
                 key={i}
-                onClick={() => { onSelectPage(i); onClose(); }}
-                className={`w-full text-left px-4 py-3 border-b border-border/20 transition-colors ${
-                  isActive ? 'bg-muted/40' : 'hover:bg-muted/20'
+                className={`relative border-b border-border/20 transition-colors ${
+                  isActive ? 'bg-muted/40' : isHovered ? 'bg-muted/20' : ''
                 }`}
+                onMouseEnter={() => setHoveredIndex(i)}
+                onMouseLeave={() => setHoveredIndex(null)}
               >
-                <div className="font-mono text-sm font-medium text-foreground truncate leading-snug">
-                  {title}
-                </div>
-                {preview && (
-                  <div className="font-mono text-xs text-muted-foreground/50 truncate mt-0.5 leading-snug">
-                    {preview}
+                <button
+                  onClick={() => { onSelectPage(i); onClose(); }}
+                  className="w-full text-left px-4 py-3 pr-10"
+                >
+                  <div className="font-mono text-sm font-medium text-foreground truncate leading-snug">
+                    {title}
                   </div>
+                  {preview && (
+                    <div className="font-mono text-xs text-muted-foreground/50 truncate mt-0.5 leading-snug">
+                      {preview}
+                    </div>
+                  )}
+                  {ts ? (
+                    <div className="font-mono text-[10px] text-muted-foreground/35 mt-1">
+                      {timeAgo(ts)}
+                    </div>
+                  ) : null}
+                </button>
+                {isHovered && pages.length > 1 && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onDeletePage(i); }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground/30 hover:text-destructive transition-colors"
+                    aria-label="Delete page"
+                  >
+                    <Trash2 size={13} />
+                  </button>
                 )}
-                {ts ? (
-                  <div className="font-mono text-[10px] text-muted-foreground/35 mt-1">
-                    {timeAgo(ts)}
-                  </div>
-                ) : null}
-              </button>
+              </div>
             );
           })}
         </div>

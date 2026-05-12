@@ -11,9 +11,9 @@ export const SLASH_COMMANDS = [
   { name: 'list', description: 'Create a checklist' },
   { name: 'line', description: 'Insert a divider' },
   { name: 'timer', description: 'Start a timer' },
+  { name: 'notes', description: 'Browse all pages' },
   { name: 'help', description: 'Show shortcuts & commands' },
   { name: 'settings', description: 'Open settings' },
-  { name: 'notes', description: 'Browse all pages' },
 ];
 
 export function getDropTargetLineIndex(editor: HTMLElement | null, target: EventTarget | null): number | null {
