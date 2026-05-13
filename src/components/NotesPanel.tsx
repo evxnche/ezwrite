@@ -72,13 +72,6 @@ const NotesPanel: React.FC<Props> = ({
       <div className="fixed right-0 top-0 bottom-0 z-50 w-80 bg-popover border-l border-border flex flex-col shadow-2xl">
         <div className="flex items-center justify-end gap-1 px-4 py-3 border-b border-border/40">
           <button
-            onClick={onNewProject}
-            className="p-1.5 text-muted-foreground/40 hover:text-foreground transition-colors"
-            aria-label="New doc"
-          >
-            <Plus size={13} />
-          </button>
-          <button
             onClick={onClose}
             className="p-1.5 text-muted-foreground/40 hover:text-foreground transition-colors"
             aria-label="Close drawer"
@@ -87,7 +80,7 @@ const NotesPanel: React.FC<Props> = ({
           </button>
         </div>
 
-        <div className="py-3 border-b border-border/30">
+        <div className="py-3">
           <button onClick={onOpenScratchpad} className={baseRowClass}>
             <NotebookPen size={15} />
             <span>scratchpad</span>
@@ -141,7 +134,7 @@ const NotesPanel: React.FC<Props> = ({
             </div>
           )}
 
-          <button onClick={() => toggleSection('notes')} className={`${baseRowClass} mt-1 border-t border-border/20`}>
+          <button onClick={() => toggleSection('notes')} className={`${baseRowClass} mt-1`}>
             <FolderOpen size={15} />
             <span>notes</span>
             <span className="ml-auto text-muted-foreground/50">{expanded === 'notes' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
@@ -150,6 +143,14 @@ const NotesPanel: React.FC<Props> = ({
 
         {expanded === 'notes' && (
           <div className="flex-1 overflow-y-auto">
+            <button
+              onClick={onNewProject}
+              className="w-full flex items-center gap-2 px-4 py-3 text-left font-mono text-xs text-muted-foreground hover:text-foreground hover:bg-muted/20 transition-colors"
+              aria-label="New doc"
+            >
+              <Plus size={13} />
+              <span>new note</span>
+            </button>
             {projects.map((project) => {
               const title = getProjectTitle(project.id);
               const preview = getProjectPreview(project.id);
