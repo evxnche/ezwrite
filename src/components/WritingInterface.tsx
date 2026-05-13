@@ -638,7 +638,10 @@ const WritingInterface = () => {
   useEffect(() => { void import('jspdf'); }, []);
 
   // --- Mount ---
+  const hasInitialMounted = useRef(false);
   useEffect(() => {
+    if (hasInitialMounted.current) return;
+    hasInitialMounted.current = true;
     setMounted(true);
     if (editorRef.current) {
       structuralUpdate(contentRef.current, 0, 0);
