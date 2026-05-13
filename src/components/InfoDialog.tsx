@@ -166,6 +166,8 @@ const InfoDialog: React.FC<Props> = ({
                 <li><span className="text-accent-foreground">/list</span> — checklist with checkboxes</li>
                 <li><span className="text-accent-foreground">/line</span> — horizontal divider</li>
                 <li><span className="text-accent-foreground">/timer</span> — start a timer</li>
+                <li><span className="text-accent-foreground">/notes</span> — open scratchpad</li>
+                <li><span className="text-accent-foreground">/docs</span> — open docs drawer</li>
               </ul>
             </section>
 
@@ -204,6 +206,7 @@ const InfoDialog: React.FC<Props> = ({
               <h3 className="font-semibold mb-1.5 text-accent-foreground">your data</h3>
               <ul className="space-y-1.5 text-muted-foreground ml-3">
                 <li>your writing lives on your device.</li>
+                <li>scratchpad notes stay local to each doc and are never exported.</li>
                 <li className="text-amber-500 dark:text-amber-400">⚠ on mobile, browser storage can be wiped by the os — download regularly to back up.</li>
                 {fsSupported && !dirName && (
                   <li className="pt-1">

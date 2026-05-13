@@ -51,7 +51,7 @@ const SlashCommandPopup: React.FC<Props> = ({ commands, highlightIndex, onSelect
           <span className={`flex items-center justify-center rounded-[6px] border border-border font-mono text-muted-foreground bg-background flex-shrink-0 ${isTouchDevice ? 'w-4 h-4 text-[10px]' : 'w-5 h-5 text-xs'}`}>
             {i + 1}
           </span>
-          <span className={`font-mono font-medium flex-shrink-0 w-16 ${isTouchDevice ? 'text-[10px]' : cmd.name === 'settings' ? 'text-[10px]' : 'text-xs'} text-accent-foreground`}>
+          <span className={`font-mono font-medium flex-shrink-0 w-[72px] ${isTouchDevice ? 'text-[10px]' : cmd.name === 'settings' ? 'text-[13px]' : 'text-xs'} text-accent-foreground`}>
             {cmd.name}
           </span>
           <span className={`font-mono text-muted-foreground leading-snug ${isTouchDevice ? 'text-[10px]' : 'text-[10px]'}`}>{cmd.description}</span>

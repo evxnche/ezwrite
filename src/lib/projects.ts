@@ -1,0 +1,265 @@
+// Project data layer — each project/doc contains its own set of pages.
+// localStorage keys:
+//   ezwrite-projects         → ProjectMeta[] (ordered list)
+//   ezwrite-active-project   → string (active project id)
+//   ezwrite-project-{id}     → string[] (pages)
+//   ezwrite-project-{id}-ts  → number[] (page timestamps)
+//   ezwrite-project-{id}-lp  → number (last viewed page index)
+
+import { stripLegacyImageLines } from '@/components/writing-helpers';
+
+export interface ProjectMeta {
+  id: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+const PROJECTS_KEY = 'ezwrite-projects';
+const ACTIVE_KEY = 'ezwrite-active-project';
+
+function projectPagesKey(id: string) { return `ezwrite-project-${id}`; }
+function projectTimestampsKey(id: string) { return `ezwrite-project-${id}-ts`; }
+function projectLastPageKey(id: string) { return `ezwrite-project-${id}-lp`; }
+function projectScratchpadKey(id: string) { return `ezwrite-project-${id}-scratchpad`; }
+
+// --- Migration from old flat format ---
+function needsMigration(): boolean {
+  if (localStorage.getItem(PROJECTS_KEY)) return false;
+  return !!localStorage.getItem('zen-writing-pages');
+}
+
+function runMigration() {
+  const savedPages = localStorage.getItem('zen-writing-pages');
+  if (!savedPages) return;
+
+  let pages: string[];
+  try {
+    const parsed = JSON.parse(savedPages);
+    pages = Array.isArray(parsed) && parsed.length > 0
+      ? parsed.map((p: unknown) => stripLegacyImageLines(String(p ?? '')))
+      : [''];
+  } catch {
+    pages = [''];
+  }
+
+  // Also grab the old welcome content if no pages existed
+  if (pages.length === 1 && !pages[0]) {
+    const old = stripLegacyImageLines(localStorage.getItem('zen-writing-content') || '');
+    if (old) pages = [old];
+  }
+
+  const id = generateId();
+  const now = Date.now();
+
+  const meta: ProjectMeta = { id, createdAt: now, updatedAt: now };
+
+  localStorage.setItem(PROJECTS_KEY, JSON.stringify([meta]));
+  localStorage.setItem(ACTIVE_KEY, id);
+  localStorage.setItem(projectPagesKey(id), JSON.stringify(pages));
+
+  // Migrate timestamps
+  let timestamps: number[] = [];
+  try { timestamps = JSON.parse(localStorage.getItem('ezwrite-page-timestamps') || '[]'); } catch { /* */ }
+  localStorage.setItem(projectTimestampsKey(id), JSON.stringify(timestamps));
+
+  // Migrate last page
+  const lastPage = localStorage.getItem('ezwrite-last-page');
+  if (lastPage) localStorage.setItem(projectLastPageKey(id), lastPage);
+
+  // Clean up old keys
+  localStorage.removeItem('zen-writing-pages');
+  localStorage.removeItem('zen-writing-content');
+  localStorage.removeItem('ezwrite-page-timestamps');
+  localStorage.removeItem('ezwrite-last-page');
+}
+
+function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+// --- Public API ---
+
+export function initProjects(): void {
+  if (needsMigration()) runMigration();
+}
+
+export function listProjects(): ProjectMeta[] {
+  try {
+    const raw = localStorage.getItem(PROJECTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function getActiveProjectId(): string | null {
+  const id = localStorage.getItem(ACTIVE_KEY);
+  const projects = listProjects();
+  if (id && projects.some(p => p.id === id)) return id;
+  // Fallback to first project
+  return projects.length > 0 ? projects[0].id : null;
+}
+
+export function setActiveProjectId(id: string): void {
+  localStorage.setItem(ACTIVE_KEY, id);
+}
+
+export function createProject(firstPageContent = ''): ProjectMeta {
+  const id = generateId();
+  const now = Date.now();
+  const meta: ProjectMeta = { id, createdAt: now, updatedAt: now };
+
+  const projects = listProjects();
+  projects.unshift(meta); // newest first
+  localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+  localStorage.setItem(projectPagesKey(id), JSON.stringify([firstPageContent || '']));
+  localStorage.setItem(projectTimestampsKey(id), JSON.stringify([now]));
+  localStorage.setItem(projectLastPageKey(id), '0');
+  localStorage.setItem(ACTIVE_KEY, id);
+
+  return meta;
+}
+
+export function deleteProject(id: string): void {
+  const projects = listProjects().filter(p => p.id !== id);
+  localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+  localStorage.removeItem(projectPagesKey(id));
+  localStorage.removeItem(projectTimestampsKey(id));
+  localStorage.removeItem(projectLastPageKey(id));
+  localStorage.removeItem(projectScratchpadKey(id));
+
+  // If deleted project was active, switch to first remaining
+  const activeId = localStorage.getItem(ACTIVE_KEY);
+  if (activeId === id) {
+    if (projects.length > 0) {
+      localStorage.setItem(ACTIVE_KEY, projects[0].id);
+    } else {
+      localStorage.removeItem(ACTIVE_KEY);
+    }
+  }
+}
+
+export function getProjectPages(id: string): string[] {
+  try {
+    const raw = localStorage.getItem(projectPagesKey(id));
+    if (!raw) return [''];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : [''];
+  } catch {
+    return [''];
+  }
+}
+
+export function saveProjectPages(id: string, pages: string[]): void {
+  localStorage.setItem(projectPagesKey(id), JSON.stringify(pages));
+  // Update project's updatedAt
+  const projects = listProjects();
+  const idx = projects.findIndex(p => p.id === id);
+  if (idx >= 0) {
+    projects[idx].updatedAt = Date.now();
+    localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+  }
+}
+
+export function getProjectTimestamps(id: string): number[] {
+  try {
+    const raw = localStorage.getItem(projectTimestampsKey(id));
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+export function saveProjectTimestamps(id: string, timestamps: number[]): void {
+  localStorage.setItem(projectTimestampsKey(id), JSON.stringify(timestamps));
+}
+
+export function getProjectLastPage(id: string): number {
+  const raw = localStorage.getItem(projectLastPageKey(id));
+  if (raw) {
+    const n = parseInt(raw, 10);
+    if (!isNaN(n) && n >= 0) return n;
+  }
+  return 0;
+}
+
+export function saveProjectLastPage(id: string, page: number): void {
+  localStorage.setItem(projectLastPageKey(id), String(page));
+}
+
+export function getProjectTitle(id: string): string {
+  const pages = getProjectPages(id);
+  return pageToTitle(pages[0] ?? '');
+}
+
+export function getProjectScratchpad(id: string): string {
+  return localStorage.getItem(projectScratchpadKey(id)) || '';
+}
+
+export function saveProjectScratchpad(id: string, value: string): void {
+  localStorage.setItem(projectScratchpadKey(id), value);
+  const projects = listProjects();
+  const idx = projects.findIndex(p => p.id === id);
+  if (idx >= 0) {
+    projects[idx].updatedAt = Date.now();
+    localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+  }
+}
+
+export function getProjectPreview(id: string): string {
+  const pages = getProjectPages(id);
+  const title = pageToTitle(pages[0] ?? '');
+  return pageToPreview(pages[0] ?? '', title);
+}
+
+// --- Helpers (shared with old NotesPanel logic) ---
+
+import { STRUCK_MARKER, LIST_EXIT, INDENT } from '@/components/writing-helpers';
+
+export function pageToTitle(content: string): string {
+  if (!content.trim()) return 'untitled';
+  for (const line of content.split('\n')) {
+    let clean = line.trim();
+    if (!clean || clean === 'list' || clean === 'line' || /^timer(\s|$)/i.test(clean)) continue;
+    clean = clean.replace(/^#{1,2}\s+/, '').replace(/^>> ?/, '');
+    if (clean.startsWith(STRUCK_MARKER)) clean = clean.slice(STRUCK_MARKER.length);
+    if (clean.startsWith(LIST_EXIT)) clean = clean.slice(LIST_EXIT.length);
+    clean = clean.startsWith(INDENT) ? clean.replace(/^\s+/, '') : clean;
+    if (clean.trim()) return clean.trim();
+  }
+  return 'untitled';
+}
+
+export function pageToPreview(content: string, title: string): string {
+  let foundTitle = false;
+  for (const line of content.split('\n')) {
+    let clean = line.trim();
+    if (!clean) continue;
+    clean = clean.replace(/^#{1,2}\s+/, '').replace(/^>> ?/, '');
+    if (clean === 'list' || clean === 'line' || /^timer(\s|$)/i.test(clean)) continue;
+    if (clean.startsWith(STRUCK_MARKER)) clean = clean.slice(STRUCK_MARKER.length);
+    if (clean.startsWith(LIST_EXIT)) clean = clean.slice(LIST_EXIT.length);
+    clean = clean.startsWith(INDENT) ? clean.replace(/^\s+/, '') : clean;
+    clean = clean.trim();
+    if (!clean) continue;
+    if (!foundTitle && clean === title) { foundTitle = true; continue; }
+    return clean;
+  }
+  return '';
+}
+
+export function timeAgo(ts: number): string {
+  if (!ts) return '';
+  const diff = Date.now() - ts;
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}

@@ -104,16 +104,12 @@ test('getShareCardPalette follows the selected color theme', () => {
 });
 
 test('WritingInterface exposes a current-page PNG share card export', () => {
-  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
-  assert.equal(source.includes('Share as PNG'), true);
-  assert.equal(source.includes('aria-label="Share or export current page"'), true);
-  assert.equal(source.includes('share-export-icon'), true);
-  assert.equal(source.includes('download-arrow-icon'), false);
-  assert.equal(source.includes('download-share-icon'), false);
-  assert.equal(source.includes('Share2'), false);
-  assert.equal((source.match(/share-export-icon/g) || []).length, 1);
-  assert.equal(source.includes('saveAsShareCard'), true);
-  assert.equal(source.includes('canvas.toBlob'), true);
+  const writingSource = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  const notesSource = fs.readFileSync(path.join(process.cwd(), 'src/components/NotesPanel.tsx'), 'utf8');
+  assert.equal(notesSource.includes('page as png'), true);
+  assert.equal(notesSource.includes('onExportPng'), true);
+  assert.equal(writingSource.includes('saveAsShareCard'), true);
+  assert.equal(writingSource.includes('canvas.toBlob'), true);
 });
 
 test('WritingInterface uses ezwrite branding in the header and share card', () => {
@@ -123,6 +119,28 @@ test('WritingInterface uses ezwrite branding in the header and share card', () =
   assert.match(source, />\s*ezwrite\.\s*<\/span>/);
   assert.match(source, /className="flex-1 px-4 sm:px-\[64px\] bg-background flex flex-col cursor-text"/);
   assert.equal(source.includes('const VISUAL_METRICS'), true);
+});
+
+test('WritingInterface imports the empty-page delete icon used after page creation', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  assert.match(source, /import \{[^}]*Trash2[^}]*\} from 'lucide-react';/);
+  assert.equal(source.includes('<Trash2 size={16} />'), true);
+});
+
+test('WritingInterface applies requested dark text color', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  assert.equal(source.includes("darkTextColor: '#F0EEDE'"), true);
+});
+
+test('Scratchpad stays isolated and follows editor font choice', () => {
+  const writingSource = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  const scratchpadSource = fs.readFileSync(path.join(process.cwd(), 'src/components/ScratchpadPanel.tsx'), 'utf8');
+  assert.equal(writingSource.includes('useSerif={useSerif}'), true);
+  assert.equal(writingSource.includes('title={pageToTitle(pagesRef.current[0] ?? \'\')}'), false);
+  assert.equal(scratchpadSource.includes("useSerif ? 'font-playfair' : 'font-mono'"), true);
+  assert.equal(scratchpadSource.includes('onKeyDown={(e) => e.stopPropagation()}'), true);
+  assert.equal(scratchpadSource.includes('onPointerDown={(e) => e.stopPropagation()}'), true);
+  assert.equal(scratchpadSource.includes('>{title}</div>'), false);
 });
 
 test('WritingInterface keeps dark and light mode inside settings', () => {

@@ -1,138 +1,201 @@
 import React, { useState } from 'react';
-import { X, Plus, Trash2 } from 'lucide-react';
-import { STRUCK_MARKER, LIST_EXIT, INDENT } from './writing-helpers';
+import {
+  X,
+  Plus,
+  Trash2,
+  Settings,
+  FileText,
+  Image,
+  NotebookPen,
+  FolderOpen,
+  ChevronDown,
+  ChevronRight,
+  ArrowUpRight,
+} from 'lucide-react';
+import { type ProjectMeta, getProjectTitle, getProjectPreview, timeAgo } from '@/lib/projects';
 
 interface Props {
   open: boolean;
-  pages: string[];
-  timestamps: number[];
-  currentPage: number;
-  onSelectPage: (index: number) => void;
-  onNewPage: () => void;
-  onDeletePage: (index: number) => void;
+  projects: ProjectMeta[];
+  activeProjectId: string | null;
+  canExportPage: boolean;
+  canExportDoc: boolean;
+  isExportingPdf: boolean;
+  isExportingPng: boolean;
+  onSelectProject: (id: string) => void;
+  onNewProject: () => void;
+  onDeleteProject: (id: string) => void;
+  onOpenSettings: () => void;
+  onOpenScratchpad: () => void;
+  onExportMd: () => void;
+  onExportPng: () => void;
+  onExportPagePdf: () => void;
+  onExportDocPdf: () => void;
   onClose: () => void;
 }
 
-function getPageTitle(content: string): string {
-  if (!content.trim()) return 'untitled';
-  for (const line of content.split('\n')) {
-    let clean = line.trim();
-    if (!clean || clean === 'list' || clean === 'line' || /^timer(\s|$)/i.test(clean)) continue;
-    clean = clean.replace(/^#{1,2}\s+/, '').replace(/^>> ?/, '');
-    if (clean.startsWith(STRUCK_MARKER)) clean = clean.slice(STRUCK_MARKER.length);
-    if (clean.startsWith(LIST_EXIT)) clean = clean.slice(LIST_EXIT.length);
-    clean = clean.startsWith(INDENT) ? clean.replace(/^\s+/, '') : clean;
-    if (clean.trim()) return clean.trim();
-  }
-  return 'untitled';
-}
+type ExpandedSection = 'export' | 'notes' | null;
 
-function getPagePreview(content: string, title: string): string {
-  let foundTitle = false;
-  for (const line of content.split('\n')) {
-    let clean = line.trim();
-    if (!clean) continue;
-    clean = clean.replace(/^#{1,2}\s+/, '').replace(/^>> ?/, '');
-    if (clean === 'list' || clean === 'line' || /^timer(\s|$)/i.test(clean)) continue;
-    if (clean.startsWith(STRUCK_MARKER)) clean = clean.slice(STRUCK_MARKER.length);
-    if (clean.startsWith(LIST_EXIT)) clean = clean.slice(LIST_EXIT.length);
-    clean = clean.startsWith(INDENT) ? clean.replace(/^\s+/, '') : clean;
-    clean = clean.trim();
-    if (!clean) continue;
-    if (!foundTitle && clean === title) { foundTitle = true; continue; }
-    return clean;
-  }
-  return '';
-}
+const baseRowClass = 'w-full flex items-center gap-3 px-4 py-3 text-left font-mono text-xs text-foreground/85 hover:text-foreground transition-colors';
 
-function timeAgo(ts: number): string {
-  if (!ts) return '';
-  const diff = Date.now() - ts;
-  const min = Math.floor(diff / 60000);
-  if (min < 1) return 'just now';
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.floor(hr / 24);
-  if (day < 7) return `${day}d ago`;
-  return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-const NotesPanel: React.FC<Props> = ({ open, pages, timestamps, currentPage, onSelectPage, onNewPage, onDeletePage, onClose }) => {
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+const NotesPanel: React.FC<Props> = ({
+  open,
+  projects,
+  activeProjectId,
+  canExportPage,
+  canExportDoc,
+  isExportingPdf,
+  isExportingPng,
+  onSelectProject,
+  onNewProject,
+  onDeleteProject,
+  onOpenSettings,
+  onOpenScratchpad,
+  onExportMd,
+  onExportPng,
+  onExportPagePdf,
+  onExportDocPdf,
+  onClose,
+}) => {
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<ExpandedSection>(null);
 
   if (!open) return null;
+
+  const toggleSection = (section: Exclude<ExpandedSection, null>) => {
+    setExpanded((current) => current === section ? null : section);
+  };
 
   return (
     <>
       <div className="fixed inset-0 z-40 bg-background/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="fixed right-0 top-0 bottom-0 z-50 w-72 bg-popover border-l border-border flex flex-col shadow-2xl">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border/50">
-          <span className="font-mono text-[10px] text-muted-foreground/50 uppercase tracking-widest">pages</span>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={onNewPage}
-              className="p-1.5 text-muted-foreground/40 hover:text-foreground transition-colors"
-              aria-label="New page"
-            >
-              <Plus size={13} />
-            </button>
-            <button
-              onClick={onClose}
-              className="p-1.5 text-muted-foreground/40 hover:text-foreground transition-colors"
-              aria-label="Close"
-            >
-              <X size={13} />
-            </button>
-          </div>
+      <div className="fixed right-0 top-0 bottom-0 z-50 w-80 bg-popover border-l border-border flex flex-col shadow-2xl">
+        <div className="flex items-center justify-end gap-1 px-4 py-3 border-b border-border/40">
+          <button
+            onClick={onNewProject}
+            className="p-1.5 text-muted-foreground/40 hover:text-foreground transition-colors"
+            aria-label="New doc"
+          >
+            <Plus size={13} />
+          </button>
+          <button
+            onClick={onClose}
+            className="p-1.5 text-muted-foreground/40 hover:text-foreground transition-colors"
+            aria-label="Close drawer"
+          >
+            <X size={13} />
+          </button>
         </div>
-        <div className="flex-1 overflow-y-auto">
-          {pages.map((content, i) => {
-            const title = getPageTitle(content);
-            const preview = getPagePreview(content, title);
-            const ts = timestamps[i];
-            const isActive = i === currentPage;
-            const isHovered = hoveredIndex === i;
-            return (
-              <div
-                key={i}
-                className={`relative border-b border-border/20 transition-colors ${
-                  isActive ? 'bg-muted/40' : isHovered ? 'bg-muted/20' : ''
-                }`}
-                onMouseEnter={() => setHoveredIndex(i)}
-                onMouseLeave={() => setHoveredIndex(null)}
+
+        <div className="py-3 border-b border-border/30">
+          <button onClick={onOpenScratchpad} className={baseRowClass}>
+            <NotebookPen size={15} />
+            <span>scratchpad</span>
+          </button>
+
+          <button onClick={onOpenSettings} className={baseRowClass}>
+            <Settings size={15} />
+            <span>settings</span>
+          </button>
+
+          <button onClick={() => toggleSection('export')} className={baseRowClass}>
+            <ArrowUpRight size={15} />
+            <span>export</span>
+            <span className="ml-auto text-muted-foreground/50">{expanded === 'export' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
+          </button>
+
+          {expanded === 'export' && (
+            <div className="px-4 pb-2 pt-1 space-y-1">
+              <button
+                onClick={onExportPng}
+                disabled={!canExportPage || isExportingPng}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
               >
-                <button
-                  onClick={() => { onSelectPage(i); onClose(); }}
-                  className="w-full text-left px-4 py-3 pr-10"
-                >
-                  <div className="font-mono text-sm font-medium text-foreground truncate leading-snug">
-                    {title}
-                  </div>
-                  {preview && (
-                    <div className="font-mono text-xs text-muted-foreground/50 truncate mt-0.5 leading-snug">
-                      {preview}
-                    </div>
-                  )}
-                  {ts ? (
-                    <div className="font-mono text-[10px] text-muted-foreground/35 mt-1">
-                      {timeAgo(ts)}
-                    </div>
-                  ) : null}
-                </button>
-                {isHovered && pages.length > 1 && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onDeletePage(i); }}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground/30 hover:text-destructive transition-colors"
-                    aria-label="Delete page"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                )}
-              </div>
-            );
-          })}
+                <Image size={13} />
+                {isExportingPng ? 'preparing png...' : 'page as png'}
+              </button>
+              <button
+                onClick={onExportMd}
+                disabled={!canExportPage}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
+              >
+                <FileText size={13} />
+                page as markdown
+              </button>
+              <button
+                onClick={onExportPagePdf}
+                disabled={!canExportPage || isExportingPdf}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
+              >
+                <FolderOpen size={13} />
+                {isExportingPdf ? 'preparing pdf...' : 'page as pdf'}
+              </button>
+              <button
+                onClick={onExportDocPdf}
+                disabled={!canExportDoc || isExportingPdf}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
+              >
+                <FolderOpen size={13} />
+                {isExportingPdf ? 'preparing pdf...' : 'doc as pdf'}
+              </button>
+            </div>
+          )}
+
+          <button onClick={() => toggleSection('notes')} className={`${baseRowClass} mt-1 border-t border-border/20`}>
+            <FolderOpen size={15} />
+            <span>notes</span>
+            <span className="ml-auto text-muted-foreground/50">{expanded === 'notes' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
+          </button>
         </div>
+
+        {expanded === 'notes' && (
+          <div className="flex-1 overflow-y-auto">
+            {projects.map((project) => {
+              const title = getProjectTitle(project.id);
+              const preview = getProjectPreview(project.id);
+              const isActive = project.id === activeProjectId;
+              const isHovered = hoveredId === project.id;
+              return (
+                <div
+                  key={project.id}
+                  className={`relative border-b border-border/20 transition-colors ${
+                    isActive ? 'bg-muted/40' : isHovered ? 'bg-muted/20' : ''
+                  }`}
+                  onMouseEnter={() => setHoveredId(project.id)}
+                  onMouseLeave={() => setHoveredId(null)}
+                >
+                  <button
+                    onClick={() => { onSelectProject(project.id); onClose(); }}
+                    className="w-full text-left px-4 py-3 pr-10"
+                  >
+                    <div className="font-mono text-sm font-medium text-foreground truncate leading-snug">
+                      {title}
+                    </div>
+                    {preview && (
+                      <div className="font-mono text-xs text-muted-foreground/50 truncate mt-0.5 leading-snug">
+                        {preview}
+                      </div>
+                    )}
+                    <div className="font-mono text-[10px] text-muted-foreground/35 mt-1">
+                      {timeAgo(project.updatedAt)}
+                    </div>
+                  </button>
+                  {isHovered && projects.length > 1 && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onDeleteProject(project.id); }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground/30 hover:text-destructive transition-colors"
+                      aria-label="Delete doc"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {expanded !== 'notes' && <div className="flex-1" />}
       </div>
     </>
   );

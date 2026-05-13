@@ -11,7 +11,8 @@ export const SLASH_COMMANDS = [
   { name: 'list', description: 'Create a checklist' },
   { name: 'line', description: 'Insert a divider' },
   { name: 'timer', description: 'Start a timer' },
-  { name: 'notes', description: 'Browse all pages' },
+  { name: 'notes', description: 'Open scratchpad' },
+  { name: 'docs', description: 'Browse docs' },
   { name: 'help', description: 'Show shortcuts & commands' },
   { name: 'settings', description: 'Open settings' },
 ];

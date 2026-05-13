@@ -1,12 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { Settings, Trash2, ChevronLeft } from 'lucide-react';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { ChevronLeft, Trash2 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import SlashCommandPopup from './SlashCommandPopup';
 import TimerWidget from './TimerWidget';
@@ -32,19 +26,38 @@ import {
 } from './editor-behavior';
 import {
   STRUCK_MARKER, LIST_EXIT, getCleanLine, isLineStruck, getLineType,
-  getTimerArgs, SLASH_COMMANDS, INDENT, stripLegacyImageLines,
+  getTimerArgs, SLASH_COMMANDS, INDENT,
   contentToHTML, extractContent, setCursorPosition,
   contentToMarkdown, markdownToContent,
 } from './writing-helpers';
 import {
   isFileSystemSupported, getSavedHandle, pickSaveDirectory,
-  writePageFiles, clearHandle, getDirName, writeToOPFS,
+  writeProjectFiles, clearHandle, getDirName, writeToOPFS,
 } from '@/lib/storage';
+import {
+  initProjects,
+  listProjects,
+  getActiveProjectId,
+  setActiveProjectId,
+  createProject,
+  deleteProject,
+  getProjectPages,
+  saveProjectPages,
+  getProjectTimestamps,
+  saveProjectTimestamps,
+  getProjectLastPage,
+  saveProjectLastPage,
+  getProjectScratchpad,
+  saveProjectScratchpad,
+  pageToTitle,
+  type ProjectMeta,
+} from '@/lib/projects';
 
 
 const InfoDialog = lazy(() => import('./InfoDialog'));
 const SettingsDialog = lazy(() => import('./SettingsDialog'));
 const NotesPanel = lazy(() => import('./NotesPanel'));
+const ScratchpadPanel = lazy(() => import('./ScratchpadPanel'));
 
 interface WindowWithAudioContext extends Window {
   webkitAudioContext?: typeof AudioContext;
@@ -79,11 +92,32 @@ const playChime = () => {
 };
 
 const DEFAULT_PAGE_CONTENT = 'start writing.';
+const WELCOME_PROJECT_CONTENT = `hi.\n\ni am evan.\n\nthinking is cool.\nwriting is thinking.\n\ni write. you write. we all write.\nwriting today is a slog.\na battle of point sizes, typefaces, and colours.\n\nhence, ezwrite.\ni like pen and paper. this is close.\n\nthere isn't much to it.\n/line splits things up.\n/list keeps you on track with checklists.\n/timer pulls up a timer + some more func.\nor just type in "/help" and you'll find all the help you need.\nbtw your data stays on your device.\n\nit's yours now. go write.\n\nto report bugs or just say hi, evanbuildsstuff@gmail.com\n\njust do things. ez.\n\n-evan`;
 
 const getDefaultPage = (index: number): string => {
   if (index === 0) return DEFAULT_PAGE_CONTENT;
   return '';
 };
+
+function getInitialProjectState(): { projects: ProjectMeta[]; activeProjectId: string | null } {
+  initProjects();
+  let projects = listProjects();
+  let activeProjectId = getActiveProjectId();
+  if (projects.length === 0) {
+    const meta = createProject(WELCOME_PROJECT_CONTENT);
+    projects = [meta];
+    activeProjectId = meta.id;
+  }
+  return { projects, activeProjectId };
+}
+
+function sanitizeFileStem(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60) || 'untitled';
+}
 
 const getShareCardFont = (fontSize: number, useSerif: boolean) =>
   `400 ${fontSize}px ${useSerif ? '"Playfair Display", Georgia, serif' : '"Roboto Mono", monospace'}`;
@@ -96,7 +130,7 @@ const VISUAL_METRICS = {
   themedEditorGlow: { near: 0.18, far: 0.10 },
   warmTitleGlow: '0 0 20px hsl(40 60% 70% / 0.2), 0 0 40px hsl(35 50% 60% / 0.10)',
   warmEditorGlow: '0 0 10px hsl(40 60% 70% / 0.22), 0 0 25px hsl(35 50% 60% / 0.12)',
-  darkTextColor: undefined as string | undefined,
+  darkTextColor: '#F0EEDE',
 } as const;
 
 function drawRoundedRect(
@@ -154,26 +188,21 @@ function wrapShareCardLines(
 }
 
 const WritingInterface = () => {
-  // --- Pages ---
+  // --- Projects & Pages ---
+  const initialProjectStateRef = useRef<{ projects: ProjectMeta[]; activeProjectId: string | null } | null>(null);
+  if (!initialProjectStateRef.current) {
+    initialProjectStateRef.current = getInitialProjectState();
+  }
+  const [projects, setProjects] = useState<ProjectMeta[]>(initialProjectStateRef.current.projects);
+  const [activeProjectId, setActiveProjectIdState] = useState<string | null>(initialProjectStateRef.current.activeProjectId);
+  const activeProjectIdRef = useRef(activeProjectId);
+  activeProjectIdRef.current = activeProjectId;
+
   const pagesRef = useRef<string[] | null>(null);
-  if (!pagesRef.current) {
-    const saved = localStorage.getItem('zen-writing-pages');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          pagesRef.current = parsed.map((page) => stripLegacyImageLines(String(page ?? '')));
-        } else {
-          pagesRef.current = [''];
-        }
-      } catch {
-        pagesRef.current = [''];
-      }
-    } else {
-      const old = stripLegacyImageLines(localStorage.getItem('zen-writing-content') || '');
-      const welcome = old || `hi.\n\ni am evan.\n\nthinking is cool.\nwriting is thinking.\n\ni write. you write. we all write.\nwriting today is a slog.\na battle of point sizes, typefaces, and colours.\n\nhence, ezwrite.\ni like pen and paper. this is close.\n\nthere isn't much to it.\n/line splits things up.\n/list keeps you on track with checklists.\n/timer pulls up a timer + some more func.\nor just type in "/help" and you'll find all the help you need.\nbtw your data stays on your device.\n\nit's yours now. go write.\n\nto report bugs or just say hi, evanbuildsstuff@gmail.com\n\njust do things. ez.\n\n-evan`;
-      pagesRef.current = [welcome];
-    }
+  if (!pagesRef.current && activeProjectId) {
+    pagesRef.current = getProjectPages(activeProjectId);
+  } else if (!pagesRef.current) {
+    pagesRef.current = [''];
   }
 
   const getPageContent = (index: number): string =>
@@ -182,12 +211,22 @@ const WritingInterface = () => {
   const [pageCount, setPageCount] = useState(() => pagesRef.current?.length ?? 1);
   const [isPageEmpty, setIsPageEmpty] = useState(() => (pagesRef.current?.[0] ?? '').trim() === '');
   const [notesOpen, setNotesOpen] = useState(false);
+  const [scratchpadOpen, setScratchpadOpen] = useState(false);
+  const [scratchpadWidth, setScratchpadWidth] = useState(() => {
+    const saved = localStorage.getItem('ezwrite-scratchpad-width');
+    const width = saved ? parseInt(saved, 10) : 340;
+    return Number.isFinite(width) ? Math.max(260, Math.min(720, width)) : 340;
+  });
+  const [scratchpad, setScratchpad] = useState(() => activeProjectId ? getProjectScratchpad(activeProjectId) : '');
   const [timestamps, setTimestamps] = useState<number[]>(() => {
-    try { return JSON.parse(localStorage.getItem('ezwrite-page-timestamps') || '[]'); } catch { return []; }
+    if (activeProjectId) return getProjectTimestamps(activeProjectId);
+    return [];
   });
   const [currentPage, setCurrentPage] = useState(() => {
-    const saved = localStorage.getItem('ezwrite-last-page');
-    if (saved) { const n = parseInt(saved, 10); if (n >= 0 && n < (pagesRef.current?.length ?? 1)) return n; }
+    if (activeProjectId) {
+      const n = getProjectLastPage(activeProjectId);
+      if (n >= 0 && n < (pagesRef.current?.length ?? 1)) return n;
+    }
     return 0;
   });
   const currentPageRef = useRef(0);
@@ -356,7 +395,7 @@ const WritingInterface = () => {
       dirHandleRef.current = h;
       // Write all pages immediately after picking
       const markdowns = pagesRef.current.map(p => contentToMarkdown(p));
-      writePageFiles(h, markdowns);
+      writeProjectFiles(h, activeProjectIdRef.current ?? 'default', markdowns, scratchpad);
     }
   };
 
@@ -386,6 +425,7 @@ const WritingInterface = () => {
   const redoStack = useRef<string[]>([]);
   const lastUndoTime = useRef(0);
   const deferredPersistTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const scratchpadPersistTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const deferredPagesRef = useRef<string[]>([]);
   const pushUndo = useCallback((force = false) => {
     const now = Date.now();
@@ -405,6 +445,29 @@ const WritingInterface = () => {
   const wordCount = textForStats.trim() ? textForStats.trim().split(/\s+/).length : 0;
   const charCount = textForStats.length;
 
+  const getCurrentDocExportStem = () => sanitizeFileStem(pageToTitle(pagesRef.current[0] ?? ''));
+  const getCurrentExportStem = () => {
+    const base = getCurrentDocExportStem();
+    return pageCount > 1 ? `${base}-p${currentPageRef.current + 1}` : base;
+  };
+
+  const persistScratchpad = useCallback((value: string, projectId = activeProjectIdRef.current) => {
+    if (!projectId) return;
+    saveProjectScratchpad(projectId, value);
+    clearTimeout(scratchpadPersistTimeoutRef.current);
+    scratchpadPersistTimeoutRef.current = setTimeout(() => {
+      if (dirHandleRef.current) {
+        const markdowns = pagesRef.current.map((page) => contentToMarkdown(page));
+        void writeProjectFiles(dirHandleRef.current, projectId, markdowns, value);
+      }
+      void writeToOPFS(pagesRef.current, projectId, value);
+    }, 250);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('ezwrite-scratchpad-width', String(scratchpadWidth));
+  }, [scratchpadWidth]);
+
   const scheduleDeferredPersistence = useCallback((pages: string[]) => {
     deferredPagesRef.current = [...pages];
     clearTimeout(deferredPersistTimeoutRef.current);
@@ -412,28 +475,33 @@ const WritingInterface = () => {
       const latestPages = deferredPagesRef.current;
       if (dirHandleRef.current) {
         const markdowns = latestPages.map((page) => contentToMarkdown(page));
-        void writePageFiles(dirHandleRef.current, markdowns);
+        void writeProjectFiles(dirHandleRef.current, activeProjectIdRef.current ?? 'default', markdowns, scratchpad);
       }
-      void writeToOPFS(latestPages);
+      void writeToOPFS(latestPages, activeProjectIdRef.current ?? undefined, scratchpad);
     }, 250);
-  }, []);
+  }, [scratchpad]);
 
   useEffect(() => {
-    return () => clearTimeout(deferredPersistTimeoutRef.current);
+    return () => {
+      clearTimeout(deferredPersistTimeoutRef.current);
+      clearTimeout(scratchpadPersistTimeoutRef.current);
+    };
   }, []);
 
   // --- Save helper ---
   const saveContent = useCallback((content: string) => {
     contentRef.current = content;
     pagesRef.current[currentPageRef.current] = content;
-    const serialized = JSON.stringify(pagesRef.current);
-    localStorage.setItem('zen-writing-pages', serialized);
-    scheduleDeferredPersistence(pagesRef.current);
+    const projectId = activeProjectIdRef.current;
+    if (projectId) {
+      saveProjectPages(projectId, pagesRef.current);
+      scheduleDeferredPersistence(pagesRef.current);
+    }
     setIsPageEmpty(content.trim() === '');
     setTimestamps(prev => {
       const next = [...prev];
       next[currentPageRef.current] = Date.now();
-      localStorage.setItem('ezwrite-page-timestamps', JSON.stringify(next));
+      if (projectId) saveProjectTimestamps(projectId, next);
       return next;
     });
   }, [scheduleDeferredPersistence]);
@@ -591,12 +659,14 @@ const WritingInterface = () => {
     if (newPage === pagesRef.current.length) {
       pagesRef.current.push('');
       setPageCount(pagesRef.current.length);
-      localStorage.setItem('zen-writing-pages', JSON.stringify(pagesRef.current));
+      const projectId = activeProjectIdRef.current;
+      if (projectId) saveProjectPages(projectId, pagesRef.current);
     }
     // Save current page
     if (editorRef.current) {
       pagesRef.current[currentPageRef.current] = extractContent(editorRef.current);
-      localStorage.setItem('zen-writing-pages', JSON.stringify(pagesRef.current));
+      const projectId = activeProjectIdRef.current;
+      if (projectId) saveProjectPages(projectId, pagesRef.current);
     }
     // Clear timer editing
     editingTimerLineRef.current = null;
@@ -610,18 +680,26 @@ const WritingInterface = () => {
     // Transition animation
     setPageTransition(newPage > currentPageRef.current ? 'slide-left' : 'slide-right');
     contentRef.current = getPageContent(newPage);
-    localStorage.setItem('ezwrite-last-page', String(newPage));
+    const projectId = activeProjectIdRef.current;
+    if (projectId) saveProjectLastPage(projectId, newPage);
     setCurrentPage(newPage);
   }, []);
 
-  // Load page content when currentPage changes (not on mount)
+  // Load page content when currentPage changes (not on mount).
+  // Use a ref for structuralUpdate so this effect only runs when currentPage
+  // or isTouchDevice changes — not when structuralUpdate's dependencies churn.
+  const structuralUpdateRef = useRef(structuralUpdate);
+  structuralUpdateRef.current = structuralUpdate;
   const hasMounted = useRef(false);
+  const prevPageForEffect = useRef(currentPage);
   useEffect(() => {
     if (!hasMounted.current) { hasMounted.current = true; return; }
+    if (prevPageForEffect.current === currentPage) return;
+    prevPageForEffect.current = currentPage;
     const pageContent = getPageContent(currentPage);
     const { lineIndex, offset } = getPageEndCursor(pageContent);
-    const shouldFocus = shouldAutoFocusAfterPageSwitch(isTouchDevice);
-    structuralUpdate(pageContent, lineIndex, offset, shouldFocus);
+    const shouldFocus = shouldAutoFocusAfterPageSwitch(isTouchDevice) && !scratchpadOpen;
+    structuralUpdateRef.current(pageContent, lineIndex, offset, shouldFocus);
     setIsPageEmpty(pageContent.trim() === '');
     setTimeout(() => {
       if (shouldFocus) {
@@ -629,7 +707,7 @@ const WritingInterface = () => {
       }
       setPageTransition('none');
     }, 250);
-  }, [currentPage, isTouchDevice, structuralUpdate]);
+  }, [currentPage, isTouchDevice, scratchpadOpen]);
 
   // --- Delete page ---
   const deletePage = useCallback((pageIndex: number) => {
@@ -649,12 +727,15 @@ const WritingInterface = () => {
     }
     const newContent = pagesRef.current[newPage] ?? '';
     setPageCount(pagesRef.current.length);
-    localStorage.setItem('zen-writing-pages', JSON.stringify(pagesRef.current));
-    localStorage.setItem('ezwrite-last-page', String(newPage));
-    if (dirHandleRef.current) {
-      void writePageFiles(dirHandleRef.current, pagesRef.current.map(p => contentToMarkdown(p)));
+    const projectId = activeProjectIdRef.current;
+    if (projectId) {
+      saveProjectPages(projectId, pagesRef.current);
+      saveProjectLastPage(projectId, newPage);
     }
-    void writeToOPFS(pagesRef.current);
+    if (dirHandleRef.current) {
+      void writeProjectFiles(dirHandleRef.current, projectId ?? 'default', pagesRef.current.map(p => contentToMarkdown(p)), scratchpad);
+    }
+    void writeToOPFS(pagesRef.current, projectId ?? undefined, scratchpad);
     editingTimerLineRef.current = null;
     undoStack.current = [];
     redoStack.current = [];
@@ -669,7 +750,85 @@ const WritingInterface = () => {
       const { lineIndex, offset } = getPageEndCursor(newContent);
       structuralUpdate(newContent, lineIndex, offset, !isTouchDevice);
     }
-  }, [structuralUpdate, isTouchDevice]);
+  }, [scratchpad, structuralUpdate, isTouchDevice]);
+
+  // --- Project switching ---
+  const switchToProject = useCallback((projectId: string) => {
+    if (projectId === activeProjectIdRef.current) return;
+    if (editorRef.current) {
+      pagesRef.current[currentPageRef.current] = extractContent(editorRef.current);
+      const currentProjectId = activeProjectIdRef.current;
+      if (currentProjectId) saveProjectPages(currentProjectId, pagesRef.current);
+      if (currentProjectId) persistScratchpad(scratchpad, currentProjectId);
+    }
+    const newPages = getProjectPages(projectId);
+    const newCurrentPage = getProjectLastPage(projectId);
+    pagesRef.current = newPages;
+    contentRef.current = newPages[newCurrentPage] ?? newPages[0] ?? '';
+    setActiveProjectIdState(projectId);
+    activeProjectIdRef.current = projectId;
+    setActiveProjectId(projectId);
+    setTimestamps(getProjectTimestamps(projectId));
+    setScratchpad(getProjectScratchpad(projectId));
+    setPageCount(newPages.length);
+    setCurrentPage(newCurrentPage);
+    currentPageRef.current = newCurrentPage;
+    setIsPageEmpty(contentRef.current.trim() === '');
+    setScratchpadOpen(false);
+    undoStack.current = [];
+    redoStack.current = [];
+    editingTimerLineRef.current = null;
+    const { lineIndex, offset } = getPageEndCursor(contentRef.current);
+    structuralUpdate(contentRef.current, lineIndex, offset, !isTouchDevice);
+    setTimeout(() => {
+      if (!isTouchDevice) editorRef.current?.focus();
+      setPageTransition('none');
+    }, 250);
+  }, [persistScratchpad, scratchpad, structuralUpdate, isTouchDevice]);
+
+  const handleNewProject = useCallback(() => {
+    if (editorRef.current) {
+      const currentProjectId = activeProjectIdRef.current;
+      if (currentProjectId) {
+        pagesRef.current[currentPageRef.current] = extractContent(editorRef.current);
+        saveProjectPages(currentProjectId, pagesRef.current);
+        persistScratchpad(scratchpad, currentProjectId);
+      }
+    }
+    const meta = createProject('');
+    setProjects(listProjects());
+    switchToProject(meta.id);
+  }, [persistScratchpad, scratchpad, switchToProject]);
+
+  const handleDeleteProject = useCallback((id: string) => {
+    deleteProject(id);
+    const newProjects = listProjects();
+    setProjects(newProjects);
+    if (id === activeProjectIdRef.current) {
+      if (newProjects.length > 0) {
+        switchToProject(newProjects[0].id);
+      } else {
+        const meta = createProject('');
+        setProjects([meta]);
+        switchToProject(meta.id);
+      }
+    }
+  }, [switchToProject]);
+
+  const handleOpenDocs = useCallback(() => {
+    setScratchpadOpen(false);
+    setNotesOpen(true);
+  }, []);
+
+  const handleOpenScratchpad = useCallback(() => {
+    setNotesOpen(false);
+    setScratchpadOpen(true);
+  }, []);
+
+  const handleScratchpadChange = useCallback((value: string) => {
+    setScratchpad(value);
+    persistScratchpad(value);
+  }, [persistScratchpad]);
 
   // --- Touch swipe ---
   const touchStartX = useRef(0);
@@ -688,8 +847,11 @@ const WritingInterface = () => {
   const handleTouchEnd = (e: React.TouchEvent) => {
     const hadSelection = touchHasSelection.current;
     touchHasSelection.current = false;
-    // Don't trigger page switch if user was selecting text
-    if (hadSelection || window.getSelection()?.toString()) return;
+    // Don't trigger page switch if user was selecting text.
+    // Use isCollapsed instead of toString() — toString() can return
+    // whitespace from a collapsed cursor inside contentEditable.
+    const sel = window.getSelection();
+    if (hadSelection || (sel && !sel.isCollapsed)) return;
     const dx = e.changedTouches[0].clientX - touchStartX.current;
     const dy = e.changedTouches[0].clientY - touchStartY.current;
     if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 60) {
@@ -1006,16 +1168,20 @@ const WritingInterface = () => {
     pushUndo(true);
     if (command === 'help') {
       lines[lineIndex] = '';
-      structuralUpdate(lines.join('\n'), lineIndex, 0);
+      structuralUpdate(lines.join('\n'), lineIndex, 0, false);
       setInfoOpen(true);
     } else if (command === 'settings') {
       lines[lineIndex] = '';
-      structuralUpdate(lines.join('\n'), lineIndex, 0);
+      structuralUpdate(lines.join('\n'), lineIndex, 0, false);
       setSettingsOpen(true);
+    } else if (command === 'docs') {
+      lines[lineIndex] = '';
+      structuralUpdate(lines.join('\n'), lineIndex, 0, false);
+      handleOpenDocs();
     } else if (command === 'notes') {
       lines[lineIndex] = '';
-      structuralUpdate(lines.join('\n'), lineIndex, 0);
-      setNotesOpen(true);
+      structuralUpdate(lines.join('\n'), lineIndex, 0, false);
+      handleOpenScratchpad();
     } else if (command === 'timer') {
       lines[lineIndex] = 'timer ';
       editingTimerLineRef.current = lineIndex;
@@ -1033,7 +1199,7 @@ const WritingInterface = () => {
       structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
     }
     setSlashPopup(null);
-  }, [pushUndo, structuralUpdate]);
+  }, [handleOpenDocs, handleOpenScratchpad, pushUndo, structuralUpdate]);
 
   // Slash command select
   const handleSlashSelect = useCallback((command: string) => {
@@ -1157,12 +1323,13 @@ const WritingInterface = () => {
         const content = extractContent(editorRef.current);
         pagesRef.current[currentPageRef.current] = content;
         contentRef.current = content;
-        localStorage.setItem('zen-writing-pages', JSON.stringify(pagesRef.current));
+        const projectId = activeProjectIdRef.current;
+        if (projectId) saveProjectPages(projectId, pagesRef.current);
       }
       if (dirHandleRef.current) {
-        void writePageFiles(dirHandleRef.current, pagesRef.current.map(p => contentToMarkdown(p)));
+        void writeProjectFiles(dirHandleRef.current, activeProjectIdRef.current ?? 'default', pagesRef.current.map(p => contentToMarkdown(p)), scratchpad);
       }
-      void writeToOPFS(pagesRef.current);
+      void writeToOPFS(pagesRef.current, activeProjectIdRef.current ?? undefined, scratchpad);
       clearTimeout(savedFlashTimeoutRef.current);
       setSavedFlash(true);
       savedFlashTimeoutRef.current = setTimeout(() => setSavedFlash(false), 1500);
@@ -1355,11 +1522,12 @@ const WritingInterface = () => {
       if (lineType !== 'list-item') {
         const bulletMatch = currentLine.match(/^(\s*- )(.*)/);
         const numberedMatch = currentLine.match(/^(\s*)(\d+)\. (.*)/);
+        const slashNumberedMatch = currentLine.match(/^(\s*)(\d+)\/ (.*)/);
+        const singleQuoteMatch = currentLine.match(/^(\s*> )(.*)/);
         if (bulletMatch) {
           const prefix = bulletMatch[1];
           const text = bulletMatch[2];
           if (!text.trim()) {
-            // Empty bullet line → end the list, remove prefix
             freshLines[li] = '';
             structuralUpdate(freshLines.join('\n'), li, 0);
             scrollToLine(li);
@@ -1372,23 +1540,40 @@ const WritingInterface = () => {
           scrollToLine(li + 1);
           return;
         }
-        if (numberedMatch) {
-          const indent = numberedMatch[1];
-          const num = parseInt(numberedMatch[2]);
-          const text = numberedMatch[3];
-          const fullPrefix = `${indent}${num}. `;
+        if (numberedMatch || slashNumberedMatch) {
+          const match = numberedMatch ?? slashNumberedMatch;
+          const indent = match![1];
+          const num = parseInt(match![2], 10);
+          const text = match![3];
+          const separator = numberedMatch ? '. ' : '/ ';
+          const fullPrefix = `${indent}${num}${separator}`;
           if (!text.trim()) {
-            // Empty numbered line → end the list, remove prefix
             freshLines[li] = '';
             structuralUpdate(freshLines.join('\n'), li, 0);
             scrollToLine(li);
             return;
           }
           const splitAt = Math.max(0, Math.min(freshOffset, currentLine.length) - fullPrefix.length);
-          const nextPrefix = `${indent}${num + 1}. `;
+          const nextPrefix = `${indent}${num + 1}${separator}`;
           freshLines[li] = fullPrefix + text.slice(0, splitAt);
           freshLines.splice(li + 1, 0, nextPrefix + text.slice(splitAt));
           structuralUpdate(freshLines.join('\n'), li + 1, nextPrefix.length);
+          scrollToLine(li + 1);
+          return;
+        }
+        if (singleQuoteMatch) {
+          const prefix = singleQuoteMatch[1];
+          const text = singleQuoteMatch[2];
+          if (!text.trim()) {
+            freshLines[li] = '';
+            structuralUpdate(freshLines.join('\n'), li, 0);
+            scrollToLine(li);
+            return;
+          }
+          const splitAt = Math.max(0, Math.min(freshOffset, currentLine.length) - prefix.length);
+          freshLines[li] = prefix + text.slice(0, splitAt);
+          freshLines.splice(li + 1, 0, prefix + text.slice(splitAt));
+          structuralUpdate(freshLines.join('\n'), li + 1, prefix.length);
           scrollToLine(li + 1);
           return;
         }
@@ -1720,7 +1905,7 @@ const WritingInterface = () => {
     if (!content.trim()) return;
     const exported = contentToMarkdown(content);
     const blob = new Blob([exported], { type: 'text/markdown' });
-    downloadOrShare(blob, `ezwrite-${new Date().toISOString().split('T')[0]}.md`);
+    downloadOrShare(blob, `${getCurrentExportStem()}.md`);
   };
 
   const saveAsShareCard = () => {
@@ -1791,7 +1976,7 @@ const WritingInterface = () => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `ezwrite-card-${new Date().toISOString().split('T')[0]}.png`;
+        a.download = `${getCurrentExportStem()}.png`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -1802,84 +1987,102 @@ const WritingInterface = () => {
     })();
   };
 
-  const saveAsPdf = () => {
-    const content = contentRef.current;
-    if (!content.trim() || isExportingPdf) return;
-    setIsExportingPdf(true);
+  const buildPdf = async (pages: string[]) => {
+    const { jsPDF } = await import('jspdf');
+    const pdf = new jsPDF();
+    const pageH = pdf.internal.pageSize.height;
+    const pageW = pdf.internal.pageSize.width;
+    const margin = 20;
+    const lh = 6;
+    const maxW = pageW - 2 * margin;
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(11);
+    let y = margin;
 
-    void (async () => {
-      try {
-        const { jsPDF } = await import('jspdf');
-        const lines = content.split('\n');
-        const pdf = new jsPDF();
-        const pageH = pdf.internal.pageSize.height;
-        const pageW = pdf.internal.pageSize.width;
-        const margin = 20;
-        const lh = 6;
-        const maxW = pageW - 2 * margin;
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(11);
-        let y = margin;
-
-        lines.forEach((line, i) => {
-          const type = getLineType(lines, i);
-          if (type === 'divider') {
-            if (y > pageH - margin) { pdf.addPage(); y = margin; }
-            pdf.setDrawColor(180); pdf.line(margin, y, pageW - margin, y);
-            y += lh;
-            return;
-          }
-          if (type === 'timer') {
-            const text = `⏱ ${getTimerArgs(line) || 'stopwatch'}`;
-            if (y > pageH - margin) { pdf.addPage(); y = margin; }
-            pdf.text(text, margin, y); y += lh;
-            return;
-          }
-          if (type === 'heading1') {
-            pdf.setFontSize(18); pdf.setFont('helvetica', 'bold');
-            const text = line.replace(/^#\s*/, '');
-            if (y > pageH - margin) { pdf.addPage(); y = margin; }
-            pdf.text(text, margin, y); y += lh * 1.8;
-            pdf.setFontSize(11); pdf.setFont('helvetica', 'normal');
-            return;
-          }
-          if (type === 'heading2') {
-            pdf.setFontSize(15); pdf.setFont('helvetica', 'bold');
-            const text = line.replace(/^##\s*/, '');
-            if (y > pageH - margin) { pdf.addPage(); y = margin; }
-            pdf.text(text, margin, y); y += lh * 1.5;
-            pdf.setFontSize(11); pdf.setFont('helvetica', 'normal');
-            return;
-          }
-          let text = cleanForExport(line);
-          if (type === 'list-header') { text = ''; y += lh * 0.5; return; }
-          if (!text.trim()) { y += lh; if (y > pageH - margin) { pdf.addPage(); y = margin; } return; }
-          const split = pdf.splitTextToSize(text, maxW);
-          split.forEach((wrappedLine: string) => {
-            if (y > pageH - margin) { pdf.addPage(); y = margin; }
-            pdf.text(wrappedLine, margin, y); y += lh;
-          });
-          y += lh * 0.3;
-        });
-
-        const filename = `ezwrite-${new Date().toISOString().split('T')[0]}.pdf`;
-
-        // On mobile with share support, share the file; otherwise use jsPDF's
-        // own save() which handles the blob-URL lifecycle correctly.
-        const pdfBlob = pdf.output('blob');
-        const file = new File([pdfBlob], filename, { type: 'application/pdf' });
-        if (navigator.share && navigator.canShare?.({ files: [file] })) {
-          try { await navigator.share({ files: [file], title: filename }); }
-          catch { pdf.save(filename); }
-        } else {
-          pdf.save(filename);
+    const renderLines = (lines: string[]) => {
+      lines.forEach((line, i) => {
+        const type = getLineType(lines, i);
+        if (type === 'divider') {
+          if (y > pageH - margin) { pdf.addPage(); y = margin; }
+          pdf.setDrawColor(180); pdf.line(margin, y, pageW - margin, y);
+          y += lh;
+          return;
         }
-      } catch (err) {
-        console.error('[ezwrite] PDF export failed:', err);
-      } finally {
-        setIsExportingPdf(false);
+        if (type === 'timer') {
+          const text = `⏱ ${getTimerArgs(line) || 'stopwatch'}`;
+          if (y > pageH - margin) { pdf.addPage(); y = margin; }
+          pdf.text(text, margin, y); y += lh;
+          return;
+        }
+        if (type === 'heading1') {
+          pdf.setFontSize(18); pdf.setFont('helvetica', 'bold');
+          const text = line.replace(/^#\s*/, '');
+          if (y > pageH - margin) { pdf.addPage(); y = margin; }
+          pdf.text(text, margin, y); y += lh * 1.8;
+          pdf.setFontSize(11); pdf.setFont('helvetica', 'normal');
+          return;
+        }
+        if (type === 'heading2') {
+          pdf.setFontSize(15); pdf.setFont('helvetica', 'bold');
+          const text = line.replace(/^##\s*/, '');
+          if (y > pageH - margin) { pdf.addPage(); y = margin; }
+          pdf.text(text, margin, y); y += lh * 1.5;
+          pdf.setFontSize(11); pdf.setFont('helvetica', 'normal');
+          return;
+        }
+        let text = cleanForExport(line);
+        if (type === 'list-header') { text = ''; y += lh * 0.5; return; }
+        if (!text.trim()) { y += lh; if (y > pageH - margin) { pdf.addPage(); y = margin; } return; }
+        const split = pdf.splitTextToSize(text, maxW);
+        split.forEach((wrappedLine: string) => {
+          if (y > pageH - margin) { pdf.addPage(); y = margin; }
+          pdf.text(wrappedLine, margin, y); y += lh;
+        });
+        y += lh * 0.3;
+      });
+    };
+
+    pages.forEach((page, pageIndex) => {
+      if (pageIndex > 0) {
+        pdf.addPage();
+        y = margin;
       }
-    })();
+      renderLines(page.split('\n'));
+    });
+
+    return pdf;
+  };
+
+  const savePdfFile = async (pages: string[], filename: string) => {
+    if (isExportingPdf) return;
+    setIsExportingPdf(true);
+    try {
+      const pdf = await buildPdf(pages);
+      const pdfBlob = pdf.output('blob');
+      const file = new File([pdfBlob], filename, { type: 'application/pdf' });
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: filename }); }
+        catch { pdf.save(filename); }
+      } else {
+        pdf.save(filename);
+      }
+    } catch (err) {
+      console.error('[ezwrite] PDF export failed:', err);
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
+  const savePageAsPdf = () => {
+    const content = contentRef.current;
+    if (!content.trim()) return;
+    void savePdfFile([content], `${getCurrentExportStem()}.pdf`);
+  };
+
+  const saveDocAsPdf = () => {
+    const pages = pagesRef.current.filter((page) => page.trim());
+    if (!pages.length) return;
+    void savePdfFile(pages, `${getCurrentDocExportStem()}.pdf`);
   };
 
   // Glow helpers — matches text hue for color themes, original warm glow otherwise
@@ -1917,6 +2120,7 @@ const WritingInterface = () => {
   return (
     <div
       className="min-h-screen bg-background flex flex-col"
+      style={{ paddingRight: scratchpadOpen && !isTouchDevice ? scratchpadWidth : undefined }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -1940,32 +2144,19 @@ const WritingInterface = () => {
           ezwrite.
         </span>
         <div className="flex items-center gap-3 opacity-60 hover:opacity-100 transition-opacity duration-300">
+          {isPageEmpty && pageCount > 1 && (
+            <button
+              onClick={() => deletePage(currentPage)}
+              className="text-muted-foreground hover:text-destructive transition-colors"
+              aria-label="Delete current page"
+            >
+              <Trash2 size={16} />
+            </button>
+          )}
           <button
-            onClick={() => setSettingsOpen(true)}
+            onClick={handleOpenDocs}
             className="text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <Settings size={16} />
-          </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button disabled={!contentRef.current.trim()} aria-label="Share or export current page" className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30">
-                <span className="share-export-icon text-lg leading-none">↗</span>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="bg-popover rounded-xl">
-              <DropdownMenuItem onClick={saveAsShareCard} className="cursor-pointer" disabled={isExportingShareCard}>
-                {isExportingShareCard ? 'Preparing PNG...' : 'Share as PNG'}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={saveAsPdf} className="cursor-pointer" disabled={isExportingPdf}>
-                {isExportingPdf ? 'Preparing PDF…' : 'Download as PDF'}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={saveAsMd} className="cursor-pointer">Download as Markdown</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <button
-            onClick={() => setNotesOpen(true)}
-            className="text-muted-foreground hover:text-foreground transition-colors"
-            aria-label="Open pages"
+            aria-label="Open docs"
           >
             <ChevronLeft size={16} />
           </button>
@@ -2040,19 +2231,6 @@ const WritingInterface = () => {
         )}
       </div>
 
-      {/* Empty page delete button */}
-      {isPageEmpty && pageCount > 1 && (
-        <div className="fixed bottom-20 left-0 right-0 flex justify-center pointer-events-none">
-          <button
-            onClick={() => deletePage(currentPage)}
-            className="pointer-events-auto flex items-center gap-1.5 font-mono text-xs text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors"
-          >
-            <Trash2 size={11} />
-            delete page
-          </button>
-        </div>
-      )}
-
       {/* Save indicator */}
       {savedFlash && (
         <div className="fixed bottom-5 left-1/2 -translate-x-1/2 font-mono text-[10px] text-foreground/40 pointer-events-none select-none">
@@ -2125,13 +2303,34 @@ const WritingInterface = () => {
       <Suspense fallback={null}>
         <NotesPanel
           open={notesOpen}
-          pages={pagesRef.current ?? []}
-          timestamps={timestamps}
-          currentPage={currentPage}
-          onSelectPage={(i) => { switchToPage(i); setNotesOpen(false); }}
-          onNewPage={() => switchToPage(pageCount)}
-          onDeletePage={(i) => deletePage(i)}
+          projects={projects}
+          activeProjectId={activeProjectId}
+          canExportPage={Boolean(contentRef.current.trim())}
+          canExportDoc={pagesRef.current.some((page) => page.trim())}
+          isExportingPdf={isExportingPdf}
+          isExportingPng={isExportingShareCard}
+          onSelectProject={(id) => switchToProject(id)}
+          onNewProject={handleNewProject}
+          onDeleteProject={handleDeleteProject}
+          onOpenSettings={() => { setNotesOpen(false); setSettingsOpen(true); }}
+          onOpenScratchpad={handleOpenScratchpad}
+          onExportMd={saveAsMd}
+          onExportPng={saveAsShareCard}
+          onExportPagePdf={savePageAsPdf}
+          onExportDocPdf={saveDocAsPdf}
           onClose={() => setNotesOpen(false)}
+        />
+      </Suspense>
+
+      <Suspense fallback={null}>
+        <ScratchpadPanel
+          open={scratchpadOpen}
+          value={scratchpad}
+          width={scratchpadWidth}
+          useSerif={useSerif}
+          onChange={handleScratchpadChange}
+          onResize={setScratchpadWidth}
+          onClose={() => setScratchpadOpen(false)}
         />
       </Suspense>
 

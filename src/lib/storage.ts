@@ -17,6 +17,69 @@ interface WritableHandle {
   createWritable: () => Promise<FileSystemWritableFileStream>;
 }
 
+interface IterableDirectoryHandle extends FileSystemDirectoryHandle {
+  entries: () => AsyncIterableIterator<[string, FileSystemHandle]>;
+}
+
+function getPageFileName(index: number): string {
+  return `page-${String(index + 1).padStart(3, '0')}.md`;
+}
+
+function getProjectTitleFromMarkdown(markdowns: string[]): string {
+  const first = markdowns[0] ?? '';
+  for (const line of first.split('\n')) {
+    const clean = line.trim();
+    if (clean) return clean.replace(/^#+\s*/, '').replace(/^>\s*/, '').slice(0, 120);
+  }
+  return 'untitled';
+}
+
+async function syncProjectDirectory(
+  projectDir: FileSystemDirectoryHandle,
+  projectId: string,
+  markdowns: string[],
+  scratchpad = '',
+): Promise<void> {
+  const expectedNames = new Set<string>(['project.json']);
+
+  await Promise.all(markdowns.map(async (md, i) => {
+    const fileName = getPageFileName(i);
+    expectedNames.add(fileName);
+    const fileHandle = await projectDir.getFileHandle(fileName, { create: true });
+    const writable = await (fileHandle as FileSystemFileHandle & WritableHandle).createWritable();
+    await writable.write(md);
+    await writable.close();
+  }));
+
+  if (scratchpad.trim()) {
+    expectedNames.add('scratchpad.md');
+    const scratchpadHandle = await projectDir.getFileHandle('scratchpad.md', { create: true });
+    const scratchpadWritable = await (scratchpadHandle as FileSystemFileHandle & WritableHandle).createWritable();
+    await scratchpadWritable.write(scratchpad);
+    await scratchpadWritable.close();
+  }
+
+  const metaHandle = await projectDir.getFileHandle('project.json', { create: true });
+  const metaWritable = await (metaHandle as FileSystemFileHandle & WritableHandle).createWritable();
+  await metaWritable.write(JSON.stringify({
+    id: projectId,
+    title: getProjectTitleFromMarkdown(markdowns),
+    pageCount: markdowns.length,
+    hasScratchpad: Boolean(scratchpad.trim()),
+    updatedAt: Date.now(),
+  }, null, 2));
+  await metaWritable.close();
+
+  for await (const [name] of (projectDir as IterableDirectoryHandle).entries()) {
+    const isLegacyPage = /^ezwrite-\d+\.md$/.test(name);
+    const isPage = /^page-\d{3}\.md$/.test(name);
+    const isScratchpad = name === 'scratchpad.md';
+    if ((isLegacyPage || isPage || isScratchpad) && !expectedNames.has(name)) {
+      await projectDir.removeEntry(name);
+    }
+  }
+}
+
 export const isFileSystemSupported = (): boolean =>
   typeof window !== 'undefined' && 'showDirectoryPicker' in window;
 
@@ -79,32 +142,36 @@ export async function pickSaveDirectory(): Promise<FileSystemDirectoryHandle | n
   }
 }
 
-// Write each page as a separate markdown file: ezwrite-1.md, ezwrite-2.md, …
-// markdowns: array of pre-converted markdown strings (one per page)
+// Write each project into its own subfolder:
+//   <dir>/<projectId>/project.json
+//   <dir>/<projectId>/page-001.md, page-002.md, …
 let lastGrantedHandle: FileSystemDirectoryHandle | null = null;
 
-export async function writePageFiles(
+export async function writeProjectFiles(
   dirHandle: FileSystemDirectoryHandle,
-  markdowns: string[]
+  projectId: string,
+  markdowns: string[],
+  scratchpad = ''
 ): Promise<void> {
   try {
-    // Only request permission if handle changed or not yet granted
     if (dirHandle !== lastGrantedHandle) {
       const permission = await (dirHandle as DirectoryHandleWithPermission).requestPermission?.({ mode: 'readwrite' });
       if (permission && permission !== 'granted') return;
       lastGrantedHandle = dirHandle;
     }
-    await Promise.all(markdowns.map(async (md, i) => {
-      const fileName = `ezwrite-${i + 1}.md`;
-      const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
-      const writable = await (fileHandle as FileSystemFileHandle & WritableHandle).createWritable();
-      await writable.write(md);
-      await writable.close();
-    }));
+    const projectDir = await dirHandle.getDirectoryHandle(projectId, { create: true });
+    await syncProjectDirectory(projectDir, projectId, markdowns, scratchpad);
   } catch {
-    lastGrantedHandle = null; // reset on error
-    // silently fail — localStorage is always the primary store
+    lastGrantedHandle = null;
   }
+}
+
+// Legacy wrapper
+export async function writePageFiles(
+  dirHandle: FileSystemDirectoryHandle,
+  markdowns: string[]
+): Promise<void> {
+  return writeProjectFiles(dirHandle, 'default', markdowns);
 }
 
 export function getDirName(handle: FileSystemDirectoryHandle | null): string {
@@ -113,21 +180,20 @@ export function getDirName(handle: FileSystemDirectoryHandle | null): string {
 
 // Auto-write to Origin Private File System (no user permission needed)
 let opfsWriteScheduled = false;
-export async function writeToOPFS(pages: string[]): Promise<void> {
+let opfsLastProjectId: string | null = null;
+export async function writeToOPFS(pages: string[], projectId?: string, scratchpad = ''): Promise<void> {
   if (!('storage' in navigator && 'getDirectory' in navigator.storage)) return;
-  if (opfsWriteScheduled) return;
+  if (opfsWriteScheduled && projectId === opfsLastProjectId) return;
   opfsWriteScheduled = true;
-  // Debounce: don't flood the OPFS with writes on every keystroke
+  opfsLastProjectId = projectId ?? null;
   setTimeout(async () => {
     opfsWriteScheduled = false;
     try {
       const root = await navigator.storage.getDirectory();
-      await Promise.all(pages.map(async (page, i) => {
-        const fh = await root.getFileHandle(`ezwrite-${i + 1}.md`, { create: true });
-        const w = await (fh as FileSystemFileHandle & WritableHandle).createWritable();
-        await w.write(page);
-        await w.close();
-      }));
+      const dir = projectId
+        ? await root.getDirectoryHandle(projectId, { create: true })
+        : root;
+      await syncProjectDirectory(dir, projectId ?? 'default', pages, scratchpad);
     } catch {
       // silently fail
     }
