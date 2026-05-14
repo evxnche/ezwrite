@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   X,
   Plus,
@@ -25,6 +25,7 @@ interface Props {
   onSelectProject: (id: string) => void;
   onNewProject: () => void;
   onDeleteProject: (id: string) => void;
+  onRenameProject: (id: string, newTitle: string) => void;
   onOpenSettings: () => void;
   onOpenScratchpad: () => void;
   onExportMd: () => void;
@@ -49,6 +50,7 @@ const NotesPanel: React.FC<Props> = ({
   onSelectProject,
   onNewProject,
   onDeleteProject,
+  onRenameProject,
   onOpenSettings,
   onOpenScratchpad,
   onExportMd,
@@ -59,6 +61,43 @@ const NotesPanel: React.FC<Props> = ({
 }) => {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<ExpandedSection>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
+  const clickTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (renamingId && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [renamingId]);
+
+  const cancelPendingClick = () => {
+    if (clickTimerRef.current !== null) {
+      window.clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+    }
+  };
+
+  const startRename = (id: string, title: string) => {
+    cancelPendingClick();
+    setRenamingId(id);
+    setRenameValue(title);
+  };
+
+  const commitRename = () => {
+    if (!renamingId) return;
+    const trimmed = renameValue.trim();
+    if (trimmed) onRenameProject(renamingId, trimmed);
+    setRenamingId(null);
+    setRenameValue('');
+  };
+
+  const cancelRename = () => {
+    setRenamingId(null);
+    setRenameValue('');
+  };
 
   if (!open) return null;
 
@@ -156,6 +195,26 @@ const NotesPanel: React.FC<Props> = ({
               const preview = getProjectPreview(project.id);
               const isActive = project.id === activeProjectId;
               const isHovered = hoveredId === project.id;
+              const isRenaming = renamingId === project.id;
+
+              const handleRowClick = () => {
+                if (isRenaming) return;
+                cancelPendingClick();
+                clickTimerRef.current = window.setTimeout(() => {
+                  clickTimerRef.current = null;
+                  onSelectProject(project.id);
+                  onClose();
+                }, 220);
+              };
+              const handleRowDoubleClick = (e: React.MouseEvent) => {
+                e.preventDefault();
+                startRename(project.id, title);
+              };
+              const handleRowContextMenu = (e: React.MouseEvent) => {
+                e.preventDefault();
+                startRename(project.id, title);
+              };
+
               return (
                 <div
                   key={project.id}
@@ -164,15 +223,35 @@ const NotesPanel: React.FC<Props> = ({
                   }`}
                   onMouseEnter={() => setHoveredId(project.id)}
                   onMouseLeave={() => setHoveredId(null)}
+                  onContextMenu={handleRowContextMenu}
                 >
-                  <button
-                    onClick={() => { onSelectProject(project.id); onClose(); }}
-                    className="w-full text-left px-4 py-3 pr-10"
+                  <div
+                    onClick={handleRowClick}
+                    onDoubleClick={handleRowDoubleClick}
+                    className={`w-full text-left px-4 py-3 pr-10 ${isRenaming ? '' : 'cursor-pointer'}`}
+                    role="button"
+                    tabIndex={0}
                   >
-                    <div className="font-mono text-sm font-medium text-foreground truncate leading-snug">
-                      {title}
-                    </div>
-                    {preview && (
+                    {isRenaming ? (
+                      <input
+                        ref={renameInputRef}
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); commitRename(); }
+                          else if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
+                        }}
+                        onBlur={commitRename}
+                        className="w-full bg-transparent font-mono text-sm font-medium text-foreground leading-snug outline-none border-b border-foreground/30 focus:border-foreground/70"
+                      />
+                    ) : (
+                      <div className="font-mono text-sm font-medium text-foreground truncate leading-snug">
+                        {title}
+                      </div>
+                    )}
+                    {preview && !isRenaming && (
                       <div className="font-mono text-xs text-muted-foreground/50 truncate mt-0.5 leading-snug">
                         {preview}
                       </div>
@@ -180,8 +259,8 @@ const NotesPanel: React.FC<Props> = ({
                     <div className="font-mono text-[10px] text-muted-foreground/35 mt-1">
                       {timeAgo(project.updatedAt)}
                     </div>
-                  </button>
-                  {isHovered && projects.length > 1 && (
+                  </div>
+                  {isHovered && !isRenaming && projects.length > 1 && (
                     <button
                       onClick={(e) => { e.stopPropagation(); onDeleteProject(project.id); }}
                       className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground/30 hover:text-destructive transition-colors"

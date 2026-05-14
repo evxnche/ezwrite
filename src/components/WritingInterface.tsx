@@ -41,6 +41,7 @@ import {
   setActiveProjectId,
   createProject,
   deleteProject,
+  renameProjectTitle,
   getProjectPages,
   saveProjectPages,
   getProjectTimestamps,
@@ -817,6 +818,23 @@ const WritingInterface = () => {
       }
     }
   }, [switchToProject]);
+
+  const handleRenameProject = useCallback((id: string, newTitle: string) => {
+    // Save current editor state first so unsaved edits on other lines aren't lost.
+    if (id === activeProjectIdRef.current && editorRef.current) {
+      pagesRef.current[currentPageRef.current] = extractContent(editorRef.current);
+      saveProjectPages(id, pagesRef.current);
+    }
+    renameProjectTitle(id, newTitle);
+    setProjects(listProjects());
+    if (id === activeProjectIdRef.current) {
+      const newPages = getProjectPages(id);
+      pagesRef.current = newPages;
+      if (currentPageRef.current === 0 && editorRef.current) {
+        structuralUpdate(newPages[0] ?? '', undefined, undefined, false);
+      }
+    }
+  }, [structuralUpdate]);
 
   const handleOpenDocs = useCallback(() => {
     setScratchpadOpen(false);
@@ -2315,6 +2333,7 @@ const WritingInterface = () => {
           onSelectProject={(id) => switchToProject(id)}
           onNewProject={handleNewProject}
           onDeleteProject={handleDeleteProject}
+          onRenameProject={handleRenameProject}
           onOpenSettings={() => { setNotesOpen(false); setSettingsOpen(true); }}
           onOpenScratchpad={handleOpenScratchpad}
           onExportMd={saveAsMd}
