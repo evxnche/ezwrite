@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 interface Command {
   name: string;
@@ -17,6 +17,7 @@ interface Props {
 
 const SlashCommandPopup: React.FC<Props> = ({ commands, highlightIndex, onSelect, onClose, rect, kbHeight = 0, isTouchDevice = false }) => {
   const ref = useRef<HTMLDivElement>(null);
+  const [desktopTop, setDesktopTop] = useState<number>(rect.bottom + 6);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -25,6 +26,20 @@ const SlashCommandPopup: React.FC<Props> = ({ commands, highlightIndex, onSelect
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [onClose]);
+
+  useLayoutEffect(() => {
+    if (isTouchDevice && kbHeight > 0) return;
+    const el = ref.current;
+    if (!el) return;
+    const height = el.offsetHeight;
+    const viewport = typeof window !== 'undefined' ? window.innerHeight : 800;
+    const below = rect.bottom + 6;
+    if (below + height + 8 > viewport) {
+      setDesktopTop(Math.max(8, rect.top - height - 6));
+    } else {
+      setDesktopTop(below);
+    }
+  }, [rect.bottom, rect.top, isTouchDevice, kbHeight, commands.length]);
 
   if (!commands.length) return null;
 
@@ -35,7 +50,7 @@ const SlashCommandPopup: React.FC<Props> = ({ commands, highlightIndex, onSelect
       style={
         isTouchDevice && kbHeight > 0
           ? { bottom: kbHeight + 8, left: Math.max(16, Math.min(rect.left, (typeof window !== 'undefined' ? window.innerWidth : 400) - 216)) }
-          : { top: rect.bottom + 6, left: rect.left }
+          : { top: desktopTop, left: rect.left }
       }
     >
       {commands.map((cmd, i) => (

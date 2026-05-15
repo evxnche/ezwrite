@@ -2136,7 +2136,7 @@ const WritingInterface = () => {
   // Editor styles
   const editorStyle: React.CSSProperties = {
     ...visualTextStyle,
-    fontSize: visualMetrics.editorFontSize,
+    fontSize: isTouchDevice ? '16px' : visualMetrics.editorFontSize,
     lineHeight: visualMetrics.editorLineHeight,
     caretColor: glowHsl ? `hsl(${glowHsl})` : (isDark ? 'hsl(40 60% 85%)' : 'hsl(0 0% 25%)'),
     outline: 'none',
