@@ -233,7 +233,7 @@ const NotesPanel: React.FC<Props> = ({
 
           <button onClick={() => toggleSection('notes')} className={`${baseRowClass} mt-1`}>
             <FolderOpen size={15} />
-            <span>notes</span>
+            <span>docs</span>
             <span className="ml-auto text-muted-foreground/50">{expanded === 'notes' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
           </button>
         </div>
@@ -246,7 +246,7 @@ const NotesPanel: React.FC<Props> = ({
               aria-label="New doc"
             >
               <Plus size={13} />
-              <span>new note</span>
+              <span>new doc</span>
             </button>
             {projects.map((project) => {
               const title = getProjectTitle(project.id);

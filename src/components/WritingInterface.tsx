@@ -888,6 +888,7 @@ const WritingInterface = () => {
   const handleWheel = (e: React.WheelEvent) => {
     if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) * 2) return;
     if (Math.abs(e.deltaX) < 5) return;
+    e.preventDefault();
     if (wheelCooldown.current) return;
     wheelAccum.current += e.deltaX;
     if (wheelTimeout.current) clearTimeout(wheelTimeout.current);
@@ -2235,27 +2236,29 @@ const WritingInterface = () => {
         </div>
       </div>
 
-      {/* Page indicator dots */}
+      {/* Pages */}
       <div
         className={`fixed bottom-10 left-0 right-0 flex justify-center items-center gap-2 pointer-events-none transition-opacity duration-500 ${showDots ? 'opacity-60' : 'opacity-0'}`}
+        aria-label="Pages in this doc"
       >
         {pageCount <= 8 ? (
           Array.from({ length: pageCount }).map((_, i) => (
             <button
               key={i}
               onClick={() => switchToPage(i)}
+              title={`page ${i + 1} of ${pageCount}`}
               className="pointer-events-auto transition-all duration-200 rounded-full bg-foreground"
               style={{
                 width: currentPage === i ? '6px' : '4px',
                 height: currentPage === i ? '6px' : '4px',
                 opacity: currentPage === i ? 1 : 0.4,
               }}
-              aria-label={`Go to page ${i + 1}`}
+              aria-label={`Go to page ${i + 1} of ${pageCount}`}
             />
           ))
         ) : (
           <span className="font-mono text-[10px] pointer-events-auto" style={{ opacity: 0.5 }}>
-            {currentPage + 1} / {pageCount}
+            page {currentPage + 1} / {pageCount}
           </span>
         )}
       </div>
@@ -2328,7 +2331,7 @@ const WritingInterface = () => {
         );
       })}
 
-      {/* Notes panel */}
+      {/* Docs panel */}
       <Suspense fallback={null}>
         <NotesPanel
           open={notesOpen}

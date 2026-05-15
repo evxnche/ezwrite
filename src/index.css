@@ -228,6 +228,12 @@
 }
 
 @layer base {
+  html,
+  body,
+  #root {
+    overscroll-behavior-x: none;
+  }
+
   * {
     @apply border-border;
   }

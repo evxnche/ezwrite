@@ -18,6 +18,19 @@ const App = () => {
     return () => cancel(handle);
   }, []);
 
+  useEffect(() => {
+    const state = { ezwriteStayHere: true };
+    window.history.replaceState(state, '', window.location.href);
+    window.history.pushState(state, '', window.location.href);
+
+    const blockBackNavigation = () => {
+      window.history.pushState(state, '', window.location.href);
+    };
+
+    window.addEventListener('popstate', blockBackNavigation);
+    return () => window.removeEventListener('popstate', blockBackNavigation);
+  }, []);
+
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
       <TooltipProvider>

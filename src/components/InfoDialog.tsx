@@ -167,7 +167,7 @@ const InfoDialog: React.FC<Props> = ({
                 <li><span className="text-accent-foreground">/line</span> — horizontal divider</li>
                 <li><span className="text-accent-foreground">/timer</span> — start a timer</li>
                 <li><span className="text-accent-foreground">/notes</span> — open scratchpad</li>
-                <li><span className="text-accent-foreground">/docs</span> — open docs drawer</li>
+                <li><span className="text-accent-foreground">/docs</span> — open docs</li>
               </ul>
             </section>
 
@@ -195,7 +195,7 @@ const InfoDialog: React.FC<Props> = ({
               <ul className="space-y-1 text-muted-foreground ml-3">
                 <li><span className="text-foreground">cmd/ctrl+↑/↓</span> — move line up/down</li>
                 <li>
-                  <span className="text-foreground">cmd/ctrl+←/→</span> — switch between pages<br />
+                  <span className="text-foreground">cmd/ctrl+←/→</span> — switch pages in a doc<br />
                   <span className="ml-0 text-muted-foreground">(or use 2-finger swipe)</span>
                 </li>
                 <li>type <span className="text-foreground">/x</span> at end of a list item to toggle strikethrough</li>

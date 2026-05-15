@@ -106,6 +106,8 @@ test('getShareCardPalette follows the selected color theme', () => {
 test('WritingInterface exposes a current-page PNG share card export', () => {
   const writingSource = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   const notesSource = fs.readFileSync(path.join(process.cwd(), 'src/components/NotesPanel.tsx'), 'utf8');
+  const appSource = fs.readFileSync(path.join(process.cwd(), 'src/App.tsx'), 'utf8');
+  const cssSource = fs.readFileSync(path.join(process.cwd(), 'src/index.css'), 'utf8');
   assert.equal(notesSource.includes("'img'"), true);
   assert.equal(notesSource.includes('onExportPng'), true);
   assert.equal(notesSource.includes('page as md'), true);
@@ -115,6 +117,14 @@ test('WritingInterface exposes a current-page PNG share card export', () => {
   assert.equal(writingSource.includes('saveAsShareCard'), true);
   assert.equal(writingSource.includes('saveDocAsMd'), true);
   assert.equal(writingSource.includes('canvas.toBlob'), true);
+  assert.equal(notesSource.includes('<span>docs</span>'), true);
+  assert.equal(notesSource.includes('<span>new doc</span>'), true);
+  assert.equal(writingSource.includes('aria-label="Pages in this doc"'), true);
+  assert.equal(writingSource.includes('title={`page ${i + 1} of ${pageCount}`}'), true);
+  assert.equal(writingSource.includes('e.preventDefault();'), true);
+  assert.equal(appSource.includes('ezwriteStayHere'), true);
+  assert.equal(appSource.includes("window.addEventListener('popstate', blockBackNavigation);"), true);
+  assert.equal(cssSource.includes('overscroll-behavior-x: none;'), true);
 });
 
 test('NotesPanel keeps doc rename on double-click and opens a doc menu on right-click', () => {
