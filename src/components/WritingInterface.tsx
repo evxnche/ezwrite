@@ -547,8 +547,11 @@ const WritingInterface = () => {
     cursorLine?: number,
     cursorOffset?: number,
     shouldFocus = true,
+    persist = true,
   ) => {
-    saveContent(content);
+    contentRef.current = content;
+    setIsPageEmpty(content.trim() === '');
+    if (persist) saveContent(content);
     if (!editorRef.current) return;
 
     isResettingDOM.current = true;
@@ -679,7 +682,7 @@ const WritingInterface = () => {
     hasInitialMounted.current = true;
     setMounted(true);
     if (editorRef.current) {
-      structuralUpdate(contentRef.current, 0, 0);
+      structuralUpdate(contentRef.current, 0, 0, true, false);
       setTimeout(() => {
         editorRef.current?.focus();
         const lines = contentRef.current.split('\n');
@@ -720,6 +723,7 @@ const WritingInterface = () => {
     contentRef.current = getPageContent(newPage);
     const projectId = activeProjectIdRef.current;
     if (projectId) saveProjectLastPage(projectId, newPage);
+    currentPageRef.current = newPage;
     setCurrentPage(newPage);
   }, []);
 
@@ -737,7 +741,7 @@ const WritingInterface = () => {
     const pageContent = getPageContent(currentPage);
     const { lineIndex, offset } = getPageEndCursor(pageContent);
     const shouldFocus = shouldAutoFocusAfterPageSwitch(isTouchDevice) && !scratchpadOpen;
-    structuralUpdateRef.current(pageContent, lineIndex, offset, shouldFocus);
+    structuralUpdateRef.current(pageContent, lineIndex, offset, shouldFocus, false);
     setIsPageEmpty(pageContent.trim() === '');
     setTimeout(() => {
       if (shouldFocus) {
@@ -817,7 +821,7 @@ const WritingInterface = () => {
     redoStack.current = [];
     editingTimerLineRef.current = null;
     const { lineIndex, offset } = getPageEndCursor(contentRef.current);
-    structuralUpdate(contentRef.current, lineIndex, offset, !isTouchDevice);
+    structuralUpdate(contentRef.current, lineIndex, offset, !isTouchDevice, false);
     setTimeout(() => {
       if (!isTouchDevice) editorRef.current?.focus();
       setPageTransition('none');
@@ -865,7 +869,7 @@ const WritingInterface = () => {
       const newPages = getProjectPages(id);
       pagesRef.current = newPages;
       if (currentPageRef.current === 0 && editorRef.current) {
-        structuralUpdate(newPages[0] ?? '', undefined, undefined, false);
+        structuralUpdate(newPages[0] ?? '', undefined, undefined, false, false);
       }
     }
   }, [structuralUpdate]);

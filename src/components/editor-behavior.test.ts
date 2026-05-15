@@ -196,8 +196,17 @@ test('WritingInterface hydrates the saved current page instead of overwriting it
   const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   assert.equal(source.includes('const currentPageRef = useRef(currentPage);'), true);
   assert.equal(source.includes('const contentRef = useRef(getPageContent(currentPage));'), true);
+  assert.equal(source.includes('structuralUpdate(contentRef.current, 0, 0, true, false);'), true);
   assert.equal(source.includes('const currentPageRef = useRef(0);'), false);
   assert.equal(source.includes('const contentRef = useRef(getPageContent(0));'), false);
+});
+
+test('WritingInterface renders page switches without resaving target page content', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  assert.match(source, /const structuralUpdate = useCallback\(\([\s\S]*?persist = true,[\s\S]*?if \(persist\) saveContent\(content\);/);
+  assert.equal(source.includes('currentPageRef.current = newPage;'), true);
+  assert.equal(source.includes('structuralUpdateRef.current(pageContent, lineIndex, offset, shouldFocus, false);'), true);
+  assert.equal(source.includes('structuralUpdate(contentRef.current, lineIndex, offset, !isTouchDevice, false);'), true);
 });
 
 test('WritingInterface flushes current editor content during browser lifecycle exits', () => {
