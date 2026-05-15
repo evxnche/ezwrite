@@ -192,6 +192,42 @@ test('WritingInterface seeds default copy only on page 1', () => {
   assert.equal(source.includes("Array(TOTAL_PAGES - 1).fill(DEFAULT_PAGE_CONTENT)"), false);
 });
 
+test('WritingInterface hydrates the saved current page instead of overwriting it on mount', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  assert.equal(source.includes('const currentPageRef = useRef(currentPage);'), true);
+  assert.equal(source.includes('const contentRef = useRef(getPageContent(currentPage));'), true);
+  assert.equal(source.includes('const currentPageRef = useRef(0);'), false);
+  assert.equal(source.includes('const contentRef = useRef(getPageContent(0));'), false);
+});
+
+test('WritingInterface flushes current editor content during browser lifecycle exits', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  assert.equal(source.includes('const flushCurrentProject = useCallback'), true);
+  assert.equal(source.includes('const pagesSnapshot = [...pages];'), true);
+  assert.equal(source.includes('const scratchpadSnapshot = scratchpadRef.current;'), true);
+  assert.equal(source.includes("document.addEventListener('visibilitychange', flushWhenHidden);"), true);
+  assert.equal(source.includes("window.addEventListener('pagehide', flushForLifecycle);"), true);
+  assert.equal(source.includes("window.addEventListener('beforeunload', flushForLifecycle);"), true);
+  assert.equal(source.includes('void writeToOPFS(latestPages, projectId, scratchpadValue, { delay: 0 });'), true);
+});
+
+test('project storage keeps a last-known-good backup for pages and scratchpad', () => {
+  const projectsSource = fs.readFileSync(path.join(process.cwd(), 'src/lib/projects.ts'), 'utf8');
+  assert.equal(projectsSource.includes('function projectPagesBackupKey'), true);
+  assert.equal(projectsSource.includes('function projectScratchpadBackupKey'), true);
+  assert.match(projectsSource, /return parsePages\(localStorage\.getItem\(projectPagesKey\(id\)\)\)[\s\S]*parsePages\(localStorage\.getItem\(projectPagesBackupKey\(id\)\)\)/);
+  assert.equal(projectsSource.includes('localStorage.setItem(projectPagesBackupKey(id), JSON.stringify(safePages));'), true);
+  assert.equal(projectsSource.includes('localStorage.setItem(projectScratchpadBackupKey(id), value);'), true);
+});
+
+test('OPFS backup writes coalesce to the latest pending payload', () => {
+  const storageSource = fs.readFileSync(path.join(process.cwd(), 'src/lib/storage.ts'), 'utf8');
+  assert.equal(storageSource.includes('let opfsPendingWrite'), true);
+  assert.equal(storageSource.includes('opfsPendingWrite = { pages: [...pages], projectId, scratchpad };'), true);
+  assert.equal(storageSource.includes('if (opfsWriteScheduled) return;'), true);
+  assert.equal(storageSource.includes('opfsLastProjectId'), false);
+});
+
 test('WritingInterface container taps focus without scrolling the page to the top', () => {
   const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   assert.match(

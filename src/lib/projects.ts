@@ -3,6 +3,7 @@
 //   ezwrite-projects         → ProjectMeta[] (ordered list)
 //   ezwrite-active-project   → string (active project id)
 //   ezwrite-project-{id}     → string[] (pages)
+//   ezwrite-project-{id}-bak → string[] (last known good pages)
 //   ezwrite-project-{id}-ts  → number[] (page timestamps)
 //   ezwrite-project-{id}-lp  → number (last viewed page index)
 
@@ -19,9 +20,41 @@ const PROJECTS_KEY = 'ezwrite-projects';
 const ACTIVE_KEY = 'ezwrite-active-project';
 
 function projectPagesKey(id: string) { return `ezwrite-project-${id}`; }
+function projectPagesBackupKey(id: string) { return `ezwrite-project-${id}-bak`; }
 function projectTimestampsKey(id: string) { return `ezwrite-project-${id}-ts`; }
 function projectLastPageKey(id: string) { return `ezwrite-project-${id}-lp`; }
 function projectScratchpadKey(id: string) { return `ezwrite-project-${id}-scratchpad`; }
+function projectScratchpadBackupKey(id: string) { return `ezwrite-project-${id}-scratchpad-bak`; }
+
+function normalizePages(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  return value.map((page) => stripLegacyImageLines(String(page ?? '')));
+}
+
+function parsePages(raw: string | null): string[] | null {
+  if (!raw) return null;
+  try {
+    return normalizePages(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+function saveLastKnownGoodPages(id: string): void {
+  const current = localStorage.getItem(projectPagesKey(id));
+  if (parsePages(current)) {
+    localStorage.setItem(projectPagesBackupKey(id), current!);
+  }
+}
+
+function touchProject(id: string): void {
+  const projects = listProjects();
+  const idx = projects.findIndex(p => p.id === id);
+  if (idx >= 0) {
+    projects[idx].updatedAt = Date.now();
+    localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+  }
+}
 
 // --- Migration from old flat format ---
 function needsMigration(): boolean {
@@ -36,9 +69,7 @@ function runMigration() {
   let pages: string[];
   try {
     const parsed = JSON.parse(savedPages);
-    pages = Array.isArray(parsed) && parsed.length > 0
-      ? parsed.map((p: unknown) => stripLegacyImageLines(String(p ?? '')))
-      : [''];
+    pages = normalizePages(parsed) ?? [''];
   } catch {
     pages = [''];
   }
@@ -57,6 +88,7 @@ function runMigration() {
   localStorage.setItem(PROJECTS_KEY, JSON.stringify([meta]));
   localStorage.setItem(ACTIVE_KEY, id);
   localStorage.setItem(projectPagesKey(id), JSON.stringify(pages));
+  localStorage.setItem(projectPagesBackupKey(id), JSON.stringify(pages));
 
   // Migrate timestamps
   let timestamps: number[] = [];
@@ -116,6 +148,7 @@ export function createProject(firstPageContent = ''): ProjectMeta {
   projects.unshift(meta); // newest first
   localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
   localStorage.setItem(projectPagesKey(id), JSON.stringify([firstPageContent || '']));
+  localStorage.setItem(projectPagesBackupKey(id), JSON.stringify([firstPageContent || '']));
   localStorage.setItem(projectTimestampsKey(id), JSON.stringify([now]));
   localStorage.setItem(projectLastPageKey(id), '0');
   localStorage.setItem(ACTIVE_KEY, id);
@@ -127,9 +160,11 @@ export function deleteProject(id: string): void {
   const projects = listProjects().filter(p => p.id !== id);
   localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
   localStorage.removeItem(projectPagesKey(id));
+  localStorage.removeItem(projectPagesBackupKey(id));
   localStorage.removeItem(projectTimestampsKey(id));
   localStorage.removeItem(projectLastPageKey(id));
   localStorage.removeItem(projectScratchpadKey(id));
+  localStorage.removeItem(projectScratchpadBackupKey(id));
 
   // If deleted project was active, switch to first remaining
   const activeId = localStorage.getItem(ACTIVE_KEY);
@@ -143,25 +178,17 @@ export function deleteProject(id: string): void {
 }
 
 export function getProjectPages(id: string): string[] {
-  try {
-    const raw = localStorage.getItem(projectPagesKey(id));
-    if (!raw) return [''];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : [''];
-  } catch {
-    return [''];
-  }
+  return parsePages(localStorage.getItem(projectPagesKey(id)))
+    ?? parsePages(localStorage.getItem(projectPagesBackupKey(id)))
+    ?? [''];
 }
 
 export function saveProjectPages(id: string, pages: string[]): void {
-  localStorage.setItem(projectPagesKey(id), JSON.stringify(pages));
-  // Update project's updatedAt
-  const projects = listProjects();
-  const idx = projects.findIndex(p => p.id === id);
-  if (idx >= 0) {
-    projects[idx].updatedAt = Date.now();
-    localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
-  }
+  const safePages = pages.length ? pages.map((page) => String(page ?? '')) : [''];
+  saveLastKnownGoodPages(id);
+  localStorage.setItem(projectPagesKey(id), JSON.stringify(safePages));
+  localStorage.setItem(projectPagesBackupKey(id), JSON.stringify(safePages));
+  touchProject(id);
 }
 
 export function getProjectTimestamps(id: string): number[] {
@@ -210,17 +237,19 @@ export function renameProjectTitle(id: string, newTitle: string): void {
 }
 
 export function getProjectScratchpad(id: string): string {
-  return localStorage.getItem(projectScratchpadKey(id)) || '';
+  return localStorage.getItem(projectScratchpadKey(id))
+    ?? localStorage.getItem(projectScratchpadBackupKey(id))
+    ?? '';
 }
 
 export function saveProjectScratchpad(id: string, value: string): void {
-  localStorage.setItem(projectScratchpadKey(id), value);
-  const projects = listProjects();
-  const idx = projects.findIndex(p => p.id === id);
-  if (idx >= 0) {
-    projects[idx].updatedAt = Date.now();
-    localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+  const current = localStorage.getItem(projectScratchpadKey(id));
+  if (current !== null) {
+    localStorage.setItem(projectScratchpadBackupKey(id), current);
   }
+  localStorage.setItem(projectScratchpadKey(id), value);
+  localStorage.setItem(projectScratchpadBackupKey(id), value);
+  touchProject(id);
 }
 
 export function getProjectPreview(id: string): string {

@@ -178,24 +178,58 @@ export function getDirName(handle: FileSystemDirectoryHandle | null): string {
   return handle?.name ?? '';
 }
 
+interface PendingOPFSWrite {
+  pages: string[];
+  projectId?: string;
+  scratchpad: string;
+}
+
+interface OPFSWriteOptions {
+  delay?: number;
+}
+
 // Auto-write to Origin Private File System (no user permission needed)
 let opfsWriteScheduled = false;
-let opfsLastProjectId: string | null = null;
-export async function writeToOPFS(pages: string[], projectId?: string, scratchpad = ''): Promise<void> {
+let opfsWriteTimer: ReturnType<typeof setTimeout> | null = null;
+let opfsPendingWrite: PendingOPFSWrite | null = null;
+
+async function flushPendingOPFSWrite(): Promise<void> {
   if (!('storage' in navigator && 'getDirectory' in navigator.storage)) return;
-  if (opfsWriteScheduled && projectId === opfsLastProjectId) return;
+  const pending = opfsPendingWrite;
+  if (!pending) return;
+  opfsPendingWrite = null;
+  opfsWriteScheduled = false;
+  opfsWriteTimer = null;
+  try {
+    const root = await navigator.storage.getDirectory();
+    const dir = pending.projectId
+      ? await root.getDirectoryHandle(pending.projectId, { create: true })
+      : root;
+    await syncProjectDirectory(dir, pending.projectId ?? 'default', pending.pages, pending.scratchpad);
+  } catch {
+    // silently fail
+  }
+}
+
+export async function writeToOPFS(
+  pages: string[],
+  projectId?: string,
+  scratchpad = '',
+  options: OPFSWriteOptions = {},
+): Promise<void> {
+  if (!('storage' in navigator && 'getDirectory' in navigator.storage)) return;
+  opfsPendingWrite = { pages: [...pages], projectId, scratchpad };
+
+  const delay = options.delay ?? 500;
+  if (delay <= 0) {
+    if (opfsWriteTimer) clearTimeout(opfsWriteTimer);
+    await flushPendingOPFSWrite();
+    return;
+  }
+
+  if (opfsWriteScheduled) return;
   opfsWriteScheduled = true;
-  opfsLastProjectId = projectId ?? null;
-  setTimeout(async () => {
-    opfsWriteScheduled = false;
-    try {
-      const root = await navigator.storage.getDirectory();
-      const dir = projectId
-        ? await root.getDirectoryHandle(projectId, { create: true })
-        : root;
-      await syncProjectDirectory(dir, projectId ?? 'default', pages, scratchpad);
-    } catch {
-      // silently fail
-    }
-  }, 500);
+  opfsWriteTimer = setTimeout(() => {
+    void flushPendingOPFSWrite();
+  }, delay);
 }

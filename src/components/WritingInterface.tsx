@@ -230,8 +230,8 @@ const WritingInterface = () => {
     }
     return 0;
   });
-  const currentPageRef = useRef(0);
-  const contentRef = useRef(getPageContent(0));
+  const currentPageRef = useRef(currentPage);
+  const contentRef = useRef(getPageContent(currentPage));
 
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -427,7 +427,8 @@ const WritingInterface = () => {
   const lastUndoTime = useRef(0);
   const deferredPersistTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const scratchpadPersistTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
-  const deferredPagesRef = useRef<string[]>([]);
+  const scratchpadRef = useRef(scratchpad);
+  useEffect(() => { scratchpadRef.current = scratchpad; }, [scratchpad]);
   const pushUndo = useCallback((force = false) => {
     const now = Date.now();
     if (!force && now - lastUndoTime.current < 500) return;
@@ -455,13 +456,14 @@ const WritingInterface = () => {
   const persistScratchpad = useCallback((value: string, projectId = activeProjectIdRef.current) => {
     if (!projectId) return;
     saveProjectScratchpad(projectId, value);
+    const pagesSnapshot = [...pagesRef.current];
     clearTimeout(scratchpadPersistTimeoutRef.current);
     scratchpadPersistTimeoutRef.current = setTimeout(() => {
       if (dirHandleRef.current) {
-        const markdowns = pagesRef.current.map((page) => contentToMarkdown(page));
+        const markdowns = pagesSnapshot.map((page) => contentToMarkdown(page));
         void writeProjectFiles(dirHandleRef.current, projectId, markdowns, value);
       }
-      void writeToOPFS(pagesRef.current, projectId, value);
+      void writeToOPFS(pagesSnapshot, projectId, value);
     }, 250);
   }, []);
 
@@ -469,25 +471,57 @@ const WritingInterface = () => {
     localStorage.setItem('ezwrite-scratchpad-width', String(scratchpadWidth));
   }, [scratchpadWidth]);
 
-  const scheduleDeferredPersistence = useCallback((pages: string[]) => {
-    deferredPagesRef.current = [...pages];
+  const scheduleDeferredPersistence = useCallback((pages: string[], projectId = activeProjectIdRef.current) => {
+    if (!projectId) return;
+    const pagesSnapshot = [...pages];
+    const scratchpadSnapshot = scratchpadRef.current;
     clearTimeout(deferredPersistTimeoutRef.current);
     deferredPersistTimeoutRef.current = setTimeout(() => {
-      const latestPages = deferredPagesRef.current;
       if (dirHandleRef.current) {
-        const markdowns = latestPages.map((page) => contentToMarkdown(page));
-        void writeProjectFiles(dirHandleRef.current, activeProjectIdRef.current ?? 'default', markdowns, scratchpad);
+        const markdowns = pagesSnapshot.map((page) => contentToMarkdown(page));
+        void writeProjectFiles(dirHandleRef.current, projectId, markdowns, scratchpadSnapshot);
       }
-      void writeToOPFS(latestPages, activeProjectIdRef.current ?? undefined, scratchpad);
+      void writeToOPFS(pagesSnapshot, projectId, scratchpadSnapshot);
     }, 250);
-  }, [scratchpad]);
+  }, []);
+
+  const flushCurrentProject = useCallback((scratchpadValue = scratchpadRef.current) => {
+    const projectId = activeProjectIdRef.current;
+    if (!projectId) return;
+    if (editorRef.current) {
+      const content = extractContent(editorRef.current);
+      contentRef.current = content;
+      pagesRef.current[currentPageRef.current] = content;
+    }
+
+    const latestPages = [...pagesRef.current];
+    saveProjectPages(projectId, latestPages);
+    clearTimeout(deferredPersistTimeoutRef.current);
+    clearTimeout(scratchpadPersistTimeoutRef.current);
+    if (dirHandleRef.current) {
+      const markdowns = latestPages.map((page) => contentToMarkdown(page));
+      void writeProjectFiles(dirHandleRef.current, projectId, markdowns, scratchpadValue);
+    }
+    void writeToOPFS(latestPages, projectId, scratchpadValue, { delay: 0 });
+  }, []);
 
   useEffect(() => {
+    const flushForLifecycle = () => flushCurrentProject();
+    const flushWhenHidden = () => {
+      if (document.visibilityState === 'hidden') flushForLifecycle();
+    };
+    document.addEventListener('visibilitychange', flushWhenHidden);
+    window.addEventListener('pagehide', flushForLifecycle);
+    window.addEventListener('beforeunload', flushForLifecycle);
     return () => {
+      flushForLifecycle();
+      document.removeEventListener('visibilitychange', flushWhenHidden);
+      window.removeEventListener('pagehide', flushForLifecycle);
+      window.removeEventListener('beforeunload', flushForLifecycle);
       clearTimeout(deferredPersistTimeoutRef.current);
       clearTimeout(scratchpadPersistTimeoutRef.current);
     };
-  }, []);
+  }, [flushCurrentProject]);
 
   // --- Save helper ---
   const saveContent = useCallback((content: string) => {
@@ -1895,10 +1929,16 @@ const WritingInterface = () => {
     }
   }, [buildMarkdownForSelection, saveContent]);
 
-  // Item 11: download or share (Web Share API for mobile, anchor fallback for desktop)
+  // Web Share API is supported on macOS Safari/Chrome too, which would surface the OS
+  // share sheet on desktop and block direct downloads. Gate it to phone/tablet-class
+  // devices (coarse pointer + small viewport) so desktop always gets an anchor download.
+  const isMobileShareDevice = () =>
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(pointer: coarse) and (max-width: 820px)').matches === true;
+
   const downloadOrShare = async (blob: Blob, filename: string) => {
     const file = new File([blob], filename, { type: blob.type });
-    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+    if (isMobileShareDevice() && navigator.share && navigator.canShare?.({ files: [file] })) {
       try {
         await navigator.share({ files: [file], title: filename });
         return;
@@ -2090,7 +2130,7 @@ const WritingInterface = () => {
       const pdf = await buildPdf(pages);
       const pdfBlob = pdf.output('blob');
       const file = new File([pdfBlob], filename, { type: 'application/pdf' });
-      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      if (isMobileShareDevice() && navigator.share && navigator.canShare?.({ files: [file] })) {
         try { await navigator.share({ files: [file], title: filename }); }
         catch { pdf.save(filename); }
       } else {
