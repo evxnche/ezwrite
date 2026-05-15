@@ -112,6 +112,18 @@ test('WritingInterface exposes a current-page PNG share card export', () => {
   assert.equal(writingSource.includes('canvas.toBlob'), true);
 });
 
+test('NotesPanel keeps doc rename on double-click and right-click without opening the doc', () => {
+  const notesSource = fs.readFileSync(path.join(process.cwd(), 'src/components/NotesPanel.tsx'), 'utf8');
+  assert.equal(notesSource.includes('onDoubleClick={handleRowDoubleClick}'), true);
+  assert.equal(notesSource.includes('onContextMenu={handleRowContextMenu}'), true);
+  assert.equal(notesSource.includes('onContextMenuCapture={handleRowContextMenu}'), true);
+  assert.equal(notesSource.includes('onMouseDownCapture={handleRowMouseDownCapture}'), true);
+  assert.match(notesSource, /const handleRowDoubleClick = \(e: React\.MouseEvent\) => \{[\s\S]*?e\.preventDefault\(\);[\s\S]*?e\.stopPropagation\(\);[\s\S]*?startRename\(project\.id, title\);/);
+  assert.match(notesSource, /const handleRowContextMenu = \(e: React\.MouseEvent\) => \{[\s\S]*?e\.preventDefault\(\);[\s\S]*?e\.stopPropagation\(\);[\s\S]*?startRename\(project\.id, title\);/);
+  assert.match(notesSource, /const handleRowMouseDownCapture = \(e: React\.MouseEvent\) => \{[\s\S]*?if \(e\.button === 2\) \{[\s\S]*?e\.preventDefault\(\);[\s\S]*?e\.stopPropagation\(\);/);
+  assert.match(notesSource, /useEffect\(\(\) => cancelPendingClick, \[\]\);/);
+});
+
 test('WritingInterface uses ezwrite branding in the header and share card', () => {
   const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   assert.equal(source.includes("ctx.fillText('ezwrite.', width - 110, height - 130);"), true);

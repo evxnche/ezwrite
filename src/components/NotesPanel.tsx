@@ -80,6 +80,8 @@ const NotesPanel: React.FC<Props> = ({
     }
   };
 
+  useEffect(() => cancelPendingClick, []);
+
   const startRename = (id: string, title: string) => {
     cancelPendingClick();
     setRenamingId(id);
@@ -197,22 +199,41 @@ const NotesPanel: React.FC<Props> = ({
               const isHovered = hoveredId === project.id;
               const isRenaming = renamingId === project.id;
 
+              const openProject = () => {
+                onSelectProject(project.id);
+                onClose();
+              };
               const handleRowClick = () => {
                 if (isRenaming) return;
                 cancelPendingClick();
                 clickTimerRef.current = window.setTimeout(() => {
                   clickTimerRef.current = null;
-                  onSelectProject(project.id);
-                  onClose();
-                }, 220);
+                  openProject();
+                }, 360);
               };
               const handleRowDoubleClick = (e: React.MouseEvent) => {
                 e.preventDefault();
+                e.stopPropagation();
                 startRename(project.id, title);
               };
               const handleRowContextMenu = (e: React.MouseEvent) => {
                 e.preventDefault();
+                e.stopPropagation();
                 startRename(project.id, title);
+              };
+              const handleRowMouseDownCapture = (e: React.MouseEvent) => {
+                if (e.button === 2) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }
+              };
+              const handleRowKeyDown = (e: React.KeyboardEvent) => {
+                if (isRenaming) return;
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  cancelPendingClick();
+                  openProject();
+                }
               };
 
               return (
@@ -223,11 +244,15 @@ const NotesPanel: React.FC<Props> = ({
                   }`}
                   onMouseEnter={() => setHoveredId(project.id)}
                   onMouseLeave={() => setHoveredId(null)}
+                  onMouseDownCapture={handleRowMouseDownCapture}
+                  onContextMenuCapture={handleRowContextMenu}
                   onContextMenu={handleRowContextMenu}
                 >
                   <div
                     onClick={handleRowClick}
                     onDoubleClick={handleRowDoubleClick}
+                    onContextMenuCapture={handleRowContextMenu}
+                    onKeyDown={handleRowKeyDown}
                     className={`w-full text-left px-4 py-3 pr-10 ${isRenaming ? '' : 'cursor-pointer'}`}
                     role="button"
                     tabIndex={0}
