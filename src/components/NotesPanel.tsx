@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronRight,
   ArrowUpRight,
+  Pencil,
 } from 'lucide-react';
 import { type ProjectMeta, getProjectTitle, getProjectPreview, timeAgo } from '@/lib/projects';
 
@@ -36,6 +37,13 @@ interface Props {
 }
 
 type ExpandedSection = 'export' | 'notes' | null;
+
+type DocMenuState = {
+  id: string;
+  title: string;
+  x: number;
+  y: number;
+} | null;
 
 const baseRowClass = 'w-full flex items-center gap-3 px-4 py-3 text-left font-mono text-xs text-foreground/85 hover:text-foreground transition-colors';
 
@@ -63,6 +71,7 @@ const NotesPanel: React.FC<Props> = ({
   const [expanded, setExpanded] = useState<ExpandedSection>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [docMenu, setDocMenu] = useState<DocMenuState>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const clickTimerRef = useRef<number | null>(null);
 
@@ -84,8 +93,15 @@ const NotesPanel: React.FC<Props> = ({
 
   const startRename = (id: string, title: string) => {
     cancelPendingClick();
+    setDocMenu(null);
     setRenamingId(id);
     setRenameValue(title);
+  };
+
+  const openDocMenu = (id: string, title: string, x: number, y: number) => {
+    cancelPendingClick();
+    setRenamingId(null);
+    setDocMenu({ id, title, x, y });
   };
 
   const commitRename = () => {
@@ -99,6 +115,11 @@ const NotesPanel: React.FC<Props> = ({
   const cancelRename = () => {
     setRenamingId(null);
     setRenameValue('');
+  };
+
+  const handleMenuDelete = (id: string) => {
+    setDocMenu(null);
+    onDeleteProject(id);
   };
 
   if (!open) return null;
@@ -200,11 +221,13 @@ const NotesPanel: React.FC<Props> = ({
               const isRenaming = renamingId === project.id;
 
               const openProject = () => {
+                setDocMenu(null);
                 onSelectProject(project.id);
                 onClose();
               };
               const handleRowClick = () => {
                 if (isRenaming) return;
+                setDocMenu(null);
                 cancelPendingClick();
                 clickTimerRef.current = window.setTimeout(() => {
                   clickTimerRef.current = null;
@@ -219,7 +242,7 @@ const NotesPanel: React.FC<Props> = ({
               const handleRowContextMenu = (e: React.MouseEvent) => {
                 e.preventDefault();
                 e.stopPropagation();
-                startRename(project.id, title);
+                openDocMenu(project.id, title, e.clientX, e.clientY);
               };
               const handleRowMouseDownCapture = (e: React.MouseEvent) => {
                 if (e.button === 2) {
@@ -246,12 +269,10 @@ const NotesPanel: React.FC<Props> = ({
                   onMouseLeave={() => setHoveredId(null)}
                   onMouseDownCapture={handleRowMouseDownCapture}
                   onContextMenuCapture={handleRowContextMenu}
-                  onContextMenu={handleRowContextMenu}
                 >
                   <div
                     onClick={handleRowClick}
                     onDoubleClick={handleRowDoubleClick}
-                    onContextMenuCapture={handleRowContextMenu}
                     onKeyDown={handleRowKeyDown}
                     className={`w-full text-left px-4 py-3 pr-10 ${isRenaming ? '' : 'cursor-pointer'}`}
                     role="button"
@@ -287,7 +308,7 @@ const NotesPanel: React.FC<Props> = ({
                   </div>
                   {isHovered && !isRenaming && projects.length > 1 && (
                     <button
-                      onClick={(e) => { e.stopPropagation(); onDeleteProject(project.id); }}
+                      onClick={(e) => { e.stopPropagation(); setDocMenu(null); onDeleteProject(project.id); }}
                       className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground/30 hover:text-destructive transition-colors"
                       aria-label="Delete doc"
                     >
@@ -297,6 +318,34 @@ const NotesPanel: React.FC<Props> = ({
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {docMenu && (
+          <div
+            className="fixed z-[60] min-w-40 rounded-md border border-border/50 bg-popover py-1 shadow-xl"
+            style={{
+              left: Math.min(docMenu.x, window.innerWidth - 176),
+              top: Math.min(docMenu.y, window.innerHeight - 104),
+            }}
+            onClick={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            <button
+              className="w-full flex items-center gap-2 px-3 py-2 text-left font-mono text-xs text-foreground/85 hover:bg-muted/30 transition-colors"
+              onClick={() => startRename(docMenu.id, docMenu.title)}
+            >
+              <Pencil size={13} />
+              <span>rename doc</span>
+            </button>
+            <button
+              className="w-full flex items-center gap-2 px-3 py-2 text-left font-mono text-xs text-destructive hover:bg-destructive/10 disabled:text-muted-foreground/35 disabled:hover:bg-transparent transition-colors"
+              onClick={() => handleMenuDelete(docMenu.id)}
+              disabled={projects.length <= 1}
+            >
+              <Trash2 size={13} />
+              <span>delete doc</span>
+            </button>
           </div>
         )}
 

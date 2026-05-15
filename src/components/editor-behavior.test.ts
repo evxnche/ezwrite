@@ -112,14 +112,15 @@ test('WritingInterface exposes a current-page PNG share card export', () => {
   assert.equal(writingSource.includes('canvas.toBlob'), true);
 });
 
-test('NotesPanel keeps doc rename on double-click and right-click without opening the doc', () => {
+test('NotesPanel keeps doc rename on double-click and opens a doc menu on right-click', () => {
   const notesSource = fs.readFileSync(path.join(process.cwd(), 'src/components/NotesPanel.tsx'), 'utf8');
   assert.equal(notesSource.includes('onDoubleClick={handleRowDoubleClick}'), true);
-  assert.equal(notesSource.includes('onContextMenu={handleRowContextMenu}'), true);
   assert.equal(notesSource.includes('onContextMenuCapture={handleRowContextMenu}'), true);
   assert.equal(notesSource.includes('onMouseDownCapture={handleRowMouseDownCapture}'), true);
+  assert.equal(notesSource.includes('rename doc'), true);
+  assert.equal(notesSource.includes('delete doc'), true);
   assert.match(notesSource, /const handleRowDoubleClick = \(e: React\.MouseEvent\) => \{[\s\S]*?e\.preventDefault\(\);[\s\S]*?e\.stopPropagation\(\);[\s\S]*?startRename\(project\.id, title\);/);
-  assert.match(notesSource, /const handleRowContextMenu = \(e: React\.MouseEvent\) => \{[\s\S]*?e\.preventDefault\(\);[\s\S]*?e\.stopPropagation\(\);[\s\S]*?startRename\(project\.id, title\);/);
+  assert.match(notesSource, /const handleRowContextMenu = \(e: React\.MouseEvent\) => \{[\s\S]*?e\.preventDefault\(\);[\s\S]*?e\.stopPropagation\(\);[\s\S]*?openDocMenu\(project\.id, title, e\.clientX, e\.clientY\);/);
   assert.match(notesSource, /const handleRowMouseDownCapture = \(e: React\.MouseEvent\) => \{[\s\S]*?if \(e\.button === 2\) \{[\s\S]*?e\.preventDefault\(\);[\s\S]*?e\.stopPropagation\(\);/);
   assert.match(notesSource, /useEffect\(\(\) => cancelPendingClick, \[\]\);/);
 });
