@@ -10,6 +10,7 @@ import { stripLegacyImageLines } from '@/components/writing-helpers';
 
 export interface ProjectMeta {
   id: string;
+  title?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -191,6 +192,8 @@ export function saveProjectLastPage(id: string, page: number): void {
 }
 
 export function getProjectTitle(id: string): string {
+  const metaTitle = listProjects().find(p => p.id === id)?.title?.trim();
+  if (metaTitle) return metaTitle;
   const pages = getProjectPages(id);
   return pageToTitle(pages[0] ?? '');
 }
@@ -198,36 +201,12 @@ export function getProjectTitle(id: string): string {
 export function renameProjectTitle(id: string, newTitle: string): void {
   const cleaned = newTitle.trim();
   if (!cleaned) return;
-  const pages = getProjectPages(id);
-  if (pages.length === 0) {
-    saveProjectPages(id, [cleaned]);
-    return;
+  const projects = listProjects();
+  const idx = projects.findIndex(p => p.id === id);
+  if (idx >= 0) {
+    projects[idx] = { ...projects[idx], title: cleaned, updatedAt: Date.now() };
+    localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
   }
-  pages[0] = replaceTitleLine(pages[0], cleaned);
-  saveProjectPages(id, pages);
-}
-
-function replaceTitleLine(content: string, newTitle: string): string {
-  if (!content.trim()) return newTitle;
-  const lines = content.split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i].trim();
-    if (!trimmed || trimmed === 'list' || trimmed === 'line' || /^timer(\s|$)/i.test(trimmed)) continue;
-    const leadingWs = lines[i].slice(0, lines[i].length - lines[i].trimStart().length);
-    let rest = trimmed;
-    let markerPrefix = '';
-    const headerMatch = rest.match(/^#{1,2}\s+/);
-    if (headerMatch) { markerPrefix += headerMatch[0]; rest = rest.slice(headerMatch[0].length); }
-    const bqMatch = rest.match(/^>> ?/);
-    if (bqMatch) { markerPrefix += bqMatch[0]; rest = rest.slice(bqMatch[0].length); }
-    if (rest.startsWith(STRUCK_MARKER)) { markerPrefix += STRUCK_MARKER; rest = rest.slice(STRUCK_MARKER.length); }
-    if (rest.startsWith(LIST_EXIT)) { markerPrefix += LIST_EXIT; rest = rest.slice(LIST_EXIT.length); }
-    if (rest.startsWith(INDENT)) { markerPrefix += INDENT; rest = rest.replace(/^\s+/, ''); }
-    if (!rest.trim()) continue;
-    lines[i] = leadingWs + markerPrefix + newTitle;
-    return lines.join('\n');
-  }
-  return newTitle + '\n' + content;
 }
 
 export function getProjectScratchpad(id: string): string {

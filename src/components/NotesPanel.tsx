@@ -29,7 +29,8 @@ interface Props {
   onRenameProject: (id: string, newTitle: string) => void;
   onOpenSettings: () => void;
   onOpenScratchpad: () => void;
-  onExportMd: () => void;
+  onExportPageMd: () => void;
+  onExportDocMd: () => void;
   onExportPng: () => void;
   onExportPagePdf: () => void;
   onExportDocPdf: () => void;
@@ -37,6 +38,7 @@ interface Props {
 }
 
 type ExpandedSection = 'export' | 'notes' | null;
+type ExportFormat = 'md' | 'pdf' | null;
 
 type DocMenuState = {
   id: string;
@@ -61,7 +63,8 @@ const NotesPanel: React.FC<Props> = ({
   onRenameProject,
   onOpenSettings,
   onOpenScratchpad,
-  onExportMd,
+  onExportPageMd,
+  onExportDocMd,
   onExportPng,
   onExportPagePdf,
   onExportDocPdf,
@@ -69,6 +72,7 @@ const NotesPanel: React.FC<Props> = ({
 }) => {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<ExpandedSection>(null);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [docMenu, setDocMenu] = useState<DocMenuState>(null);
@@ -126,6 +130,7 @@ const NotesPanel: React.FC<Props> = ({
 
   const toggleSection = (section: Exclude<ExpandedSection, null>) => {
     setExpanded((current) => current === section ? null : section);
+    setExportFormat(null);
   };
 
   return (
@@ -167,32 +172,62 @@ const NotesPanel: React.FC<Props> = ({
                 className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
               >
                 <Image size={13} />
-                {isExportingPng ? 'preparing png...' : 'page as png'}
+                {isExportingPng ? 'preparing img...' : 'img'}
               </button>
               <button
-                onClick={onExportMd}
-                disabled={!canExportPage}
+                onClick={() => setExportFormat((current) => current === 'md' ? null : 'md')}
+                disabled={!canExportPage && !canExportDoc}
                 className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
               >
                 <FileText size={13} />
-                page as markdown
+                <span>md</span>
+                <span className="ml-auto text-muted-foreground/50">{exportFormat === 'md' ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</span>
               </button>
+              {exportFormat === 'md' && (
+                <div className="pl-5 space-y-1">
+                  <button
+                    onClick={onExportPageMd}
+                    disabled={!canExportPage}
+                    className="w-full px-3 py-1.5 rounded-md text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
+                  >
+                    page as md
+                  </button>
+                  <button
+                    onClick={onExportDocMd}
+                    disabled={!canExportDoc}
+                    className="w-full px-3 py-1.5 rounded-md text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
+                  >
+                    doc as md
+                  </button>
+                </div>
+              )}
               <button
-                onClick={onExportPagePdf}
-                disabled={!canExportPage || isExportingPdf}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
-              >
-                <FolderOpen size={13} />
-                {isExportingPdf ? 'preparing pdf...' : 'page as pdf'}
-              </button>
-              <button
-                onClick={onExportDocPdf}
+                onClick={() => setExportFormat((current) => current === 'pdf' ? null : 'pdf')}
                 disabled={!canExportDoc || isExportingPdf}
                 className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
               >
                 <FolderOpen size={13} />
-                {isExportingPdf ? 'preparing pdf...' : 'doc as pdf'}
+                <span>{isExportingPdf ? 'preparing pdf...' : 'pdf'}</span>
+                <span className="ml-auto text-muted-foreground/50">{exportFormat === 'pdf' ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</span>
               </button>
+              {exportFormat === 'pdf' && (
+                <div className="pl-5 space-y-1">
+                  <button
+                    onClick={onExportPagePdf}
+                    disabled={!canExportPage || isExportingPdf}
+                    className="w-full px-3 py-1.5 rounded-md text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
+                  >
+                    page as pdf
+                  </button>
+                  <button
+                    onClick={onExportDocPdf}
+                    disabled={!canExportDoc || isExportingPdf}
+                    className="w-full px-3 py-1.5 rounded-md text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
+                  >
+                    doc as pdf
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -306,7 +341,7 @@ const NotesPanel: React.FC<Props> = ({
                       {timeAgo(project.updatedAt)}
                     </div>
                   </div>
-                  {isHovered && !isRenaming && projects.length > 1 && (
+                  {isHovered && !isRenaming && (
                     <button
                       onClick={(e) => { e.stopPropagation(); setDocMenu(null); onDeleteProject(project.id); }}
                       className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground/30 hover:text-destructive transition-colors"
@@ -322,31 +357,37 @@ const NotesPanel: React.FC<Props> = ({
         )}
 
         {docMenu && (
-          <div
-            className="fixed z-[60] min-w-40 rounded-md border border-border/50 bg-popover py-1 shadow-xl"
-            style={{
-              left: Math.min(docMenu.x, window.innerWidth - 176),
-              top: Math.min(docMenu.y, window.innerHeight - 104),
-            }}
-            onClick={(e) => e.stopPropagation()}
-            onContextMenu={(e) => e.preventDefault()}
-          >
-            <button
-              className="w-full flex items-center gap-2 px-3 py-2 text-left font-mono text-xs text-foreground/85 hover:bg-muted/30 transition-colors"
-              onClick={() => startRename(docMenu.id, docMenu.title)}
+          <>
+            <div
+              className="fixed inset-0 z-[55]"
+              onClick={() => setDocMenu(null)}
+              onContextMenu={(e) => { e.preventDefault(); setDocMenu(null); }}
+            />
+            <div
+              className="fixed z-[60] min-w-40 rounded-md border border-border/50 bg-popover py-1 shadow-xl"
+              style={{
+                left: Math.min(docMenu.x, window.innerWidth - 176),
+                top: Math.min(docMenu.y, window.innerHeight - 104),
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onContextMenu={(e) => e.preventDefault()}
             >
-              <Pencil size={13} />
-              <span>rename doc</span>
-            </button>
-            <button
-              className="w-full flex items-center gap-2 px-3 py-2 text-left font-mono text-xs text-destructive hover:bg-destructive/10 disabled:text-muted-foreground/35 disabled:hover:bg-transparent transition-colors"
-              onClick={() => handleMenuDelete(docMenu.id)}
-              disabled={projects.length <= 1}
-            >
-              <Trash2 size={13} />
-              <span>delete doc</span>
-            </button>
-          </div>
+              <button
+                className="w-full flex items-center gap-2 px-3 py-2 text-left font-mono text-xs text-foreground/85 hover:bg-muted/30 transition-colors"
+                onClick={() => startRename(docMenu.id, docMenu.title)}
+              >
+                <Pencil size={13} />
+                <span>rename doc</span>
+              </button>
+              <button
+                className="w-full flex items-center gap-2 px-3 py-2 text-left font-mono text-xs text-destructive hover:bg-destructive/10 transition-colors"
+                onClick={() => handleMenuDelete(docMenu.id)}
+              >
+                <Trash2 size={13} />
+                <span>delete doc</span>
+              </button>
+            </div>
+          </>
         )}
 
         {expanded !== 'notes' && <div className="flex-1" />}

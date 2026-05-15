@@ -1929,6 +1929,14 @@ const WritingInterface = () => {
     downloadOrShare(blob, `${getCurrentExportStem()}.md`);
   };
 
+  const saveDocAsMd = () => {
+    const pages = pagesRef.current.filter((page) => page.trim());
+    if (!pages.length) return;
+    const exported = pages.map((page) => contentToMarkdown(page)).join('\n\n---\n\n');
+    const blob = new Blob([exported], { type: 'text/markdown' });
+    downloadOrShare(blob, `${getCurrentDocExportStem()}.md`);
+  };
+
   const saveAsShareCard = () => {
     const content = contentRef.current;
     if (!content.trim() || isExportingShareCard) return;
@@ -2336,7 +2344,8 @@ const WritingInterface = () => {
           onRenameProject={handleRenameProject}
           onOpenSettings={() => { setNotesOpen(false); setSettingsOpen(true); }}
           onOpenScratchpad={handleOpenScratchpad}
-          onExportMd={saveAsMd}
+          onExportPageMd={saveAsMd}
+          onExportDocMd={saveDocAsMd}
           onExportPng={saveAsShareCard}
           onExportPagePdf={savePageAsPdf}
           onExportDocPdf={saveDocAsPdf}
