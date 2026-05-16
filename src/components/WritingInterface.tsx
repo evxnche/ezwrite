@@ -1234,6 +1234,10 @@ const WritingInterface = () => {
       lines[lineIndex] = '';
       structuralUpdate(lines.join('\n'), lineIndex, 0, false);
       setSettingsOpen(true);
+    } else if (command === 'sidetab') {
+      lines[lineIndex] = '';
+      structuralUpdate(lines.join('\n'), lineIndex, 0, false);
+      handleOpenScratchpad();
     } else if (command === 'timer') {
       lines[lineIndex] = 'timer ';
       editingTimerLineRef.current = lineIndex;

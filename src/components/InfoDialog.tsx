@@ -166,6 +166,9 @@ const InfoDialog: React.FC<Props> = ({
                 <li className="pl-1"><span className="text-accent-foreground">/list</span> — checklist with checkboxes</li>
                 <li className="pl-1"><span className="text-accent-foreground">/line</span> — horizontal divider</li>
                 <li className="pl-1"><span className="text-accent-foreground">/timer</span> — start a timer</li>
+                <li className="pl-1"><span className="text-accent-foreground">/sidetab</span> — open side tab</li>
+                <li className="pl-1"><span className="text-accent-foreground">/help</span> — shortcuts &amp; commands</li>
+                <li className="pl-1"><span className="text-accent-foreground">/settings</span> — open settings</li>
               </ol>
             </section>
 
