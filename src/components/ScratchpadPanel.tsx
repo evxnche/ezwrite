@@ -45,6 +45,75 @@ const ScratchpadPanel: React.FC<Props> = ({ open, value, width, useSerif, onChan
     };
   }, [onResize]);
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Tab' && !e.shiftKey) {
+      e.preventDefault();
+      const start = e.currentTarget.selectionStart;
+      const end = e.currentTarget.selectionEnd;
+      const newValue = value.substring(0, start) + '        ' + value.substring(end);
+      onChange(newValue);
+      
+      requestAnimationFrame(() => {
+        if (textareaRef.current) {
+          textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 8;
+        }
+      });
+      return;
+    }
+
+    if (e.key === 'Enter') {
+      const start = e.currentTarget.selectionStart;
+      const textBeforeCursor = value.substring(0, start);
+      const currentLine = textBeforeCursor.split('\n').pop() || '';
+      
+      const indentMatch = currentLine.match(/^\s*/);
+      const indent = indentMatch ? indentMatch[0] : '';
+      const listMatch = currentLine.match(/^(\s*)([-*]|\d+\.)\s/);
+      
+      if (listMatch) {
+        e.preventDefault();
+        const prefix = listMatch[0];
+        
+        if (currentLine === prefix) {
+          const newValue = value.substring(0, start - prefix.length) + '\n' + indent + value.substring(e.currentTarget.selectionEnd);
+          onChange(newValue);
+          requestAnimationFrame(() => {
+            if (textareaRef.current) {
+              textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start - prefix.length + 1 + indent.length;
+            }
+          });
+          return;
+        }
+        
+        let nextPrefix = prefix;
+        const numMatch = prefix.match(/\d+/);
+        if (numMatch) {
+          const nextNum = parseInt(numMatch[0], 10) + 1;
+          nextPrefix = prefix.replace(/\d+/, nextNum.toString());
+        }
+        
+        const newValue = value.substring(0, start) + '\n' + nextPrefix + value.substring(e.currentTarget.selectionEnd);
+        onChange(newValue);
+        requestAnimationFrame(() => {
+          if (textareaRef.current) {
+            textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 1 + nextPrefix.length;
+          }
+        });
+        return;
+      } else if (indent) {
+        e.preventDefault();
+        const newValue = value.substring(0, start) + '\n' + indent + value.substring(e.currentTarget.selectionEnd);
+        onChange(newValue);
+        requestAnimationFrame(() => {
+          if (textareaRef.current) {
+            textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 1 + indent.length;
+          }
+        });
+        return;
+      }
+    }
+  };
+
   if (!open) return null;
 
   return (
@@ -86,8 +155,9 @@ const ScratchpadPanel: React.FC<Props> = ({ open, value, width, useSerif, onChan
         ref={textareaRef}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onKeyDown={handleKeyDown}
         placeholder="rough notes, fragments, scraps..."
-        className={`flex-1 w-full resize-none bg-transparent px-4 py-4 outline-none border-0 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/40 ${
+        className={`flex-1 w-full resize-none bg-transparent px-4 py-4 outline-none border-0 text-sm sm:text-[15px] leading-relaxed text-foreground placeholder:text-muted-foreground/40 ${
           useSerif ? 'font-playfair' : 'font-mono'
         }`}
         spellCheck={false}
