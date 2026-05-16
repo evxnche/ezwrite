@@ -125,7 +125,7 @@ const getShareCardFont = (fontSize: number, useSerif: boolean) =>
 
 const VISUAL_METRICS = {
   editorMaxWidth: 'none',
-  editorFontSize: '18px',
+  editorFontSize: '17px',
   editorLineHeight: '1.8',
   themedTitleGlow: { near: 0.28, far: 0.13 },
   themedEditorGlow: { near: 0.18, far: 0.10 },
