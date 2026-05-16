@@ -1400,6 +1400,16 @@ const WritingInterface = () => {
     if (e.key === 'Tab' && !e.shiftKey) {
       e.preventDefault();
       pushUndo(true);
+
+      const lineText = lines[lineIndex] || '';
+      const listMatch = lineText.match(/^(\s*)([-*>]|\d+[\.\/])\s/);
+      
+      if (listMatch && offset <= listMatch[0].length) {
+        lines[lineIndex] = INDENT + lineText;
+        structuralUpdate(lines.join('\n'), lineIndex, offset + INDENT.length);
+        return;
+      }
+
       document.execCommand('insertText', false, INDENT);
       requestAnimationFrame(() => {
         if (editorRef.current) {

@@ -50,6 +50,25 @@ const ScratchpadPanel: React.FC<Props> = ({ open, value, width, useSerif, onChan
       e.preventDefault();
       const start = e.currentTarget.selectionStart;
       const end = e.currentTarget.selectionEnd;
+      
+      const textBeforeCursor = value.substring(0, start);
+      const currentLineStart = textBeforeCursor.lastIndexOf('\n') + 1;
+      const currentLineToCursor = value.substring(currentLineStart, start);
+      const fullLine = value.substring(currentLineStart).split('\n')[0];
+      
+      const listMatch = fullLine.match(/^(\s*)([-*>]|\d+[\.\/])\s/);
+      
+      if (listMatch && currentLineToCursor.length <= listMatch[0].length) {
+        const newValue = value.substring(0, currentLineStart) + '        ' + value.substring(currentLineStart);
+        onChange(newValue);
+        requestAnimationFrame(() => {
+          if (textareaRef.current) {
+            textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 8;
+          }
+        });
+        return;
+      }
+
       const newValue = value.substring(0, start) + '        ' + value.substring(end);
       onChange(newValue);
       
@@ -68,7 +87,7 @@ const ScratchpadPanel: React.FC<Props> = ({ open, value, width, useSerif, onChan
       
       const indentMatch = currentLine.match(/^\s*/);
       const indent = indentMatch ? indentMatch[0] : '';
-      const listMatch = currentLine.match(/^(\s*)([-*]|\d+\.)\s/);
+      const listMatch = currentLine.match(/^(\s*)([-*>]|\d+[\.\/])\s/);
       
       if (listMatch) {
         e.preventDefault();
@@ -157,7 +176,7 @@ const ScratchpadPanel: React.FC<Props> = ({ open, value, width, useSerif, onChan
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="rough notes, fragments, scraps..."
-        className={`flex-1 w-full resize-none bg-transparent px-4 py-4 outline-none border-0 text-sm sm:text-[15px] leading-relaxed text-foreground placeholder:text-muted-foreground/40 ${
+        className={`flex-1 w-full resize-none bg-transparent px-4 py-4 outline-none border-0 text-sm sm:text-[15px] font-light tracking-wide leading-relaxed text-foreground placeholder:text-muted-foreground/40 ${
           useSerif ? 'font-playfair' : 'font-mono'
         }`}
         spellCheck={false}
