@@ -162,13 +162,11 @@ const InfoDialog: React.FC<Props> = ({
             <section>
               <h3 className="font-semibold mb-1.5 text-accent-foreground">/ commands</h3>
               <p className="text-muted-foreground mb-1">type <kbd className="px-1 py-0.5 bg-background rounded text-xs">/</kbd> at the start of a line:</p>
-              <ul className="space-y-1 text-muted-foreground ml-3">
-                <li><span className="text-accent-foreground">/list</span> — checklist with checkboxes</li>
-                <li><span className="text-accent-foreground">/line</span> — horizontal divider</li>
-                <li><span className="text-accent-foreground">/timer</span> — start a timer</li>
-                <li><span className="text-accent-foreground">/notes</span> — open scratchpad</li>
-                <li><span className="text-accent-foreground">/docs</span> — open docs</li>
-              </ul>
+              <ol className="space-y-1 text-muted-foreground ml-3 list-decimal list-outside">
+                <li className="pl-1"><span className="text-accent-foreground">/list</span> — checklist with checkboxes</li>
+                <li className="pl-1"><span className="text-accent-foreground">/line</span> — horizontal divider</li>
+                <li className="pl-1"><span className="text-accent-foreground">/timer</span> — start a timer</li>
+              </ol>
             </section>
 
             <section>

@@ -46,6 +46,44 @@ const ScratchpadPanel: React.FC<Props> = ({ open, value, width, useSerif, onChan
   }, [onResize]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Backspace') {
+      const start = e.currentTarget.selectionStart;
+      if (start === e.currentTarget.selectionEnd && start >= 8) {
+        const textBeforeCursor = value.substring(0, start);
+        if (textBeforeCursor.endsWith('        ')) {
+          e.preventDefault();
+          const newValue = value.substring(0, start - 8) + value.substring(start);
+          onChange(newValue);
+          requestAnimationFrame(() => {
+            if (textareaRef.current) {
+              textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start - 8;
+            }
+          });
+          return;
+        }
+      }
+    }
+
+    if (e.key === 'Tab' && e.shiftKey) {
+      e.preventDefault();
+      const start = e.currentTarget.selectionStart;
+      const textBeforeCursor = value.substring(0, start);
+      const currentLineStart = textBeforeCursor.lastIndexOf('\n') + 1;
+      const currentLineToCursor = value.substring(currentLineStart, start);
+      
+      if (currentLineToCursor.startsWith('        ')) {
+        const newValue = value.substring(0, currentLineStart) + value.substring(currentLineStart + 8);
+        onChange(newValue);
+        requestAnimationFrame(() => {
+          if (textareaRef.current) {
+            const newPos = Math.max(currentLineStart, start - 8);
+            textareaRef.current.selectionStart = textareaRef.current.selectionEnd = newPos;
+          }
+        });
+      }
+      return;
+    }
+
     if (e.key === 'Tab' && !e.shiftKey) {
       e.preventDefault();
       const start = e.currentTarget.selectionStart;
@@ -91,24 +129,37 @@ const ScratchpadPanel: React.FC<Props> = ({ open, value, width, useSerif, onChan
       
       if (listMatch) {
         e.preventDefault();
-        const prefix = listMatch[0];
+        const fullPrefix = listMatch[0];
+        const matchIndent = listMatch[1];
+        const bullet = listMatch[2];
         
-        if (currentLine === prefix) {
-          const newValue = value.substring(0, start - prefix.length) + '\n' + indent + value.substring(e.currentTarget.selectionEnd);
-          onChange(newValue);
-          requestAnimationFrame(() => {
-            if (textareaRef.current) {
-              textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start - prefix.length + 1 + indent.length;
-            }
-          });
+        if (currentLine === fullPrefix) {
+          if (matchIndent.length >= 8) {
+            const newIndent = matchIndent.slice(0, matchIndent.length - 8);
+            const newValue = value.substring(0, start - fullPrefix.length) + newIndent + bullet + ' ' + value.substring(e.currentTarget.selectionEnd);
+            onChange(newValue);
+            requestAnimationFrame(() => {
+              if (textareaRef.current) {
+                textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start - fullPrefix.length + newIndent.length + bullet.length + 1;
+              }
+            });
+          } else {
+            const newValue = value.substring(0, start - fullPrefix.length) + matchIndent + value.substring(e.currentTarget.selectionEnd);
+            onChange(newValue);
+            requestAnimationFrame(() => {
+              if (textareaRef.current) {
+                textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start - fullPrefix.length + matchIndent.length;
+              }
+            });
+          }
           return;
         }
         
-        let nextPrefix = prefix;
-        const numMatch = prefix.match(/\d+/);
+        let nextPrefix = fullPrefix;
+        const numMatch = bullet.match(/\d+/);
         if (numMatch) {
           const nextNum = parseInt(numMatch[0], 10) + 1;
-          nextPrefix = prefix.replace(/\d+/, nextNum.toString());
+          nextPrefix = `${matchIndent}${bullet.replace(/\d+/, nextNum.toString())} `;
         }
         
         const newValue = value.substring(0, start) + '\n' + nextPrefix + value.substring(e.currentTarget.selectionEnd);

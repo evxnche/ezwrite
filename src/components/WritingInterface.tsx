@@ -1234,14 +1234,6 @@ const WritingInterface = () => {
       lines[lineIndex] = '';
       structuralUpdate(lines.join('\n'), lineIndex, 0, false);
       setSettingsOpen(true);
-    } else if (command === 'docs') {
-      lines[lineIndex] = '';
-      structuralUpdate(lines.join('\n'), lineIndex, 0, false);
-      handleOpenDocs();
-    } else if (command === 'notes') {
-      lines[lineIndex] = '';
-      structuralUpdate(lines.join('\n'), lineIndex, 0, false);
-      handleOpenScratchpad();
     } else if (command === 'timer') {
       lines[lineIndex] = 'timer ';
       editingTimerLineRef.current = lineIndex;
@@ -1419,6 +1411,31 @@ const WritingInterface = () => {
       return;
     }
 
+    // Shift+Tab - unindent
+    if (e.key === 'Tab' && e.shiftKey) {
+      e.preventDefault();
+      const lineText = lines[lineIndex] || '';
+      if (lineText.startsWith(INDENT)) {
+        pushUndo(true);
+        lines[lineIndex] = lineText.slice(INDENT.length);
+        structuralUpdate(lines.join('\n'), lineIndex, Math.max(0, offset - INDENT.length));
+      }
+      return;
+    }
+
+    // Backspace immediately after an indent
+    if (e.key === 'Backspace' && offset >= INDENT.length) {
+      const lineText = lines[lineIndex] || '';
+      // If the string exactly before the cursor is the indent, remove it
+      if (lineText.substring(offset - INDENT.length, offset) === INDENT) {
+        e.preventDefault();
+        pushUndo(true);
+        lines[lineIndex] = lineText.substring(0, offset - INDENT.length) + lineText.substring(offset);
+        structuralUpdate(lines.join('\n'), lineIndex, offset - INDENT.length);
+        return;
+      }
+    }
+
     // Backspace at start of quote visible text (offset 3 = just after '>> ') → revert to plain text
     if (e.key === 'Backspace' && getLineType(lines, lineIndex) === 'quote' && offset <= 3) {
       e.preventDefault();
@@ -1590,60 +1607,37 @@ const WritingInterface = () => {
 
       // Item 17: auto-continue bullet/numbered lists (plain-text style, not /list checkboxes)
       if (lineType !== 'list-item') {
-        const bulletMatch = currentLine.match(/^(\s*- )(.*)/);
-        const numberedMatch = currentLine.match(/^(\s*)(\d+)\. (.*)/);
-        const slashNumberedMatch = currentLine.match(/^(\s*)(\d+)\/ (.*)/);
-        const singleQuoteMatch = currentLine.match(/^(\s*> )(.*)/);
-        if (bulletMatch) {
-          const prefix = bulletMatch[1];
-          const text = bulletMatch[2];
+        const listMatch = currentLine.match(/^(\s*)([-*>]|\d+[\.\/])\s(.*)/);
+        if (listMatch) {
+          const indent = listMatch[1];
+          const bullet = listMatch[2];
+          const text = listMatch[3];
+          const fullPrefix = `${indent}${bullet} `;
+          
           if (!text.trim()) {
-            freshLines[li] = '';
-            structuralUpdate(freshLines.join('\n'), li, 0);
+            if (indent.length >= INDENT.length) {
+              const newIndent = indent.slice(0, indent.length - INDENT.length);
+              freshLines[li] = newIndent + bullet + ' ';
+              structuralUpdate(freshLines.join('\n'), li, freshLines[li].length);
+            } else {
+              freshLines[li] = indent;
+              structuralUpdate(freshLines.join('\n'), li, indent.length);
+            }
             scrollToLine(li);
             return;
           }
-          const splitAt = Math.max(0, Math.min(freshOffset, currentLine.length) - prefix.length);
-          freshLines[li] = prefix + text.slice(0, splitAt);
-          freshLines.splice(li + 1, 0, prefix + text.slice(splitAt));
-          structuralUpdate(freshLines.join('\n'), li + 1, prefix.length);
-          scrollToLine(li + 1);
-          return;
-        }
-        if (numberedMatch || slashNumberedMatch) {
-          const match = numberedMatch ?? slashNumberedMatch;
-          const indent = match![1];
-          const num = parseInt(match![2], 10);
-          const text = match![3];
-          const separator = numberedMatch ? '. ' : '/ ';
-          const fullPrefix = `${indent}${num}${separator}`;
-          if (!text.trim()) {
-            freshLines[li] = '';
-            structuralUpdate(freshLines.join('\n'), li, 0);
-            scrollToLine(li);
-            return;
-          }
+          
           const splitAt = Math.max(0, Math.min(freshOffset, currentLine.length) - fullPrefix.length);
-          const nextPrefix = `${indent}${num + 1}${separator}`;
+          let nextPrefix = fullPrefix;
+          const numMatch = bullet.match(/\d+/);
+          if (numMatch) {
+            const nextNum = parseInt(numMatch[0], 10) + 1;
+            nextPrefix = `${indent}${bullet.replace(/\d+/, nextNum.toString())} `;
+          }
+          
           freshLines[li] = fullPrefix + text.slice(0, splitAt);
           freshLines.splice(li + 1, 0, nextPrefix + text.slice(splitAt));
           structuralUpdate(freshLines.join('\n'), li + 1, nextPrefix.length);
-          scrollToLine(li + 1);
-          return;
-        }
-        if (singleQuoteMatch) {
-          const prefix = singleQuoteMatch[1];
-          const text = singleQuoteMatch[2];
-          if (!text.trim()) {
-            freshLines[li] = '';
-            structuralUpdate(freshLines.join('\n'), li, 0);
-            scrollToLine(li);
-            return;
-          }
-          const splitAt = Math.max(0, Math.min(freshOffset, currentLine.length) - prefix.length);
-          freshLines[li] = prefix + text.slice(0, splitAt);
-          freshLines.splice(li + 1, 0, prefix + text.slice(splitAt));
-          structuralUpdate(freshLines.join('\n'), li + 1, prefix.length);
           scrollToLine(li + 1);
           return;
         }
