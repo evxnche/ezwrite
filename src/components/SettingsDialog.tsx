@@ -1,8 +1,14 @@
 import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Check } from 'lucide-react';
+import { SunMedium, MoonStar, FolderOpen } from 'lucide-react';
 import type { ColorTheme } from './preferences';
+
+const THEMES = [
+  { id: '' as ColorTheme, label: 'orig', swatch: 'bg-[#171717] dark:bg-[#fafaf9]' },
+  { id: 'blue' as ColorTheme, label: 'blue', swatch: 'bg-[#0623ad]' },
+  { id: 'green' as ColorTheme, label: 'green', swatch: 'bg-[#285135]' },
+  { id: 'red' as ColorTheme, label: 'red', swatch: 'bg-[#7C3232]' },
+];
 
 interface Props {
   open: boolean;
@@ -29,18 +35,6 @@ interface Props {
   onClearFolder?: () => void;
   fsSupported?: boolean;
 }
-
-const THEMES = [
-  { id: '', label: 'orig', swatch: 'bg-[#171717] dark:bg-[#fafaf9]' },
-  { id: 'blue', label: 'blue', swatch: 'bg-[#0623ad]' },
-  { id: 'green', label: 'green', swatch: 'bg-[#285135]' },
-  { id: 'red', label: 'red', swatch: 'bg-[#7C3232]' },
-];
-
-const FONT_OPTIONS = [
-  { id: 'serif', label: 'serif' },
-  { id: 'mono', label: 'mono' },
-];
 
 export const SettingsDialog: React.FC<Props> = ({
   open,
@@ -71,117 +65,116 @@ export const SettingsDialog: React.FC<Props> = ({
           </DialogTitle>
         </DialogHeader>
 
-        <div className={`space-y-5`}>
+        <div className={`space-y-4`}>
 
-          {/* Stats */}
-          <section>
-            <div className={`flex items-center justify-between`}>
-              <span className={`text-muted-foreground text-xs uppercase tracking-wider`}>word / char count</span>
+          {/* Theme — color orbs */}
+          <div className={`flex items-center justify-between`}>
+            <span className={`text-muted-foreground text-xs uppercase tracking-wider`}>theme</span>
+            <div className={`flex gap-2`}>
+              {THEMES.map(theme => (
+                <button
+                  key={theme.id}
+                  onClick={() => {
+                    if (colorTheme !== theme.id) onSelectColorTheme?.(theme.id);
+                  }}
+                  className={`w-7 h-7 rounded-full border-2 transition-all ${
+                    colorTheme === theme.id ? 'border-accent-foreground scale-110' : 'border-transparent hover:scale-105'
+                  }`}
+                  style={theme.id === '' ? { background: document.documentElement.classList.contains('dark') ? '#171717' : '#EAE7D0' } : undefined}
+                >
+                  {theme.id === 'blue' && <div className={`w-full h-full rounded-full bg-[#0623ad]`} />}
+                  {theme.id === 'green' && <div className={`w-full h-full rounded-full bg-[#285135]`} />}
+                  {theme.id === 'red' && <div className={`w-full h-full rounded-full bg-[#7C3232]`} />}
+                  {theme.id === '' && <div className={`w-full h-full rounded-full`} />}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Mode — sun/moon toggle */}
+          <div className={`flex items-center justify-between`}>
+            <span className={`text-muted-foreground text-xs uppercase tracking-wider`}>mode</span>
+            <button
+              onClick={onToggleMode}
+              className={`flex items-center gap-1.5 text-xs transition-colors text-accent-foreground`}
+            >
+              {mode === 'light' ? <SunMedium size={14} /> : <MoonStar size={14} />}
+              <span>{mode}</span>
+            </button>
+          </div>
+
+          {/* Font style — serif/mono rendered in their own typefaces */}
+          <div className={`flex items-center justify-between`}>
+            <span className={`text-muted-foreground text-xs uppercase tracking-wider`}>font style</span>
+            <div className={`flex gap-2`}>
+              <button
+                onClick={() => { if (!useSerif) onToggleFont?.(); }}
+                className={`px-2.5 py-1 rounded-md text-xs transition-all ${
+                  useSerif
+                    ? 'bg-accent/20 text-accent-foreground ring-1 ring-accent-foreground/30'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                style={{ fontFamily: "'Instrument Serif', serif" }}
+              >
+                Serif
+              </button>
+              <button
+                onClick={() => { if (useSerif) onToggleFont?.(); }}
+                className={`px-2.5 py-1 rounded-md text-xs transition-all font-mono ${
+                  !useSerif
+                    ? 'bg-accent/20 text-accent-foreground ring-1 ring-accent-foreground/30'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Mono
+              </button>
+            </div>
+          </div>
+
+          {/* Word/char count — iOS toggle */}
+          <div className={`flex items-center justify-between`}>
+            <span className={`text-muted-foreground text-xs uppercase tracking-wider`}>word/char count</span>
+            <div className={`flex items-center gap-2`}>
+              {showStats && (
+                <span className={`text-xs text-muted-foreground`}>{wordCount ?? 0}w · {charCount ?? 0}c</span>
+              )}
               <button
                 onClick={onToggleStats}
-                className={`flex items-center gap-2 text-xs transition-colors ${showStats ? 'text-accent-foreground' : 'text-muted-foreground'}`}
+                className={`relative inline-flex h-[22px] w-[40px] shrink-0 cursor-pointer rounded-full transition-colors ${
+                  showStats ? 'bg-accent-foreground' : 'bg-muted-foreground/30'
+                }`}
               >
-                {showStats ? (
-                  <span className={`flex items-center gap-1`}>
-                    <Check size={12} />
-                    <span>{wordCount ?? 0} words · {charCount ?? 0} chars</span>
-                  </span>
-                ) : (
-                  <span>off</span>
-                )}
+                <span className={`pointer-events-none inline-block h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-transform ${
+                  showStats ? 'translate-x-[20px]' : 'translate-x-[2px]'
+                } mt-[2px]`} />
               </button>
             </div>
-          </section>
+          </div>
 
-          {/* Appearance section */}
-          <section>
-            <h3 className={`font-semibold mb-2 text-xs uppercase tracking-wider text-muted-foreground`}>appearance</h3>
+          {/* Spellcheck — iOS toggle */}
+          <div className={`flex items-center justify-between`}>
+            <span className={`text-muted-foreground text-xs uppercase tracking-wider`}>spellcheck</span>
+            <button
+              onClick={onToggleSpellCheck}
+              className={`relative inline-flex h-[22px] w-[40px] shrink-0 cursor-pointer rounded-full transition-colors ${
+                spellCheckEnabled ? 'bg-accent-foreground' : 'bg-muted-foreground/30'
+              }`}
+            >
+              <span className={`pointer-events-none inline-block h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-transform ${
+                spellCheckEnabled ? 'translate-x-[20px]' : 'translate-x-[2px]'
+              } mt-[2px]`} />
+            </button>
+          </div>
 
-            {/* Font */}
-            <div className={`mb-3`}>
-              <span className={`text-xs text-muted-foreground mb-1.5 block`}>font</span>
-              <div className={`flex gap-2`}>
-                {FONT_OPTIONS.map(opt => (
-                  <button
-                    key={opt.id}
-                    onClick={() => {
-                      if (opt.id === 'serif' && !useSerif) onToggleFont?.();
-                      if (opt.id === 'mono' && useSerif) onToggleFont?.();
-                    }}
-                    className={`flex-1 py-2 px-3 rounded-lg border transition-all text-xs ${
-                      (opt.id === 'serif' && useSerif) || (opt.id === 'mono' && !useSerif)
-                        ? 'border-accent-foreground bg-accent/30 text-accent-foreground'
-                        : 'border-border text-muted-foreground hover:border-muted-foreground'
-                    }`}
-                    style={opt.id === 'serif' ? { fontFamily: `'Instrument Serif', serif` } : {}}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Theme */}
-            <div className={`mb-3`}>
-              <div className={`flex items-center justify-between mb-1.5`}>
-                <span className={`text-xs text-muted-foreground block`}>theme</span>
-                <button
-                  onClick={onToggleMode}
-                  className={`text-xs transition-colors ${mode ? 'text-accent-foreground' : 'text-muted-foreground'}`}
-                >
-                  {mode === 'dark' ? 'dark' : 'light'}
-                </button>
-              </div>
-              <div className={`flex gap-2`}>
-                {THEMES.map(theme => (
-                  <Tooltip key={theme.id} delayDuration={300}>
-                    <TooltipTrigger asChild>
-                      <button
-                        onClick={() => {
-                          if (colorTheme !== theme.id) onSelectColorTheme?.(theme.id as ColorTheme);
-                        }}
-                        className={`w-8 h-8 rounded-full border-2 transition-all ${
-                          colorTheme === theme.id ? 'border-accent-foreground scale-110' : 'border-transparent hover:scale-105'
-                        }`}
-                        style={{ background: theme.id === '' ? (document.documentElement.classList.contains('dark') ? '#171717' : '#EAE7D0') : undefined }}
-                      >
-                        {theme.id === 'blue' && <div className={`w-full h-full rounded-full bg-[#0623ad]`} />}
-                        {theme.id === 'green' && <div className={`w-full h-full rounded-full bg-[#285135]`} />}
-                        {theme.id === 'red' && <div className={`w-full h-full rounded-full bg-[#7C3232]`} />}
-                        {theme.id === '' && <div className={`w-full h-full rounded-full`} />}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>{theme.label}</TooltipContent>
-                  </Tooltip>
-                ))}
-              </div>
-            </div>
-
-          </section>
-
-          {/* Behavior section */}
-          <section>
-            <h3 className={`font-semibold mb-2 text-xs uppercase tracking-wider text-muted-foreground`}>behavior</h3>
-
-            {/* Spellcheck */}
-            <div className={`flex items-center justify-between mb-3`}>
-              <span className={`text-xs text-muted-foreground`}>spellcheck</span>
-              <button
-                onClick={onToggleSpellCheck}
-                className={`text-xs transition-colors ${spellCheckEnabled ? 'text-accent-foreground' : 'text-muted-foreground'}`}
-              >
-                {spellCheckEnabled ? <span className={`flex items-center gap-1`}><Check size={12} /> on</span> : <span>off</span>}
-              </button>
-            </div>
-          </section>
-
-          {/* Storage section */}
+          {/* Storage — highlighted to draw attention */}
           {fsSupported && (
-            <section>
-              <h3 className={`font-semibold mb-2 text-xs uppercase tracking-wider text-muted-foreground`}>storage</h3>
+            <div className={`mt-2 rounded-xl border-2 border-dashed border-accent-foreground/40 bg-accent/10 p-3`}>
               {dirName ? (
                 <div className={`flex items-center justify-between`}>
-                  <span className={`text-xs text-foreground`}>saving to <span className={`text-accent-foreground`}>/{dirName}</span></span>
+                  <span className={`flex items-center gap-1.5 text-xs text-foreground`}>
+                    <FolderOpen size={14} className="text-accent-foreground" />
+                    saving to <span className={`text-accent-foreground`}>/{dirName}</span>
+                  </span>
                   <button
                     onClick={onClearFolder}
                     className={`text-xs text-muted-foreground hover:text-foreground transition-colors`}
@@ -192,12 +185,13 @@ export const SettingsDialog: React.FC<Props> = ({
               ) : (
                 <button
                   onClick={onPickFolder}
-                  className={`text-xs text-accent-foreground hover:underline`}
+                  className={`flex items-center gap-1.5 text-xs text-accent-foreground hover:underline w-full`}
                 >
+                  <FolderOpen size={14} />
                   choose save folder →
                 </button>
               )}
-            </section>
+            </div>
           )}
 
         </div>
