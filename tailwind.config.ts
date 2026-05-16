@@ -21,7 +21,7 @@ export default {
     	extend: {
     		fontFamily: {
     			playfair: [
-    				'Instrument Serif',
+    				'Playfair Display',
     				'serif'
     			],
     			sans: [
