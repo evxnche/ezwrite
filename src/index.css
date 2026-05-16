@@ -509,11 +509,15 @@
 
 
 /* Mono mode — smaller, tighter */
-.ce-editor.font-mono {
+.ce-editor.font-mono,
+.font-mono.resize-none {
   font-family: 'Roboto Mono', monospace;
+  font-weight: 450 !important;
+  letter-spacing: 0 !important;
+}
+
+.ce-editor.font-mono {
   font-size: 15px;
-  font-weight: 450;
-  letter-spacing: 0;
 }
 
 @media (min-width: 640px) {
