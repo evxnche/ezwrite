@@ -512,7 +512,7 @@
 .ce-editor.font-mono,
 .font-mono.resize-none {
   font-family: 'Roboto Mono', monospace;
-  letter-spacing: -0.015em !important;
+  letter-spacing: -0.025em !important;
 }
 
 .ce-editor.font-mono {
