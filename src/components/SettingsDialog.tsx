@@ -1,6 +1,6 @@
 import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { SunMedium, MoonStar, FolderOpen } from 'lucide-react';
+import { FolderOpen } from 'lucide-react';
 import type { ColorTheme } from './preferences';
 
 const THEMES = [
@@ -91,16 +91,31 @@ export const SettingsDialog: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* Mode — sun/moon toggle */}
+          {/* Mode — light/dark rendered as word toggles */}
           <div className={`flex items-center justify-between`}>
             <span className={`text-muted-foreground text-xs uppercase tracking-wider`}>mode</span>
-            <button
-              onClick={onToggleMode}
-              className={`flex items-center gap-1.5 text-xs transition-colors text-accent-foreground`}
-            >
-              {mode === 'light' ? <SunMedium size={14} /> : <MoonStar size={14} />}
-              <span>{mode}</span>
-            </button>
+            <div className={`flex gap-2`}>
+              <button
+                onClick={() => { if (mode !== 'light') onToggleMode?.(); }}
+                className={`px-2.5 py-1 rounded-[6px] text-xs transition-all font-mono ${
+                  mode === 'light'
+                    ? 'bg-accent/20 text-accent-foreground ring-1 ring-accent-foreground/30'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                light
+              </button>
+              <button
+                onClick={() => { if (mode !== 'dark') onToggleMode?.(); }}
+                className={`px-2.5 py-1 rounded-[6px] text-xs transition-all font-mono ${
+                  mode === 'dark'
+                    ? 'bg-accent/20 text-accent-foreground ring-1 ring-accent-foreground/30'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                dark
+              </button>
+            </div>
           </div>
 
           {/* Font style — serif/mono rendered in their own typefaces */}
@@ -109,24 +124,24 @@ export const SettingsDialog: React.FC<Props> = ({
             <div className={`flex gap-2`}>
               <button
                 onClick={() => { if (!useSerif) onToggleFont?.(); }}
-                className={`px-2.5 py-1 rounded-md text-xs transition-all ${
+                className={`px-2.5 py-1 rounded-[6px] text-xs transition-all ${
                   useSerif
                     ? 'bg-accent/20 text-accent-foreground ring-1 ring-accent-foreground/30'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
                 style={{ fontFamily: "'Instrument Serif', serif" }}
               >
-                Serif
+                serif
               </button>
               <button
                 onClick={() => { if (useSerif) onToggleFont?.(); }}
-                className={`px-2.5 py-1 rounded-md text-xs transition-all font-mono ${
+                className={`px-2.5 py-1 rounded-[6px] text-xs transition-all font-mono ${
                   !useSerif
                     ? 'bg-accent/20 text-accent-foreground ring-1 ring-accent-foreground/30'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                Mono
+                mono
               </button>
             </div>
           </div>

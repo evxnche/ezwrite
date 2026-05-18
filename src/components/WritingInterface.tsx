@@ -1398,7 +1398,7 @@ const WritingInterface = () => {
       pushUndo(true);
 
       const lineText = lines[lineIndex] || '';
-      const listMatch = lineText.match(/^(\s*)([-*>]|\d+[\.\/])\s/);
+      const listMatch = lineText.match(/^(\s*)([-*>]|\d+[./])\s/);
       
       if (listMatch && offset <= listMatch[0].length) {
         lines[lineIndex] = INDENT + lineText;
@@ -1611,7 +1611,7 @@ const WritingInterface = () => {
 
       // Item 17: auto-continue bullet/numbered lists (plain-text style, not /list checkboxes)
       if (lineType !== 'list-item') {
-        const listMatch = currentLine.match(/^(\s*)([-*>]|\d+[\.\/])\s(.*)/);
+        const listMatch = currentLine.match(/^(\s*)([-*>]|\d+[./])\s(.*)/);
         if (listMatch) {
           const indent = listMatch[1];
           const bullet = listMatch[2];

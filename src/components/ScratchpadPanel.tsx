@@ -94,7 +94,7 @@ const ScratchpadPanel: React.FC<Props> = ({ open, value, width, useSerif, onChan
       const currentLineToCursor = value.substring(currentLineStart, start);
       const fullLine = value.substring(currentLineStart).split('\n')[0];
       
-      const listMatch = fullLine.match(/^(\s*)([-*>]|\d+[\.\/])\s/);
+      const listMatch = fullLine.match(/^(\s*)([-*>]|\d+[./])\s/);
       
       if (listMatch && currentLineToCursor.length <= listMatch[0].length) {
         const newValue = value.substring(0, currentLineStart) + '        ' + value.substring(currentLineStart);
@@ -125,7 +125,7 @@ const ScratchpadPanel: React.FC<Props> = ({ open, value, width, useSerif, onChan
       
       const indentMatch = currentLine.match(/^\s*/);
       const indent = indentMatch ? indentMatch[0] : '';
-      const listMatch = currentLine.match(/^(\s*)([-*>]|\d+[\.\/])\s/);
+      const listMatch = currentLine.match(/^(\s*)([-*>]|\d+[./])\s/);
       
       if (listMatch) {
         e.preventDefault();
