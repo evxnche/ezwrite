@@ -12,6 +12,8 @@ import {
   ChevronRight,
   ArrowUpRight,
   Pencil,
+  Cloud,
+  CloudOff,
 } from 'lucide-react';
 import { type ProjectMeta, getProjectTitle, getProjectPreview, timeAgo } from '@/lib/projects';
 
@@ -27,6 +29,8 @@ interface Props {
   onNewProject: () => void;
   onDeleteProject: (id: string) => void;
   onRenameProject: (id: string, newTitle: string) => void;
+  isProjectSynced: (id: string) => boolean;
+  onToggleProjectSync: (id: string) => void;
   onOpenSettings: () => void;
   onOpenScratchpad: () => void;
   onExportPageMd: () => void;
@@ -61,6 +65,8 @@ const NotesPanel: React.FC<Props> = ({
   onNewProject,
   onDeleteProject,
   onRenameProject,
+  isProjectSynced,
+  onToggleProjectSync,
   onOpenSettings,
   onOpenScratchpad,
   onExportPageMd,
@@ -124,6 +130,11 @@ const NotesPanel: React.FC<Props> = ({
   const handleMenuDelete = (id: string) => {
     setDocMenu(null);
     onDeleteProject(id);
+  };
+
+  const handleMenuSync = (id: string) => {
+    setDocMenu(null);
+    onToggleProjectSync(id);
   };
 
   if (!open) return null;
@@ -254,6 +265,7 @@ const NotesPanel: React.FC<Props> = ({
               const isActive = project.id === activeProjectId;
               const isHovered = hoveredId === project.id;
               const isRenaming = renamingId === project.id;
+              const isSynced = isProjectSynced(project.id);
 
               const openProject = () => {
                 setDocMenu(null);
@@ -337,8 +349,9 @@ const NotesPanel: React.FC<Props> = ({
                         {preview}
                       </div>
                     )}
-                    <div className="font-mono text-[10px] text-muted-foreground/35 mt-1">
-                      {timeAgo(project.updatedAt)}
+                    <div className="font-mono text-[10px] text-muted-foreground/35 mt-1 flex items-center gap-1.5">
+                      <span>{timeAgo(project.updatedAt)}</span>
+                      {isSynced && <Cloud size={10} />}
                     </div>
                   </div>
                   {isHovered && !isRenaming && (
@@ -378,6 +391,13 @@ const NotesPanel: React.FC<Props> = ({
               >
                 <Pencil size={13} />
                 <span>rename doc</span>
+              </button>
+              <button
+                className="w-full flex items-center gap-2 px-3 py-2 text-left font-mono text-xs text-foreground/85 hover:bg-muted/30 transition-colors"
+                onClick={() => handleMenuSync(docMenu.id)}
+              >
+                {isProjectSynced(docMenu.id) ? <CloudOff size={13} /> : <Cloud size={13} />}
+                <span>{isProjectSynced(docMenu.id) ? 'make local only' : 'sync doc'}</span>
               </button>
               <button
                 className="w-full flex items-center gap-2 px-3 py-2 text-left font-mono text-xs text-destructive hover:bg-destructive/10 transition-colors"

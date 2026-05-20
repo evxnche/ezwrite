@@ -1,4 +1,4 @@
-import { getLineType, INDENT, LIST_EXIT, SLASH_COMMANDS, STRUCK_MARKER } from './writing-helpers.ts';
+import { getLineType, INDENT, LIST_EXIT, SLASH_COMMANDS, STRUCK_MARKER, isLineStruck, getListName, getCleanLine } from './writing-helpers.ts';
 
 export type ShareCardTheme = '' | 'blue' | 'green' | 'red';
 
@@ -85,19 +85,31 @@ export function normalizePastedPlainText(text: string): string {
 }
 
 export function getShareCardLines(content: string): string[] {
-  return content
-    .split('\n')
-    .map((rawLine) => {
+  const lines = content.split('\n');
+  return lines
+    .map((rawLine, index) => {
+      const type = getLineType(lines, index);
+      if (type === 'divider') return '';
+      if (type === 'timer' || type === 'image') return null;
+      if (type === 'list-header') {
+        const rawName = getCleanLine(rawLine).trim();
+        if (rawName.toLowerCase() === 'list') return null; // Drop unnamed
+        return getListName(rawLine); // Returns the name part
+      }
+
       let line = rawLine;
+      const struck = isLineStruck(rawLine);
       if (line.startsWith(STRUCK_MARKER)) line = line.slice(STRUCK_MARKER.length);
       if (line.startsWith(LIST_EXIT)) line = line.slice(LIST_EXIT.length);
       while (line.startsWith(INDENT)) line = line.slice(INDENT.length);
 
       const trimmed = line.trim();
       if (!trimmed) return '';
-      if (trimmed === 'list') return null;
-      if (trimmed === 'line') return '';
-      if (/^timer(\s|$)/i.test(trimmed)) return null;
+      
+      if (type === 'list-item') {
+        return (struck ? '[x] ' : '[ ] ') + trimmed;
+      }
+      
       return trimmed.replace(/^#{1,2}\s+/, '');
     })
     .filter((line): line is string => line !== null);

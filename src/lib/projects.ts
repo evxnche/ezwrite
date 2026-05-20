@@ -14,6 +14,10 @@ export interface ProjectMeta {
   title?: string;
   createdAt: number;
   updatedAt: number;
+  syncEnabled?: boolean;
+  syncLastRemoteUpdatedAt?: number;
+  syncLastPushedAt?: number;
+  syncLastPulledAt?: number;
 }
 
 const PROJECTS_KEY = 'ezwrite-projects';
@@ -47,12 +51,16 @@ function saveLastKnownGoodPages(id: string): void {
   }
 }
 
+function saveProjects(projects: ProjectMeta[]): void {
+  localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+}
+
 function touchProject(id: string): void {
   const projects = listProjects();
   const idx = projects.findIndex(p => p.id === id);
   if (idx >= 0) {
     projects[idx].updatedAt = Date.now();
-    localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+    saveProjects(projects);
   }
 }
 
@@ -127,6 +135,34 @@ export function listProjects(): ProjectMeta[] {
   }
 }
 
+export function getProjectMeta(id: string): ProjectMeta | null {
+  return listProjects().find(p => p.id === id) ?? null;
+}
+
+export function updateProjectMeta(id: string, patch: Partial<ProjectMeta>): ProjectMeta | null {
+  const projects = listProjects();
+  const idx = projects.findIndex(p => p.id === id);
+  if (idx < 0) return null;
+  projects[idx] = { ...projects[idx], ...patch };
+  saveProjects(projects);
+  return projects[idx];
+}
+
+export function setProjectSyncEnabled(id: string, syncEnabled: boolean): ProjectMeta | null {
+  return updateProjectMeta(id, { syncEnabled, updatedAt: Date.now() });
+}
+
+export function markProjectSynced(id: string, remoteUpdatedAt: number, localUpdatedAt?: number): ProjectMeta | null {
+  const now = Date.now();
+  const meta = getProjectMeta(id);
+  return updateProjectMeta(id, {
+    syncEnabled: true,
+    syncLastRemoteUpdatedAt: remoteUpdatedAt,
+    syncLastPushedAt: localUpdatedAt ?? meta?.updatedAt ?? now,
+    syncLastPulledAt: now,
+  });
+}
+
 export function getActiveProjectId(): string | null {
   const id = localStorage.getItem(ACTIVE_KEY);
   const projects = listProjects();
@@ -156,9 +192,34 @@ export function createProject(firstPageContent = ''): ProjectMeta {
   return meta;
 }
 
+export function createProjectWithId(id: string, firstPageContent = '', metaPatch: Partial<ProjectMeta> = {}): ProjectMeta {
+  const now = Date.now();
+  const meta: ProjectMeta = {
+    id,
+    createdAt: metaPatch.createdAt ?? now,
+    updatedAt: metaPatch.updatedAt ?? now,
+    title: metaPatch.title,
+    syncEnabled: metaPatch.syncEnabled,
+    syncLastRemoteUpdatedAt: metaPatch.syncLastRemoteUpdatedAt,
+    syncLastPushedAt: metaPatch.syncLastPushedAt,
+    syncLastPulledAt: metaPatch.syncLastPulledAt,
+  };
+
+  const projects = listProjects().filter((project) => project.id !== id);
+  projects.unshift(meta);
+  saveProjects(projects);
+  localStorage.setItem(projectPagesKey(id), JSON.stringify([firstPageContent || '']));
+  localStorage.setItem(projectPagesBackupKey(id), JSON.stringify([firstPageContent || '']));
+  localStorage.setItem(projectTimestampsKey(id), JSON.stringify([meta.updatedAt]));
+  localStorage.setItem(projectLastPageKey(id), '0');
+  localStorage.setItem(ACTIVE_KEY, id);
+
+  return meta;
+}
+
 export function deleteProject(id: string): void {
   const projects = listProjects().filter(p => p.id !== id);
-  localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+  saveProjects(projects);
   localStorage.removeItem(projectPagesKey(id));
   localStorage.removeItem(projectPagesBackupKey(id));
   localStorage.removeItem(projectTimestampsKey(id));
@@ -232,8 +293,47 @@ export function renameProjectTitle(id: string, newTitle: string): void {
   const idx = projects.findIndex(p => p.id === id);
   if (idx >= 0) {
     projects[idx] = { ...projects[idx], title: cleaned, updatedAt: Date.now() };
-    localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+    saveProjects(projects);
   }
+}
+
+export function saveProjectSnapshot(input: {
+  id: string;
+  title?: string;
+  pages: string[];
+  scratchpad?: string;
+  updatedAt?: number;
+  syncEnabled?: boolean;
+  syncLastRemoteUpdatedAt?: number;
+  syncLastPushedAt?: number;
+  syncLastPulledAt?: number;
+}): ProjectMeta {
+  const safePages = input.pages.length ? input.pages.map((page) => String(page ?? '')) : [''];
+  const existing = getProjectMeta(input.id);
+  const now = Date.now();
+  const metaPatch: Partial<ProjectMeta> = {
+    title: input.title?.trim() || undefined,
+    updatedAt: input.updatedAt ?? now,
+    syncEnabled: input.syncEnabled,
+    syncLastRemoteUpdatedAt: input.syncLastRemoteUpdatedAt,
+    syncLastPushedAt: input.syncLastPushedAt,
+    syncLastPulledAt: input.syncLastPulledAt,
+  };
+
+  const meta = existing
+    ? updateProjectMeta(input.id, metaPatch)!
+    : createProjectWithId(input.id, safePages[0] ?? '', {
+        ...metaPatch,
+        createdAt: input.updatedAt ?? now,
+      });
+
+  localStorage.setItem(projectPagesKey(input.id), JSON.stringify(safePages));
+  localStorage.setItem(projectPagesBackupKey(input.id), JSON.stringify(safePages));
+  if (input.scratchpad !== undefined) {
+    localStorage.setItem(projectScratchpadKey(input.id), input.scratchpad);
+    localStorage.setItem(projectScratchpadBackupKey(input.id), input.scratchpad);
+  }
+  return meta;
 }
 
 export function getProjectScratchpad(id: string): string {

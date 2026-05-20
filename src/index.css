@@ -341,11 +341,20 @@
   font-family: 'Instrument Serif', serif;
   font-size: 1.125rem;
   color: hsl(var(--muted-foreground));
-  opacity: 0.4;
+  opacity: 0.7;
   font-weight: 300;
   letter-spacing: 0.05em;
   user-select: none;
   padding: 2px 0;
+}
+
+.ce-lh-text {
+  cursor: pointer;
+}
+
+.ce-lh-editing .ce-lh-text {
+  outline: none;
+  cursor: text;
 }
 
 .ce-delete-btn {
@@ -386,6 +395,35 @@
 
 .dark .ce-hr {
   border-top-color: hsl(var(--border));
+}
+
+/* ── Paper mode ── */
+.ce-editor.paper-mode {
+  --paper-line: hsl(30 20% 50% / 0.07);
+  --paper-margin: hsl(0 60% 60% / 0.08);
+  background-color: hsl(43 35% 93%);
+  background-image:
+    /* left margin line */
+    linear-gradient(90deg, transparent 11px, var(--paper-margin) 11px, var(--paper-margin) 12px, transparent 12px),
+    /* ruled lines */
+    repeating-linear-gradient(
+      transparent,
+      transparent calc(1.8em - 1px),
+      var(--paper-line) calc(1.8em - 1px),
+      var(--paper-line) 1.8em
+    );
+  background-size: 100% 100%, 100% 1.8em;
+  background-attachment: local, local;
+  border-radius: 1px;
+  box-shadow: 0 1px 2px hsl(0 0% 0% / 0.06), 0 4px 16px hsl(0 0% 0% / 0.05);
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.dark .ce-editor.paper-mode {
+  --paper-line: hsl(30 15% 45% / 0.11);
+  --paper-margin: hsl(0 40% 50% / 0.10);
+  background-color: hsl(30 10% 16%);
+  box-shadow: 0 1px 2px hsl(0 0% 0% / 0.25), 0 4px 16px hsl(0 0% 0% / 0.18);
 }
 
 .ce-timer {

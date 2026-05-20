@@ -1,6 +1,6 @@
 import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { FolderOpen } from 'lucide-react';
+import { Cloud, FolderOpen, Lock, RefreshCw } from 'lucide-react';
 import type { ColorTheme } from './preferences';
 
 const THEMES = [
@@ -29,11 +29,27 @@ interface Props {
   // Spellcheck
   spellCheckEnabled?: boolean;
   onToggleSpellCheck?: () => void;
+  // Paper mode
+  paperMode?: boolean;
+  onTogglePaperMode?: () => void;
   // Folder
   dirName?: string;
   onPickFolder?: () => void;
   onClearFolder?: () => void;
   fsSupported?: boolean;
+  // Sync
+  syncConfigured?: boolean;
+  syncUnlocked?: boolean;
+  syncBusy?: boolean;
+  syncStatus?: string;
+  syncError?: string;
+  syncPassword?: string;
+  activeProjectSynced?: boolean;
+  onSyncPasswordChange?: (value: string) => void;
+  onUnlockSync?: () => void;
+  onLockSync?: () => void;
+  onSyncNow?: () => void;
+  onToggleActiveProjectSync?: () => void;
 }
 
 export const SettingsDialog: React.FC<Props> = ({
@@ -51,10 +67,24 @@ export const SettingsDialog: React.FC<Props> = ({
   onToggleFont,
   spellCheckEnabled,
   onToggleSpellCheck,
+  paperMode,
+  onTogglePaperMode,
   dirName,
   onPickFolder,
   onClearFolder,
   fsSupported,
+  syncConfigured,
+  syncUnlocked,
+  syncBusy,
+  syncStatus,
+  syncError,
+  syncPassword,
+  activeProjectSynced,
+  onSyncPasswordChange,
+  onUnlockSync,
+  onLockSync,
+  onSyncNow,
+  onToggleActiveProjectSync,
 }) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -181,6 +211,21 @@ export const SettingsDialog: React.FC<Props> = ({
             </button>
           </div>
 
+          {/* Paper mode — iOS toggle */}
+          <div className={`flex items-center justify-between`}>
+            <span className={`text-muted-foreground text-xs uppercase tracking-wider`}>paper mode</span>
+            <button
+              onClick={onTogglePaperMode}
+              className={`relative inline-flex h-[22px] w-[40px] shrink-0 cursor-pointer rounded-full transition-colors ${
+                paperMode ? 'bg-accent-foreground' : 'bg-muted-foreground/30'
+              }`}
+            >
+              <span className={`pointer-events-none inline-block h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-transform ${
+                paperMode ? 'translate-x-[20px]' : 'translate-x-[2px]'
+              } mt-[2px]`} />
+            </button>
+          </div>
+
           {/* Storage — highlighted to draw attention */}
           {fsSupported && (
             <div className={`mt-2 rounded-xl border-2 border-dashed border-accent-foreground/40 bg-accent/10 p-3`}>
@@ -208,6 +253,82 @@ export const SettingsDialog: React.FC<Props> = ({
               )}
             </div>
           )}
+
+          <div className={`mt-2 rounded-xl border border-border/60 bg-muted/10 p-3 space-y-3`}>
+            <div className={`flex items-center justify-between`}>
+              <span className={`flex items-center gap-1.5 text-muted-foreground text-xs uppercase tracking-wider`}>
+                <Lock size={13} />
+                sync
+              </span>
+              <span className={`text-[10px] text-muted-foreground lowercase`}>{syncStatus}</span>
+            </div>
+
+            {!syncConfigured ? (
+              <div className={`text-xs text-muted-foreground lowercase`}>
+                add supabase env to enable sync
+              </div>
+            ) : (
+              <>
+                <div className={`flex items-center gap-2`}>
+                  <input
+                    type="password"
+                    value={syncPassword ?? ''}
+                    onChange={(e) => onSyncPasswordChange?.(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') onUnlockSync?.();
+                    }}
+                    placeholder={syncUnlocked ? 'sync unlocked' : 'sync password'}
+                    disabled={syncBusy || syncUnlocked}
+                    className={`min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs outline-none focus:border-accent-foreground/50 disabled:opacity-50`}
+                  />
+                  {syncUnlocked ? (
+                    <button
+                      onClick={onLockSync}
+                      disabled={syncBusy}
+                      className={`px-2.5 py-1.5 rounded-md text-xs font-mono text-muted-foreground hover:text-foreground disabled:opacity-40`}
+                    >
+                      lock
+                    </button>
+                  ) : (
+                    <button
+                      onClick={onUnlockSync}
+                      disabled={syncBusy}
+                      className={`px-2.5 py-1.5 rounded-md text-xs font-mono bg-accent/20 text-accent-foreground disabled:opacity-40`}
+                    >
+                      unlock
+                    </button>
+                  )}
+                </div>
+
+                <div className={`flex items-center justify-between`}>
+                  <button
+                    onClick={onToggleActiveProjectSync}
+                    disabled={syncBusy}
+                    className={`flex items-center gap-1.5 text-xs transition-colors ${
+                      activeProjectSynced ? 'text-accent-foreground' : 'text-muted-foreground hover:text-foreground'
+                    } disabled:opacity-40`}
+                  >
+                    <Cloud size={13} />
+                    {activeProjectSynced ? 'current doc synced' : 'sync current doc'}
+                  </button>
+                  <button
+                    onClick={onSyncNow}
+                    disabled={syncBusy || !syncUnlocked}
+                    className={`flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-40`}
+                  >
+                    <RefreshCw size={13} />
+                    now
+                  </button>
+                </div>
+              </>
+            )}
+
+            {syncError && (
+              <div className={`text-[10px] text-destructive lowercase`}>
+                {syncError}
+              </div>
+            )}
+          </div>
 
         </div>
 

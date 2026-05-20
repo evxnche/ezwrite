@@ -5,6 +5,18 @@ export const INDENT = '        '; // 8 spaces
 export const getCleanLine = (line: string) => line.startsWith(STRUCK_MARKER) ? line.slice(STRUCK_MARKER.length) : line;
 export const isLineStruck = (line: string) => line.startsWith(STRUCK_MARKER);
 
+/** Check if a line is a list header (plain 'list' or 'list::name'). */
+export function isListHeader(lower: string): boolean {
+  return lower === 'list' || lower.startsWith('list::');
+}
+
+/** Extract the display name from a list header line. Returns 'rename list' for unnamed. */
+export function getListName(line: string): string {
+  const clean = getCleanLine(line).trim();
+  const match = clean.match(/^list::(.+)$/i);
+  return match ? match[1] : 'rename list';
+}
+
 export type LineType = 'text' | 'heading1' | 'heading2' | 'list-header' | 'list-item' | 'divider' | 'timer' | 'quote' | 'image';
 
 export const SLASH_COMMANDS = [
@@ -29,7 +41,7 @@ export function getLineType(lines: string[], index: number): LineType {
   if (line.startsWith(LIST_EXIT)) return 'text';
   const clean = getCleanLine(line).trim();
   const lower = clean.toLowerCase();
-  if (lower === 'list') return 'list-header';
+  if (isListHeader(lower)) return 'list-header';
   if (lower === 'line') return 'divider';
   if (/^timer(\s|$)/i.test(lower)) return 'timer';
   if (/^polaroid::/.test(clean)) return 'image';
@@ -41,7 +53,7 @@ export function getLineType(lines: string[], index: number): LineType {
   for (let i = index - 1; i >= 0; i--) {
     if (lines[i].startsWith(LIST_EXIT)) return 'text'; // explicit list break
     const c = getCleanLine(lines[i]).trim().toLowerCase();
-    if (c === 'list') return 'list-item';
+    if (isListHeader(c)) return 'list-item';
     if (c === 'line' || /^timer(\s|$)/i.test(c)) return 'text';
     if (/^##? /.test(getCleanLine(lines[i]).trim())) return 'text';
     if (c === '') {
@@ -100,8 +112,11 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
         const escaped = escapeHTML(line.replace(/^## /, ''));
         return `<div data-type="heading2" data-heading-prefix="3" class="ce-heading2">${escaped || '<br>'}</div>`;
       }
-      case 'list-header':
-        return `<div data-type="list-header" contenteditable="false" class="ce-list-header"><span class="ce-lh-text">list</span><button class="ce-delete-btn" data-action="delete" data-line="${i}">✕</button></div>`;
+      case 'list-header': {
+        const listName = getListName(line);
+        const escapedName = escapeHTML(listName);
+        return `<div data-type="list-header" contenteditable="false" class="ce-list-header"><span class="ce-lh-text" data-action="rename-list" data-line="${i}">${escapedName}</span><button class="ce-delete-btn" data-action="delete" data-line="${i}">✕</button></div>`;
+      }
       case 'divider':
         return `<div data-type="divider" contenteditable="false" class="ce-divider"><hr class="ce-hr"/><button class="ce-delete-btn" data-action="delete" data-line="${i}">✕</button></div>`;
       case 'timer': {
@@ -186,7 +201,12 @@ export function extractContent(editor: HTMLElement): string {
     }
 
     if (looseText) flushLooseText();
-    if (type === 'list-header') { lines.push('list'); return; }
+    if (type === 'list-header') {
+      const textEl = el.querySelector('.ce-lh-text');
+      const name = textEl ? (textEl.textContent || 'rename list').trim() : 'rename list';
+      lines.push(name.toLowerCase() === 'rename list' ? 'list' : `list::${name}`);
+      return;
+    }
     if (type === 'divider') { lines.push('line'); return; }
     if (type === 'timer') {
       const config = el.dataset.timerConfig || '';

@@ -6,7 +6,7 @@ import SlashCommandPopup from './SlashCommandPopup';
 import TimerWidget from './TimerWidget';
 import PolaroidImage from './PolaroidImage';
 import { useImagePicker } from './useImagePicker';
-import { saveImage, deleteImage, loadImage } from '@/lib/imageStore';
+import { saveImage, loadImage, processImageForStorage, gcOrphanImages } from '@/lib/imageStore';
 import {
   getNextColorTheme,
   pickColorTheme,
@@ -36,6 +36,7 @@ import {
 import {
   isFileSystemSupported, getSavedHandle, pickSaveDirectory,
   writeProjectFiles, clearHandle, getDirName, writeToOPFS,
+  requestPersistentBrowserStorage,
 } from '@/lib/storage';
 import {
   initProjects,
@@ -44,18 +45,31 @@ import {
   setActiveProjectId,
   createProject,
   deleteProject,
+  getProjectMeta,
   renameProjectTitle,
   getProjectPages,
   saveProjectPages,
+  saveProjectSnapshot,
   getProjectTimestamps,
   saveProjectTimestamps,
   getProjectLastPage,
   saveProjectLastPage,
   getProjectScratchpad,
   saveProjectScratchpad,
+  setProjectSyncEnabled,
+  markProjectSynced,
   pageToTitle,
   type ProjectMeta,
 } from '@/lib/projects';
+import {
+  createSyncSession,
+  decryptRemoteSyncNote,
+  getSyncConfigStatus,
+  listRemoteSyncNotes,
+  upsertRemoteSyncNote,
+  type RemoteSyncNote,
+  type SyncSession,
+} from '@/lib/sync-client';
 
 
 const InfoDialog = lazy(() => import('./InfoDialog'));
@@ -252,7 +266,14 @@ const WritingInterface = () => {
   const [isExportingShareCard, setIsExportingShareCard] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [syncPassword, setSyncPassword] = useState('');
+  const [syncSession, setSyncSession] = useState<SyncSession | null>(null);
+  const [syncStatus, setSyncStatus] = useState('sync locked');
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncError, setSyncError] = useState('');
   const savedFlashTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const syncPushTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const syncSessionRef = useRef<SyncSession | null>(null);
   const [timerAlert, setTimerAlert] = useState(false);
   const [pageTransition, setPageTransition] = useState<'none' | 'slide-left' | 'slide-right'>('none');
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
@@ -261,6 +282,24 @@ const WritingInterface = () => {
   const editingTimerLineRef = useRef<number | null>(null);
   const backgroundPointerStartRef = useRef<{ x: number; y: number } | null>(null);
   const suppressNextBackgroundFocusRef = useRef(false);
+
+  useEffect(() => {
+    syncSessionRef.current = syncSession;
+  }, [syncSession]);
+
+  // Sweep orphaned photo bytes (deleted photos still in localStorage) once on mount.
+  // Runs after first paint so it doesn't compete with initial render.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const allContent: string[] = [];
+      for (const p of listProjects()) {
+        allContent.push(...getProjectPages(p.id));
+        allContent.push(getProjectScratchpad(p.id));
+      }
+      gcOrphanImages(allContent);
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   // Page dots — show briefly on page switch
   const [showDots, setShowDots] = useState(false);
@@ -335,6 +374,18 @@ const WritingInterface = () => {
     }
   }, [showDotGrid]);
 
+  // Paper mode toggle (persisted)
+  const [paperMode, setPaperMode] = useState(() =>
+    localStorage.getItem('ezwrite-paper-mode') === 'true'
+  );
+  const handleTogglePaperMode = () => {
+    setPaperMode(v => {
+      const next = !v;
+      localStorage.setItem('ezwrite-paper-mode', String(next));
+      return next;
+    });
+  };
+
   // Show stats (word/char count) toggle (persisted)
   const [showStats, setShowStats] = useState(() =>
     localStorage.getItem('ezwrite-show-stats') === 'true'
@@ -389,6 +440,10 @@ const WritingInterface = () => {
     await installPrompt.userChoice;
     setInstallPrompt(null);
   } : undefined;
+
+  useEffect(() => {
+    void requestPersistentBrowserStorage();
+  }, []);
 
   // File System Access API — desktop save folder
   const [dirHandle, setDirHandle] = useState<FileSystemDirectoryHandle | null>(null);
@@ -470,6 +525,36 @@ const WritingInterface = () => {
     return pageCount > 1 ? `${base}-p${currentPageRef.current + 1}` : base;
   };
 
+  const pushProjectToSync = useCallback(async (projectId: string, session = syncSessionRef.current) => {
+    if (!session || getSyncConfigStatus() !== 'ready') return;
+    const meta = getProjectMeta(projectId);
+    if (!meta?.syncEnabled) return;
+    const pages = projectId === activeProjectIdRef.current ? [...pagesRef.current] : getProjectPages(projectId);
+    const scratch = projectId === activeProjectIdRef.current ? scratchpadRef.current : getProjectScratchpad(projectId);
+    const row = await upsertRemoteSyncNote(session, {
+      projectId,
+      title: pageToTitle(pages[0] ?? ''),
+      pages,
+      scratchpad: scratch,
+      updatedAt: meta.updatedAt,
+    });
+    markProjectSynced(projectId, row.updated_at, meta.updatedAt);
+    setProjects(listProjects());
+    setSyncStatus('synced');
+  }, []);
+
+  const scheduleSyncPush = useCallback((projectId = activeProjectIdRef.current) => {
+    if (!projectId || !syncSessionRef.current) return;
+    if (!getProjectMeta(projectId)?.syncEnabled) return;
+    clearTimeout(syncPushTimeoutRef.current);
+    syncPushTimeoutRef.current = setTimeout(() => {
+      pushProjectToSync(projectId).catch((error) => {
+        setSyncError(error instanceof Error ? error.message : 'Sync failed');
+        setSyncStatus('sync failed');
+      });
+    }, 1800);
+  }, [pushProjectToSync]);
+
   const persistScratchpad = useCallback((value: string, projectId = activeProjectIdRef.current) => {
     if (!projectId) return;
     saveProjectScratchpad(projectId, value);
@@ -481,8 +566,9 @@ const WritingInterface = () => {
         void writeProjectFiles(dirHandleRef.current, projectId, markdowns, value);
       }
       void writeToOPFS(pagesSnapshot, projectId, value);
+      scheduleSyncPush(projectId);
     }, 250);
-  }, []);
+  }, [scheduleSyncPush]);
 
   useEffect(() => {
     localStorage.setItem('ezwrite-scratchpad-width', String(scratchpadWidth));
@@ -499,8 +585,9 @@ const WritingInterface = () => {
         void writeProjectFiles(dirHandleRef.current, projectId, markdowns, scratchpadSnapshot);
       }
       void writeToOPFS(pagesSnapshot, projectId, scratchpadSnapshot);
+      scheduleSyncPush(projectId);
     }, 250);
-  }, []);
+  }, [scheduleSyncPush]);
 
   const flushCurrentProject = useCallback((scratchpadValue = scratchpadRef.current) => {
     const projectId = activeProjectIdRef.current;
@@ -520,7 +607,8 @@ const WritingInterface = () => {
       void writeProjectFiles(dirHandleRef.current, projectId, markdowns, scratchpadValue);
     }
     void writeToOPFS(latestPages, projectId, scratchpadValue, { delay: 0 });
-  }, []);
+    scheduleSyncPush(projectId);
+  }, [scheduleSyncPush]);
 
   useEffect(() => {
     const flushForLifecycle = () => flushCurrentProject();
@@ -537,6 +625,7 @@ const WritingInterface = () => {
       window.removeEventListener('beforeunload', flushForLifecycle);
       clearTimeout(deferredPersistTimeoutRef.current);
       clearTimeout(scratchpadPersistTimeoutRef.current);
+      clearTimeout(syncPushTimeoutRef.current);
     };
   }, [flushCurrentProject]);
 
@@ -922,6 +1011,147 @@ const WritingInterface = () => {
     persistScratchpad(value);
   }, [persistScratchpad]);
 
+  const refreshActiveProjectFromStorage = useCallback(() => {
+    const projectId = activeProjectIdRef.current;
+    if (!projectId) return;
+    const nextPages = getProjectPages(projectId);
+    const nextPage = Math.min(getProjectLastPage(projectId), nextPages.length - 1);
+    pagesRef.current = nextPages;
+    contentRef.current = nextPages[nextPage] ?? nextPages[0] ?? '';
+    currentPageRef.current = nextPage;
+    setCurrentPage(nextPage);
+    setPageCount(nextPages.length);
+    setScratchpad(getProjectScratchpad(projectId));
+    setTimestamps(getProjectTimestamps(projectId));
+    setIsPageEmpty(contentRef.current.trim() === '');
+    const { lineIndex, offset } = getPageEndCursor(contentRef.current);
+    structuralUpdate(contentRef.current, lineIndex, offset, !isTouchDevice, false);
+  }, [isTouchDevice, structuralUpdate]);
+
+  const applyRemoteSyncRows = useCallback(async (rows: RemoteSyncNote[], session: SyncSession) => {
+    const touchedIds = new Set<string>();
+    for (const row of rows) {
+      const snapshot = await decryptRemoteSyncNote(row, session.password);
+      const local = getProjectMeta(snapshot.projectId);
+      const remoteChanged = row.updated_at > (local?.syncLastRemoteUpdatedAt ?? 0);
+      const localChanged = Boolean(
+        local?.syncEnabled &&
+        local.updatedAt > (local.syncLastPushedAt ?? local.syncLastPulledAt ?? 0) + 500,
+      );
+
+      if (local && remoteChanged && localChanged) {
+        const conflictId = `${snapshot.projectId}-conflict-${Date.now().toString(36)}`;
+        saveProjectSnapshot({
+          id: conflictId,
+          title: `${snapshot.title || 'untitled'} conflict`,
+          pages: snapshot.pages,
+          scratchpad: snapshot.scratchpad,
+          updatedAt: snapshot.updatedAt,
+          syncEnabled: false,
+        });
+        touchedIds.add(conflictId);
+        continue;
+      }
+
+      if (!local || remoteChanged) {
+        saveProjectSnapshot({
+          id: snapshot.projectId,
+          title: snapshot.title,
+          pages: snapshot.pages,
+          scratchpad: snapshot.scratchpad,
+          updatedAt: snapshot.updatedAt,
+          syncEnabled: true,
+          syncLastRemoteUpdatedAt: row.updated_at,
+          syncLastPushedAt: snapshot.updatedAt,
+          syncLastPulledAt: Date.now(),
+        });
+        touchedIds.add(snapshot.projectId);
+      }
+    }
+    setProjects(listProjects());
+    if (activeProjectIdRef.current && touchedIds.has(activeProjectIdRef.current)) {
+      refreshActiveProjectFromStorage();
+    }
+  }, [refreshActiveProjectFromStorage]);
+
+  const syncAllProjects = useCallback(async (session: SyncSession) => {
+    setSyncBusy(true);
+    setSyncError('');
+    setSyncStatus('syncing...');
+    try {
+      const rows = await listRemoteSyncNotes(session);
+      await applyRemoteSyncRows(rows, session);
+      const syncedProjects = listProjects().filter((project) => project.syncEnabled);
+      for (const project of syncedProjects) {
+        const latest = getProjectMeta(project.id);
+        if (!latest) continue;
+        const needsPush = !latest.syncLastPushedAt || latest.updatedAt > latest.syncLastPushedAt + 500;
+        if (needsPush) await pushProjectToSync(project.id, session);
+      }
+      setProjects(listProjects());
+      setSyncStatus('synced');
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'Sync failed');
+      setSyncStatus('sync failed');
+    } finally {
+      setSyncBusy(false);
+    }
+  }, [applyRemoteSyncRows, pushProjectToSync]);
+
+  const handleUnlockSync = useCallback(async () => {
+    const password = syncPassword.trim();
+    if (!password) {
+      setSyncError('Enter sync password');
+      return;
+    }
+    if (getSyncConfigStatus() !== 'ready') {
+      setSyncError('Supabase env missing');
+      return;
+    }
+    setSyncBusy(true);
+    setSyncError('');
+    try {
+      const session = await createSyncSession(password);
+      setSyncSession(session);
+      syncSessionRef.current = session;
+      setSyncStatus('sync unlocked');
+      await syncAllProjects(session);
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'Could not unlock sync');
+      setSyncStatus('sync failed');
+    } finally {
+      setSyncBusy(false);
+    }
+  }, [syncPassword, syncAllProjects]);
+
+  const handleLockSync = useCallback(() => {
+    setSyncSession(null);
+    syncSessionRef.current = null;
+    setSyncPassword('');
+    setSyncStatus('sync locked');
+  }, []);
+
+  const handleToggleProjectSync = useCallback((projectId: string) => {
+    flushCurrentProject();
+    const project = getProjectMeta(projectId);
+    const next = !project?.syncEnabled;
+    setProjectSyncEnabled(projectId, next);
+    setProjects(listProjects());
+    if (!next) {
+      setSyncStatus('local only');
+      return;
+    }
+    if (!syncSessionRef.current) {
+      setSyncStatus('enter password to sync');
+      return;
+    }
+    setSyncStatus('syncing...');
+    pushProjectToSync(projectId).catch((error) => {
+      setSyncError(error instanceof Error ? error.message : 'Sync failed');
+      setSyncStatus('sync failed');
+    });
+  }, [flushCurrentProject, pushProjectToSync]);
+
   // --- Touch swipe ---
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
@@ -1063,70 +1293,73 @@ const WritingInterface = () => {
       lines.splice(lineIndex, 1);
       if (!lines.length) lines.push('');
       structuralUpdate(lines.join('\n'), Math.min(lineIndex, lines.length - 1), 0);
+      return;
+    }
+
+    if (action === 'rename-list') {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const span = target;
+      const originalName = span.textContent || 'rename list';
+
+      // Hide the blinking cursor while editing
+      const headerDiv = span.closest('.ce-list-header');
+      if (headerDiv) headerDiv.classList.add('ce-lh-editing');
+
+      // Make the text span editable
+      span.contentEditable = 'true';
+      if (originalName === 'rename list') {
+        span.textContent = '';
+      }
+      span.focus();
+
+      // Place cursor at the end of the text (no highlight)
+      const range = document.createRange();
+      range.selectNodeContents(span);
+      range.collapse(false);
+      const sel = window.getSelection();
+      if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+
+      const commitRename = () => {
+        span.contentEditable = 'false';
+        if (headerDiv) headerDiv.classList.remove('ce-lh-editing');
+        const newName = (span.textContent || '').trim() || 'rename list';
+        span.textContent = newName;
+        // Update the underlying content
+        pushUndo(true);
+        const lines = contentRef.current.split('\n');
+        lines[lineIndex] = newName.toLowerCase() === 'rename list' ? 'list' : `list::${newName}`;
+        structuralUpdate(lines.join('\n'));
+      };
+
+      const handleBlur = () => {
+        span.removeEventListener('blur', handleBlur);
+        span.removeEventListener('keydown', handleKeyDown);
+        commitRename();
+      };
+
+      const handleKeyDown = (ev: Event) => {
+        const ke = ev as KeyboardEvent;
+        if (ke.key === 'Enter') {
+          ke.preventDefault();
+          span.blur(); // triggers handleBlur -> commitRename
+        } else if (ke.key === 'Escape') {
+          ke.preventDefault();
+          span.textContent = originalName;
+          span.removeEventListener('blur', handleBlur);
+          span.removeEventListener('keydown', handleKeyDown);
+          span.contentEditable = 'false';
+          if (headerDiv) headerDiv.classList.remove('ce-lh-editing');
+        }
+      };
+
+      span.addEventListener('blur', handleBlur);
+      span.addEventListener('keydown', handleKeyDown);
     }
   };
 
-  // Handle double-click on list header text to rename
-  const handleEditorDblClick = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.dataset.action !== 'rename-list') return;
-    e.preventDefault();
-    e.stopPropagation();
 
-    const lineIndex = parseInt(target.dataset.line || '0');
-    const span = target;
-    const originalName = span.textContent || 'rename list';
-
-    // Hide the blinking cursor while editing
-    const headerDiv = span.closest('.ce-list-header');
-    if (headerDiv) headerDiv.classList.add('ce-lh-editing');
-
-    // Make the text span editable
-    span.contentEditable = 'true';
-    span.focus();
-
-    // Select all text in the span
-    const range = document.createRange();
-    range.selectNodeContents(span);
-    const sel = window.getSelection();
-    if (sel) { sel.removeAllRanges(); sel.addRange(range); }
-
-    const commitRename = () => {
-      span.contentEditable = 'false';
-      if (headerDiv) headerDiv.classList.remove('ce-lh-editing');
-      const newName = (span.textContent || '').trim() || 'rename list';
-      span.textContent = newName;
-      // Update the underlying content
-      pushUndo(true);
-      const lines = contentRef.current.split('\n');
-      lines[lineIndex] = newName.toLowerCase() === 'rename list' ? 'list' : `list::${newName}`;
-      structuralUpdate(lines.join('\n'));
-    };
-
-    const handleBlur = () => {
-      span.removeEventListener('blur', handleBlur);
-      span.removeEventListener('keydown', handleKeyDown);
-      commitRename();
-    };
-
-    const handleKeyDown = (ev: Event) => {
-      const ke = ev as KeyboardEvent;
-      if (ke.key === 'Enter') {
-        ke.preventDefault();
-        span.blur(); // triggers handleBlur -> commitRename
-      } else if (ke.key === 'Escape') {
-        ke.preventDefault();
-        span.textContent = originalName;
-        span.removeEventListener('blur', handleBlur);
-        span.removeEventListener('keydown', handleKeyDown);
-        span.contentEditable = 'false';
-        if (headerDiv) headerDiv.classList.remove('ce-lh-editing');
-      }
-    };
-
-    span.addEventListener('blur', handleBlur);
-    span.addEventListener('keydown', handleKeyDown);
-  };
 
   // Timer completion
   const handleTimerComplete = useCallback(() => {
@@ -1340,7 +1573,8 @@ const WritingInterface = () => {
       void (async () => {
         const result = await pickImageRef.current();
         if (!result) return;
-        const id = saveImage(result.dataUrl);
+        const processed = await processImageForStorage(result.dataUrl);
+        const id = saveImage(processed);
         pushUndo(true);
         const cur = editorRef.current ? extractContent(editorRef.current) : contentRef.current;
         const ls = cur.split('\n');
@@ -1982,7 +2216,8 @@ const WritingInterface = () => {
       reader.readAsDataURL(file);
     });
     if (!dataUrl) return;
-    const id = saveImage(dataUrl);
+    const processed = await processImageForStorage(dataUrl);
+    const id = saveImage(processed);
     pushUndo(true);
     const current = editorRef.current ? extractContent(editorRef.current) : contentRef.current;
     const ls = current.split('\n');
@@ -2526,10 +2761,9 @@ const WritingInterface = () => {
               onCopy={handleCopy}
               onCut={handleCut}
               onClick={handleEditorClick}
-              onDoubleClick={handleEditorDblClick}
               onDragOver={handleDragOver}
               onDrop={handleDrop}
-              className={`${useSerif ? 'font-playfair' : 'font-mono'} text-base sm:text-lg font-light tracking-wide text-foreground ce-editor`}
+              className={`${useSerif ? 'font-playfair' : 'font-mono'} text-base sm:text-lg font-light tracking-wide text-foreground ce-editor ${paperMode ? 'paper-mode' : ''}`}
               style={editorStyle}
               spellCheck={spellCheckEnabled}
             />
@@ -2646,7 +2880,8 @@ const WritingInterface = () => {
             onCaptionChange={(newCaption) => handleImageCaptionChange(id, newCaption)}
             onRemove={() => {
               pushUndo(true);
-              deleteImage(id);
+              // Don't deleteImage(id) here — keep bytes so undo can restore the photo.
+              // Orphan images get swept by gcOrphanImages on next app load.
               const ls = contentRef.current.split('\n');
               const idx = ls.findIndex(l => l.startsWith(`polaroid::${id}`));
               if (idx >= 0) {
@@ -2674,6 +2909,8 @@ const WritingInterface = () => {
           onNewProject={handleNewProject}
           onDeleteProject={handleDeleteProject}
           onRenameProject={handleRenameProject}
+          isProjectSynced={(id) => Boolean(getProjectMeta(id)?.syncEnabled)}
+          onToggleProjectSync={handleToggleProjectSync}
           onOpenSettings={() => { setNotesOpen(false); setSettingsOpen(true); }}
           onOpenScratchpad={handleOpenScratchpad}
           onExportPageMd={saveAsMd}
@@ -2735,6 +2972,24 @@ const WritingInterface = () => {
               onPickFolder={handlePickFolder}
               onClearFolder={handleClearFolder}
               fsSupported={isFileSystemSupported()}
+              syncConfigured={getSyncConfigStatus() === 'ready'}
+              syncUnlocked={Boolean(syncSession)}
+              syncBusy={syncBusy}
+              syncStatus={syncStatus}
+              syncError={syncError}
+              syncPassword={syncPassword}
+              activeProjectSynced={Boolean(activeProjectId && getProjectMeta(activeProjectId)?.syncEnabled)}
+              onSyncPasswordChange={setSyncPassword}
+              onUnlockSync={handleUnlockSync}
+              onLockSync={handleLockSync}
+              onSyncNow={() => {
+                if (syncSessionRef.current) void syncAllProjects(syncSessionRef.current);
+              }}
+              onToggleActiveProjectSync={() => {
+                if (activeProjectIdRef.current) handleToggleProjectSync(activeProjectIdRef.current);
+              }}
+              paperMode={paperMode}
+              onTogglePaperMode={handleTogglePaperMode}
             />
           </>
         )}

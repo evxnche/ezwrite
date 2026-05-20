@@ -87,7 +87,7 @@ test('normalizePastedPlainText preserves line breaks from plain-text paste', () 
 test('getShareCardLines formats the current page for a clean read-only card', () => {
   assert.deepEqual(
     getShareCardLines('# Title\n\nlist\nfirst task\nline\ntimer 10m\nnormal line'),
-    ['Title', '', 'first task', '', 'normal line'],
+    ['Title', '', '[ ] first task', '', 'normal line'],
   );
 });
 

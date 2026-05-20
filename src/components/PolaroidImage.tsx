@@ -104,7 +104,77 @@ export default function PolaroidImage({ imageId, initialCaption, onCaptionChange
     window.addEventListener('pointerup', onUp);
   };
 
-  if (!src) return null;
+  if (!src) {
+    return (
+      <div
+        contentEditable={false}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{
+          display: 'inline-block',
+          backgroundColor: '#F5ECDD',
+          padding: PADDING,
+          boxShadow: '0 2px 12px rgba(0,0,0,0.20), 0 1px 4px rgba(0,0,0,0.10)',
+          transform: `rotate(${rotation}deg)`,
+          margin: '20px auto',
+          width: 240,
+          boxSizing: 'border-box',
+          position: 'relative',
+          userSelect: 'none',
+        }}
+      >
+        <div
+          style={{
+            width: 240 - PADDING * 2,
+            height: 240 - PADDING * 2,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textAlign: 'center',
+            color: '#7a6a4d',
+            fontFamily: "'Caveat', cursive",
+            fontSize: '18px',
+            lineHeight: 1.3,
+            padding: '0 12px',
+            background: 'repeating-linear-gradient(45deg, rgba(0,0,0,0.03) 0 8px, transparent 8px 16px)',
+            boxSizing: 'border-box',
+          }}
+        >
+          <div style={{ fontSize: '28px', marginBottom: 6, opacity: 0.5 }}>🖼️</div>
+          <div>photo missing</div>
+          <button
+            onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}
+            style={{
+              marginTop: 10,
+              padding: '4px 10px',
+              fontFamily: "'Caveat', cursive",
+              fontSize: '14px',
+              color: '#3a2e1e',
+              background: 'rgba(0,0,0,0.06)',
+              border: '1px solid rgba(0,0,0,0.15)',
+              borderRadius: 3,
+              cursor: 'pointer',
+            }}
+          >
+            remove
+          </button>
+        </div>
+        <div
+          style={{
+            marginTop: 8,
+            textAlign: 'center',
+            fontFamily: "'Caveat', cursive",
+            fontSize: '15px',
+            color: '#7a6a4d',
+            fontStyle: 'italic',
+          }}
+        >
+          {initialCaption || 'unavailable'}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -176,8 +246,9 @@ export default function PolaroidImage({ imageId, initialCaption, onCaptionChange
       <textarea
         ref={textareaRef}
         value={caption}
-        onChange={(e) => setCaption(e.target.value)}
-        onBlur={(e) => onCaptionChange(e.target.value)}
+        onChange={(e) => setCaption(e.target.value.replace(/\n+/g, ' '))}
+        onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}
+        onBlur={(e) => onCaptionChange(e.target.value.replace(/\n+/g, ' '))}
         placeholder="add caption…"
         rows={1}
         style={{

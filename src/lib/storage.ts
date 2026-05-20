@@ -83,6 +83,17 @@ async function syncProjectDirectory(
 export const isFileSystemSupported = (): boolean =>
   typeof window !== 'undefined' && 'showDirectoryPicker' in window;
 
+export async function requestPersistentBrowserStorage(): Promise<boolean | null> {
+  if (typeof navigator === 'undefined' || !('storage' in navigator)) return null;
+  const storage = navigator.storage;
+  if (!('persist' in storage)) return null;
+  try {
+    return await storage.persist();
+  } catch {
+    return null;
+  }
+}
+
 function openIDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(IDB_DB, 1);
