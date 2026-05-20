@@ -15,39 +15,51 @@ function seedRotation(id: string): number {
 }
 
 const PADDING = 12;
-const MIN_FRAME = 120;
+const MIN_FRAME = 100;
 const MAX_FRAME = 640;
-const MIN_IMG = 80;
 
 export default function PolaroidImage({ imageId, initialCaption, onCaptionChange, onRemove }: Props) {
   const [caption, setCaption] = useState(initialCaption);
-  const [captionFocused, setCaptionFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const [panning, setPanning] = useState(false);
   const [frameWidth, setFrameWidth] = useState(240);
-  const [imgSize, setImgSize] = useState(216);
+  const [cropPos, setCropPos] = useState({ x: 50, y: 50 });
+  const [isMultiLine, setIsMultiLine] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const cropPosRef = useRef(cropPos);
+  useEffect(() => { cropPosRef.current = cropPos; }, [cropPos]);
   const src = loadImage(imageId);
   const rotation = seedRotation(imageId);
+  const imgSize = frameWidth - PADDING * 2;
 
-  // Auto-grow textarea height
+  // Auto-grow textarea, detect multi-line for font scaling
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
     ta.style.height = 'auto';
     ta.style.height = ta.scrollHeight + 'px';
+    const lh = parseFloat(getComputedStyle(ta).lineHeight) || 22;
+    setIsMultiLine(ta.scrollHeight > lh + 8);
   }, [caption]);
 
-  const startFrameResize = (e: React.PointerEvent) => {
+  // Pan image within crop viewport
+  const startPan = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
     const startX = e.clientX;
-    const startW = frameWidth;
+    const startY = e.clientY;
+    const { x: cx, y: cy } = cropPosRef.current;
+    setPanning(true);
     const onMove = (me: PointerEvent) => {
-      const w = Math.max(MIN_FRAME, Math.min(MAX_FRAME, startW + (me.clientX - startX)));
-      setFrameWidth(w);
-      setImgSize(prev => Math.min(prev, w - PADDING * 2));
+      const dx = (me.clientX - startX) / imgSize * 100;
+      const dy = (me.clientY - startY) / imgSize * 100;
+      setCropPos({
+        x: Math.max(0, Math.min(100, cx - dx)),
+        y: Math.max(0, Math.min(100, cy - dy)),
+      });
     };
     const onUp = () => {
+      setPanning(false);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
@@ -55,15 +67,14 @@ export default function PolaroidImage({ imageId, initialCaption, onCaptionChange
     window.addEventListener('pointerup', onUp);
   };
 
-  const startImgResize = (e: React.PointerEvent) => {
+  // Resize frame (bottom-right corner drag — diagonal scales width, height follows)
+  const startFrameResize = (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
     const startX = e.clientX;
-    const startY = e.clientY;
-    const startSize = imgSize;
+    const startW = frameWidth;
     const onMove = (me: PointerEvent) => {
-      const delta = Math.max(me.clientX - startX, me.clientY - startY);
-      setImgSize(Math.max(MIN_IMG, Math.min(frameWidth - PADDING * 2, startSize + delta)));
+      setFrameWidth(Math.max(MIN_FRAME, Math.min(MAX_FRAME, startW + (me.clientX - startX))));
     };
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
@@ -83,88 +94,87 @@ export default function PolaroidImage({ imageId, initialCaption, onCaptionChange
       style={{
         display: 'inline-block',
         backgroundColor: '#F5ECDD',
-        padding: `${PADDING}px ${PADDING}px ${PADDING}px`,
+        padding: PADDING,
         boxShadow: '0 2px 12px rgba(0,0,0,0.20), 0 1px 4px rgba(0,0,0,0.10)',
         transform: `rotate(${rotation}deg)`,
         margin: '20px auto',
-        width: `${frameWidth}px`,
+        width: frameWidth,
         boxSizing: 'border-box',
         position: 'relative',
         userSelect: 'none',
       }}
     >
-      {/* Image with corner resize handle */}
-      <div style={{ position: 'relative', width: `${imgSize}px`, height: `${imgSize}px` }}>
+      {/* Crop viewport — drag to pan */}
+      <div
+        onPointerDown={startPan}
+        style={{
+          width: imgSize,
+          height: imgSize,
+          overflow: 'hidden',
+          cursor: panning ? 'grabbing' : 'grab',
+          position: 'relative',
+        }}
+      >
         <img
           src={src}
           alt={caption || 'photo'}
-          style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover' }}
-          draggable={false}
-        />
-        <div
-          onPointerDown={startImgResize}
-          title="Resize image"
           style={{
-            position: 'absolute',
-            bottom: 0,
-            right: 0,
-            width: 18,
-            height: 18,
-            cursor: 'nwse-resize',
-            opacity: hovered ? 1 : 0,
-            transition: 'opacity 0.15s',
-            background: 'rgba(0,0,0,0.30)',
-            borderRadius: '3px 0 0 0',
+            display: 'block',
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            objectPosition: `${cropPos.x}% ${cropPos.y}%`,
+            pointerEvents: 'none',
           }}
+          draggable={false}
         />
       </div>
 
-      {/* Caption - textarea wraps, grows, focus-indicated */}
+      {/* Caption — wraps, auto-shrinks on second line, blinking dark cursor */}
       <textarea
         ref={textareaRef}
         value={caption}
         onChange={(e) => setCaption(e.target.value)}
-        onBlur={(e) => { setCaptionFocused(false); onCaptionChange(e.target.value); }}
-        onFocus={() => setCaptionFocused(true)}
+        onBlur={(e) => onCaptionChange(e.target.value)}
         placeholder="add caption…"
         rows={1}
         style={{
           display: 'block',
           width: '100%',
-          minHeight: '32px',
+          minHeight: '28px',
           marginTop: '8px',
           background: 'transparent',
           border: 'none',
-          borderBottom: captionFocused ? '1px solid rgba(58,46,30,0.4)' : '1px solid transparent',
           outline: 'none',
           textAlign: 'center',
           fontFamily: "'Caveat', cursive",
-          fontSize: '16px',
+          fontSize: isMultiLine ? '13px' : '16px',
           color: '#3a2e1e',
+          caretColor: '#111',
           padding: '2px 4px',
           resize: 'none',
           overflow: 'hidden',
           cursor: 'text',
           boxSizing: 'border-box',
-          transition: 'border-color 0.15s',
           lineHeight: '1.35',
+          transition: 'font-size 0.1s',
         }}
       />
 
-      {/* Delete — hover only */}
+      {/* Delete — smaller, hover-only */}
       <button
         onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}
         style={{
           position: 'absolute',
           top: 4,
           right: 4,
-          width: 20,
-          height: 20,
+          width: 15,
+          height: 15,
           borderRadius: '50%',
-          background: 'rgba(0,0,0,0.55)',
+          background: 'rgba(0,0,0,0.50)',
           border: 'none',
           color: '#fff',
-          fontSize: '11px',
+          fontSize: '8px',
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
@@ -179,26 +189,22 @@ export default function PolaroidImage({ imageId, initialCaption, onCaptionChange
         ✕
       </button>
 
-      {/* Frame resize handle — right edge */}
+      {/* Frame resize corner — bottom-right, hover-only */}
       <div
         onPointerDown={startFrameResize}
-        title="Resize frame"
+        title="Resize"
         style={{
           position: 'absolute',
-          top: 0,
-          right: -5,
           bottom: 0,
-          width: 10,
-          cursor: 'ew-resize',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          opacity: hovered ? 1 : 0,
+          right: 0,
+          width: 20,
+          height: 20,
+          cursor: 'nwse-resize',
+          opacity: hovered ? 0.55 : 0,
           transition: 'opacity 0.15s',
+          background: 'linear-gradient(135deg, transparent 40%, rgba(0,0,0,0.35) 40%)',
         }}
-      >
-        <div style={{ width: 3, height: 28, borderRadius: 2, background: 'rgba(0,0,0,0.28)' }} />
-      </div>
+      />
     </div>
   );
 }
