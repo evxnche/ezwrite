@@ -5,11 +5,12 @@ export const INDENT = '        '; // 8 spaces
 export const getCleanLine = (line: string) => line.startsWith(STRUCK_MARKER) ? line.slice(STRUCK_MARKER.length) : line;
 export const isLineStruck = (line: string) => line.startsWith(STRUCK_MARKER);
 
-export type LineType = 'text' | 'heading1' | 'heading2' | 'list-header' | 'list-item' | 'divider' | 'timer' | 'quote';
+export type LineType = 'text' | 'heading1' | 'heading2' | 'list-header' | 'list-item' | 'divider' | 'timer' | 'quote' | 'image';
 
 export const SLASH_COMMANDS = [
   { name: 'list', description: 'Create a checklist' },
   { name: 'line', description: 'Insert a divider' },
+  { name: 'photo', description: 'Insert a photo' },
   { name: 'timer', description: 'Start a timer' },
   { name: 'sidetab', description: 'Open side tab' },
   { name: 'help', description: 'Show shortcuts & commands' },
@@ -31,6 +32,7 @@ export function getLineType(lines: string[], index: number): LineType {
   if (lower === 'list') return 'list-header';
   if (lower === 'line') return 'divider';
   if (/^timer(\s|$)/i.test(lower)) return 'timer';
+  if (/^polaroid::/.test(clean)) return 'image';
   if (/^## /.test(clean)) return 'heading2';
   if (/^# /.test(clean)) return 'heading1';
   if (/^>> /.test(clean) || clean === '>>') return 'quote';
@@ -108,6 +110,12 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
         }
         return `<div data-type="timer" data-timer-config="${escapeHTML(getTimerArgs(line))}" data-line="${i}" contenteditable="false" class="ce-timer" data-timer-slot="${i}"></div>`;
       }
+      case 'image': {
+        const m = line.match(/^polaroid::([^|]+)\|?(.*)?$/);
+        const id = escapeHTML(m?.[1] ?? '');
+        const caption = escapeHTML(m?.[2] ?? '');
+        return `<div data-type="image" data-image-id="${id}" data-image-caption="${caption}" data-image-slot="${i}" contenteditable="false" class="ce-image"></div>`;
+      }
       case 'quote': {
         const text = line.replace(/^>> ?/, '');
         return `<div data-type="quote" data-quote-prefix="1" class="ce-quote">${applyLinkHighlight(text) || '<br>'}</div>`;
@@ -183,6 +191,12 @@ export function extractContent(editor: HTMLElement): string {
     if (type === 'timer') {
       const config = el.dataset.timerConfig || '';
       lines.push(config ? `timer ${config}` : 'timer');
+      return;
+    }
+    if (type === 'image') {
+      const id = el.dataset.imageId || '';
+      const caption = el.dataset.imageCaption || '';
+      lines.push(`polaroid::${id}|${caption}`);
       return;
     }
     if (type === 'heading1' || type === 'heading2') {
@@ -299,7 +313,7 @@ export function contentToMarkdown(
   const rendered = lines.map((line, i) => {
     const type = getLineType(lines, i);
     if (type === 'divider') return '---';
-    if (type === 'timer' || type === 'list-header') return '';
+    if (type === 'timer' || type === 'list-header' || type === 'image') return '';
     if (type === 'list-item') {
       const struck = isLineStruck(line);
       let clean = getCleanLine(line);

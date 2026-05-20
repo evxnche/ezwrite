@@ -4,6 +4,9 @@ import { ChevronLeft, Trash2 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import SlashCommandPopup from './SlashCommandPopup';
 import TimerWidget from './TimerWidget';
+import PolaroidImage from './PolaroidImage';
+import { useImagePicker } from './useImagePicker';
+import { saveImage, deleteImage } from '@/lib/imageStore';
 import {
   getNextColorTheme,
   pickColorTheme,
@@ -59,6 +62,14 @@ const InfoDialog = lazy(() => import('./InfoDialog'));
 const SettingsDialog = lazy(() => import('./SettingsDialog'));
 const NotesPanel = lazy(() => import('./NotesPanel'));
 const ScratchpadPanel = lazy(() => import('./ScratchpadPanel'));
+
+function buildImageSlots(lines: string[]): Array<{ id: string; caption: string; lineIndex: number }> {
+  return lines.flatMap((line, i) => {
+    const m = line.match(/^polaroid::([^|]+)\|?(.*)?$/);
+    if (!m) return [];
+    return [{ id: m[1], caption: m[2] ?? '', lineIndex: i }];
+  });
+}
 
 interface WindowWithAudioContext extends Window {
   webkitAudioContext?: typeof AudioContext;
@@ -413,6 +424,12 @@ const WritingInterface = () => {
   const [timerSlots, setTimerSlots] = useState<Array<{ stableId: string; config: string; lineIndex: number }>>([]);
   // Persistent portal containers keyed by stableId — survive innerHTML resets
   const timerContainers = useRef<Map<string, HTMLElement>>(new Map());
+  // Track image (polaroid) slots for portal rendering
+  const [imageSlots, setImageSlots] = useState<Array<{ id: string; caption: string; lineIndex: number }>>([]);
+  const imageContainers = useRef<Map<string, HTMLElement>>(new Map());
+  const { pickImage } = useImagePicker();
+  const pickImageRef = useRef(pickImage);
+  pickImageRef.current = pickImage;
   // Tracks the cursor position set by structuralUpdate while the RAF hasn't fired yet.
   // handleKeyDown uses this instead of live getCursorInfo() during that window.
   const pendingCursor = useRef<{ lineIndex: number; offset: number } | null>(null);
@@ -579,6 +596,22 @@ const WritingInterface = () => {
       }
     });
     setTimerSlots(timers);
+
+    // Find image slots and re-attach persistent containers
+    const images = buildImageSlots(lines);
+    const activeImageIds = new Set<string>();
+    images.forEach(({ id, lineIndex: imgLine }) => {
+      activeImageIds.add(id);
+      if (!imageContainers.current.has(id)) {
+        imageContainers.current.set(id, document.createElement('div'));
+      }
+      const imgSlot = editorRef.current!.querySelector(`[data-image-slot="${imgLine}"]`) as HTMLElement;
+      if (imgSlot) imgSlot.appendChild(imageContainers.current.get(id)!);
+    });
+    Array.from(imageContainers.current.keys()).forEach((id) => {
+      if (!activeImageIds.has(id)) imageContainers.current.delete(id);
+    });
+    setImageSlots(images);
 
     // Restore cursor and record where it should be so handleKeyDown can use it
     // if Enter fires before the RAF (browser sometimes overrides sync restore)
@@ -1238,6 +1271,22 @@ const WritingInterface = () => {
       lines[lineIndex] = '';
       structuralUpdate(lines.join('\n'), lineIndex, 0, false);
       handleOpenScratchpad();
+    } else if (command === 'photo') {
+      lines[lineIndex] = '';
+      structuralUpdate(lines.join('\n'), lineIndex, 0, false);
+      setSlashPopup(null);
+      void (async () => {
+        const result = await pickImageRef.current();
+        if (!result) return;
+        const id = saveImage(result.dataUrl);
+        pushUndo(true);
+        const cur = editorRef.current ? extractContent(editorRef.current) : contentRef.current;
+        const ls = cur.split('\n');
+        ls[lineIndex] = `polaroid::${id}|`;
+        if (lineIndex >= ls.length - 1) ls.push('');
+        structuralUpdate(ls.join('\n'), lineIndex + 1, 0);
+      })();
+      return;
     } else if (command === 'timer') {
       lines[lineIndex] = 'timer ';
       editingTimerLineRef.current = lineIndex;
@@ -1840,16 +1889,49 @@ const WritingInterface = () => {
     }
   }, [pushUndo, structuralUpdate]);
 
+  const handleImageCaptionChange = useCallback((id: string, newCaption: string) => {
+    const slot = editorRef.current?.querySelector(`[data-image-id="${id}"]`) as HTMLElement | null;
+    if (slot) slot.dataset.imageCaption = newCaption;
+    const ls = contentRef.current.split('\n');
+    const idx = ls.findIndex(l => l.startsWith(`polaroid::${id}|`));
+    if (idx >= 0) {
+      ls[idx] = `polaroid::${id}|${newCaption}`;
+      contentRef.current = ls.join('\n');
+      saveContent(contentRef.current);
+    }
+  }, [saveContent]);
+
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    e.dataTransfer.dropEffect = 'none';
+    const hasImage = Array.from(e.dataTransfer.types).includes('Files');
+    e.dataTransfer.dropEffect = hasImage ? 'copy' : 'none';
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-  }, []);
+    const file = Array.from(e.dataTransfer.files).find(f => f.type.startsWith('image/'));
+    if (!file) return;
+    const dataUrl = await new Promise<string | null>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    });
+    if (!dataUrl) return;
+    const id = saveImage(dataUrl);
+    pushUndo(true);
+    const current = editorRef.current ? extractContent(editorRef.current) : contentRef.current;
+    const ls = current.split('\n');
+    const dropLine = editorRef.current
+      ? getClosestLineIndexForClick(editorRef.current, e.clientX, e.clientY) + 1
+      : ls.length;
+    const insertAt = Math.min(Math.max(0, dropLine), ls.length);
+    ls.splice(insertAt, 0, `polaroid::${id}|`);
+    if (ls[ls.length - 1] !== '') ls.push('');
+    structuralUpdate(ls.join('\n'), insertAt + 1, 0);
+  }, [pushUndo, structuralUpdate]);
 
   const getLinePointFromDOMPoint = useCallback((container: Node, domOffset: number): { lineIndex: number; offset: number } | null => {
     const editor = editorRef.current;
@@ -2378,6 +2460,32 @@ const WritingInterface = () => {
               }
             }}
             onComplete={handleTimerComplete}
+          />,
+          container
+        );
+      })}
+
+      {/* Image (polaroid) portals */}
+      {imageSlots.map(({ id, caption, lineIndex }) => {
+        const container = imageContainers.current.get(id);
+        if (!container) return null;
+        return createPortal(
+          <PolaroidImage
+            key={id}
+            imageId={id}
+            initialCaption={caption}
+            onCaptionChange={(newCaption) => handleImageCaptionChange(id, newCaption)}
+            onRemove={() => {
+              pushUndo(true);
+              deleteImage(id);
+              const ls = contentRef.current.split('\n');
+              const idx = ls.findIndex(l => l.startsWith(`polaroid::${id}`));
+              if (idx >= 0) {
+                ls.splice(idx, 1);
+                if (!ls.length) ls.push('');
+                structuralUpdate(ls.join('\n'), Math.min(idx, ls.length - 1), 0);
+              }
+            }}
           />,
           container
         );
