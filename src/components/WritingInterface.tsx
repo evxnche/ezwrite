@@ -6,7 +6,7 @@ import SlashCommandPopup from './SlashCommandPopup';
 import TimerWidget from './TimerWidget';
 import PolaroidImage from './PolaroidImage';
 import { useImagePicker } from './useImagePicker';
-import { saveImage, deleteImage } from '@/lib/imageStore';
+import { saveImage, deleteImage, loadImage } from '@/lib/imageStore';
 import {
   getNextColorTheme,
   pickColorTheme,
@@ -1064,6 +1064,68 @@ const WritingInterface = () => {
       if (!lines.length) lines.push('');
       structuralUpdate(lines.join('\n'), Math.min(lineIndex, lines.length - 1), 0);
     }
+  };
+
+  // Handle double-click on list header text to rename
+  const handleEditorDblClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.dataset.action !== 'rename-list') return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const lineIndex = parseInt(target.dataset.line || '0');
+    const span = target;
+    const originalName = span.textContent || 'list';
+
+    // Hide the blinking cursor while editing
+    const headerDiv = span.closest('.ce-list-header');
+    if (headerDiv) headerDiv.classList.add('ce-lh-editing');
+
+    // Make the text span editable
+    span.contentEditable = 'true';
+    span.focus();
+
+    // Select all text in the span
+    const range = document.createRange();
+    range.selectNodeContents(span);
+    const sel = window.getSelection();
+    if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+
+    const commitRename = () => {
+      span.contentEditable = 'false';
+      if (headerDiv) headerDiv.classList.remove('ce-lh-editing');
+      const newName = (span.textContent || '').trim() || 'list';
+      span.textContent = newName;
+      // Update the underlying content
+      pushUndo(true);
+      const lines = contentRef.current.split('\n');
+      lines[lineIndex] = newName.toLowerCase() === 'list' ? 'list' : `list::${newName}`;
+      structuralUpdate(lines.join('\n'));
+    };
+
+    const handleBlur = () => {
+      span.removeEventListener('blur', handleBlur);
+      span.removeEventListener('keydown', handleKeyDown);
+      commitRename();
+    };
+
+    const handleKeyDown = (ev: Event) => {
+      const ke = ev as KeyboardEvent;
+      if (ke.key === 'Enter') {
+        ke.preventDefault();
+        span.blur(); // triggers handleBlur -> commitRename
+      } else if (ke.key === 'Escape') {
+        ke.preventDefault();
+        span.textContent = originalName;
+        span.removeEventListener('blur', handleBlur);
+        span.removeEventListener('keydown', handleKeyDown);
+        span.contentEditable = 'false';
+        if (headerDiv) headerDiv.classList.remove('ce-lh-editing');
+      }
+    };
+
+    span.addEventListener('blur', handleBlur);
+    span.addEventListener('keydown', handleKeyDown);
   };
 
   // Timer completion
@@ -2194,6 +2256,32 @@ const WritingInterface = () => {
           pdf.setFontSize(11); pdf.setFont('helvetica', 'normal');
           return;
         }
+        if (type === 'image') {
+          const m = line.match(/^polaroid::([^|]+)\|?(.*)?$/);
+          if (m) {
+            const imgData = loadImage(m[1]);
+            if (imgData) {
+              try {
+                const fmtRaw = (imgData.match(/^data:image\/(\w+);/) ?? [])[1] ?? 'jpeg';
+                const fmt = fmtRaw.toUpperCase().replace('JPG', 'JPEG');
+                const imgMm = 70;
+                if (y + imgMm > pageH - margin) { pdf.addPage(); y = margin; }
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                (pdf as any).addImage(imgData, fmt, margin, y, imgMm, imgMm);
+                y += imgMm + lh * 0.5;
+                const cap = m[2]?.trim();
+                if (cap) {
+                  pdf.setFontSize(9); pdf.setFont('helvetica', 'italic');
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  pdf.text(cap, margin + imgMm / 2, y, { align: 'center' } as any);
+                  pdf.setFontSize(11); pdf.setFont('helvetica', 'normal');
+                  y += lh * 1.5;
+                }
+              } catch { /* skip if format unsupported */ }
+            }
+          }
+          return;
+        }
         let text = cleanForExport(line);
         if (type === 'list-header') { text = ''; y += lh * 0.5; return; }
         if (!text.trim()) { y += lh; if (y > pageH - margin) { pdf.addPage(); y = margin; } return; }
@@ -2358,6 +2446,7 @@ const WritingInterface = () => {
               onCopy={handleCopy}
               onCut={handleCut}
               onClick={handleEditorClick}
+              onDoubleClick={handleEditorDblClick}
               onDragOver={handleDragOver}
               onDrop={handleDrop}
               className={`${useSerif ? 'font-playfair' : 'font-mono'} text-base sm:text-lg font-light tracking-wide text-foreground ce-editor`}

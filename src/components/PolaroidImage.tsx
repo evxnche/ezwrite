@@ -21,6 +21,7 @@ const MAX_FRAME = 640;
 export default function PolaroidImage({ imageId, initialCaption, onCaptionChange, onRemove }: Props) {
   const [caption, setCaption] = useState(initialCaption);
   const [hovered, setHovered] = useState(false);
+  const [moveMode, setMoveMode] = useState(false);
   const [panning, setPanning] = useState(false);
   const [frameWidth, setFrameWidth] = useState(240);
   const [cropPos, setCropPos] = useState({ x: 50, y: 50 });
@@ -32,7 +33,15 @@ export default function PolaroidImage({ imageId, initialCaption, onCaptionChange
   const rotation = seedRotation(imageId);
   const imgSize = frameWidth - PADDING * 2;
 
-  // Auto-grow textarea, detect multi-line for font scaling
+  // Escape exits move mode
+  useEffect(() => {
+    if (!moveMode) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMoveMode(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [moveMode]);
+
+  // Auto-grow textarea, detect multi-line
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -42,8 +51,9 @@ export default function PolaroidImage({ imageId, initialCaption, onCaptionChange
     setIsMultiLine(ta.scrollHeight > lh + 8);
   }, [caption]);
 
-  // Pan image within crop viewport
+  // Pan image within crop viewport (only when moveMode is active)
   const startPan = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!moveMode) return;
     e.preventDefault();
     e.stopPropagation();
     const startX = e.clientX;
@@ -67,7 +77,7 @@ export default function PolaroidImage({ imageId, initialCaption, onCaptionChange
     window.addEventListener('pointerup', onUp);
   };
 
-  // Resize frame (bottom-right corner drag — diagonal scales width, height follows)
+  // Resize frame from bottom-right corner
   const startFrameResize = (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -104,15 +114,19 @@ export default function PolaroidImage({ imageId, initialCaption, onCaptionChange
         userSelect: 'none',
       }}
     >
-      {/* Crop viewport — drag to pan */}
+      {/* Crop viewport — double-click to enter move mode, drag to pan */}
       <div
         onPointerDown={startPan}
+        onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setMoveMode(true); }}
         style={{
           width: imgSize,
           height: imgSize,
           overflow: 'hidden',
-          cursor: panning ? 'grabbing' : 'grab',
+          cursor: moveMode ? (panning ? 'grabbing' : 'grab') : 'default',
           position: 'relative',
+          outline: moveMode ? '2px dashed rgba(0,0,0,0.35)' : 'none',
+          outlineOffset: 2,
+          boxSizing: 'border-box',
         }}
       >
         <img
@@ -128,9 +142,26 @@ export default function PolaroidImage({ imageId, initialCaption, onCaptionChange
           }}
           draggable={false}
         />
+        {/* Move mode label */}
+        {moveMode && (
+          <div style={{
+            position: 'absolute',
+            bottom: 6,
+            left: 0,
+            right: 0,
+            textAlign: 'center',
+            fontSize: '10px',
+            color: 'rgba(255,255,255,0.85)',
+            textShadow: '0 1px 3px rgba(0,0,0,0.5)',
+            pointerEvents: 'none',
+            letterSpacing: '0.04em',
+          }}>
+            drag to reposition · esc to exit
+          </div>
+        )}
       </div>
 
-      {/* Caption — wraps, auto-shrinks on second line, blinking dark cursor */}
+      {/* Caption — wraps, font drops 1px on second line */}
       <textarea
         ref={textareaRef}
         value={caption}
@@ -148,7 +179,7 @@ export default function PolaroidImage({ imageId, initialCaption, onCaptionChange
           outline: 'none',
           textAlign: 'center',
           fontFamily: "'Caveat', cursive",
-          fontSize: isMultiLine ? '13px' : '16px',
+          fontSize: isMultiLine ? '17px' : '18px',
           color: '#3a2e1e',
           caretColor: '#111',
           padding: '2px 4px',
@@ -161,7 +192,7 @@ export default function PolaroidImage({ imageId, initialCaption, onCaptionChange
         }}
       />
 
-      {/* Delete — smaller, hover-only */}
+      {/* Delete — small, hover-only */}
       <button
         onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}
         style={{
