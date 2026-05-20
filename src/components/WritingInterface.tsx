@@ -2160,77 +2160,67 @@ const WritingInterface = () => {
         drawRoundedRect(ctx, 82, 110, width - 164, height - 220, 42);
         ctx.fill();
 
-        const lines = getShareCardLines(content);
-        const baseFontSize = lines.join('\n').length > 300 ? 20 : 24;
+        const textOnlyLines = getShareCardLines(content);
+        const hasImages = content.split('\n').some((l: string) => l.startsWith('polaroid::'));
+        const baseFontSize = textOnlyLines.join('\n').length > 300 ? 20 : 24;
         const lineHeight = Math.round(baseFontSize * 1.5);
         const maxTextWidth = width - 200;
-        const wrapped = wrapShareCardLines(ctx, lines, maxTextWidth, baseFontSize, useSerif);
-        const maxLines = Math.floor((height - 240) / lineHeight);
-        const visibleLines = wrapped.slice(0, maxLines);
-        const textHeight = visibleLines.reduce((h, line) => h + (line ? lineHeight : Math.round(lineHeight * 0.7)), 0);
-        let y = Math.max(140, Math.round((height - textHeight) / 2) - 10);
 
-        ctx.fillStyle = text;
-        ctx.font = getShareCardFont(baseFontSize, useSerif);
-        ctx.textBaseline = 'top';
-
-        visibleLines.forEach((line) => {
-          if (!line) {
-            y += Math.round(lineHeight * 0.7);
-            return;
+        if (!hasImages) {
+          // Centered text-only rendering
+          const wrapped = wrapShareCardLines(ctx, textOnlyLines, maxTextWidth, baseFontSize, useSerif);
+          const maxLines = Math.floor((height - 240) / lineHeight);
+          const visibleLines = wrapped.slice(0, maxLines);
+          const textHeight = visibleLines.reduce((h, line) => h + (line ? lineHeight : Math.round(lineHeight * 0.7)), 0);
+          let y = Math.max(140, Math.round((height - textHeight) / 2) - 10);
+          ctx.fillStyle = text;
+          ctx.font = getShareCardFont(baseFontSize, useSerif);
+          ctx.textBaseline = 'top';
+          visibleLines.forEach((line) => {
+            if (!line) { y += Math.round(lineHeight * 0.7); return; }
+            ctx.fillText(line, 110, y);
+            y += lineHeight;
+          });
+          if (wrapped.length > visibleLines.length) {
+            ctx.fillStyle = muted;
+            ctx.fillText('...', 110, y);
           }
-          ctx.fillText(line, 110, y);
-          y += lineHeight;
-        });
-
-        if (wrapped.length > visibleLines.length) {
-          ctx.fillStyle = muted;
-          ctx.fillText('...', 110, y);
-        }
-
-        ctx.fillStyle = muted;
-        ctx.font = '400 26px "Instrument Serif", Georgia, serif';
-        ctx.textAlign = 'right';
-        const prevSpacing = (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing;
-        (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = '-0.04em';
-        ctx.fillText('ezwrite.', width - 110, height - 130);
-        (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = prevSpacing ?? 'normal';
-        ctx.textAlign = 'left';
-
-        // Draw polaroid images below text
-        const polaroidLines = content.split('\n').filter((l: string) => l.startsWith('polaroid::'));
-        if (polaroidLines.length > 0) {
-          await document.fonts.load('400 20px "Caveat"');
-          const frameP = 14;
-          const capH = 48;
-          const available = Math.max(80, height - 220 - y - 20);
-          const imgSz = Math.min(240, available - frameP * 2 - capH);
-          if (imgSz >= 60) {
-            const fW = imgSz + frameP * 2;
-            const fH = imgSz + frameP * 2 + capH;
-            const gap = 24;
-            const count = Math.min(polaroidLines.length, Math.floor((width - 220 + gap) / (fW + gap)));
-            const totalW = count * fW + (count - 1) * gap;
-            let px = (width - totalW) / 2;
-            const py = y + 24;
-            for (let li = 0; li < count; li++) {
-              const pm = polaroidLines[li].match(/^polaroid::([^|]+)\|?(.*)?$/);
-              if (!pm) { px += fW + gap; continue; }
-              const imgData = loadImage(pm[1]);
-              if (!imgData) { px += fW + gap; continue; }
-              const cap = (pm[2] ?? '').trim();
-              let hash = 0;
-              for (let ci = 0; ci < pm[1].length; ci++) hash = (hash * 31 + pm[1].charCodeAt(ci)) & 0xffff;
+        } else {
+          // Document-order render: text and images interleaved
+          await document.fonts.load('400 22px "Caveat"');
+          const imgCache = new Map<string, HTMLImageElement>();
+          for (const rawLine of content.split('\n')) {
+            const m = rawLine.match(/^polaroid::([^|]+)\|?(.*)?$/);
+            if (!m) continue;
+            const data = loadImage(m[1]);
+            if (!data) continue;
+            const img = new Image();
+            await new Promise<void>(res => { img.onload = () => res(); img.onerror = () => res(); img.src = data; });
+            imgCache.set(m[1], img);
+          }
+          let y = 160;
+          const contentLines = content.split('\n');
+          for (let i = 0; i < contentLines.length; i++) {
+            if (y > height - 180) break;
+            const rawLine = contentLines[i];
+            const lt = getLineType(contentLines, i);
+            if (lt === 'image') {
+              const m = rawLine.match(/^polaroid::([^|]+)\|?(.*)?$/);
+              if (!m) continue;
+              const img = imgCache.get(m[1]);
+              if (!img) continue;
+              const cap = (m[2] ?? '').trim();
+              const imgSz = Math.min(280, width - 220);
+              const frameP = 14; const capH = 48;
+              const fW = imgSz + frameP * 2; const fH = imgSz + frameP * 2 + capH;
+              if (y + fH > height - 160) break;
+              let hash = 0; const id = m[1];
+              for (let ci = 0; ci < id.length; ci++) hash = (hash * 31 + id.charCodeAt(ci)) & 0xffff;
               const rotateDeg = ((hash % 7) - 3) * 0.85;
-              const img = new Image();
-              await new Promise<void>(res => { img.onload = () => res(); img.onerror = () => res(); img.src = imgData; });
-              const cx = px + fW / 2;
-              const cy = py + fH / 2;
               ctx.save();
-              ctx.translate(cx, cy);
+              ctx.translate(width / 2, y + fH / 2);
               ctx.rotate(rotateDeg * Math.PI / 180);
-              ctx.shadowColor = 'rgba(0,0,0,0.22)';
-              ctx.shadowBlur = 20;
+              ctx.shadowColor = 'rgba(0,0,0,0.22)'; ctx.shadowBlur = 20;
               ctx.fillStyle = '#F5ECDD';
               ctx.fillRect(-fW / 2, -fH / 2, fW, fH);
               ctx.shadowBlur = 0;
@@ -2242,16 +2232,50 @@ const WritingInterface = () => {
               ctx.restore();
               if (cap) {
                 ctx.fillStyle = '#3a2e1e';
-                ctx.font = '400 20px "Caveat", cursive';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
+                ctx.font = '400 22px "Caveat", cursive';
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                 ctx.fillText(cap, 0, fH / 2 - capH / 2);
               }
               ctx.restore();
-              px += fW + gap;
+              y += fH + 24;
+            } else if (lt === 'timer' || lt === 'list-header') {
+              // skip
+            } else if (lt === 'divider') {
+              y += Math.round(lineHeight * 0.5);
+            } else {
+              let line = rawLine;
+              if (isLineStruck(line)) line = line.slice(STRUCK_MARKER.length);
+              if (line.startsWith(LIST_EXIT)) line = line.slice(LIST_EXIT.length);
+              while (line.startsWith(INDENT)) line = line.slice(INDENT.length);
+              const trimmed = line.trim().replace(/^#{1,2}\s+/, '');
+              const displayLine = lt === 'list-item'
+                ? ((isLineStruck(rawLine) ? '[x] ' : '[ ] ') + trimmed)
+                : trimmed;
+              ctx.fillStyle = text;
+              ctx.font = getShareCardFont(baseFontSize, useSerif);
+              ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+              if (!displayLine) {
+                y += Math.round(lineHeight * 0.7);
+              } else {
+                const wls = wrapShareCardLines(ctx, [displayLine], maxTextWidth, baseFontSize, useSerif);
+                for (const wl of wls) {
+                  if (y > height - 180) break;
+                  ctx.fillText(wl, 110, y); y += lineHeight;
+                }
+              }
             }
           }
         }
+
+        ctx.textAlign = 'left';
+        ctx.fillStyle = muted;
+        ctx.font = '400 26px "Instrument Serif", Georgia, serif';
+        ctx.textAlign = 'right';
+        const prevSpacing = (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing;
+        (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = '-0.04em';
+        ctx.fillText('ezwrite.', width - 110, height - 130);
+        (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = prevSpacing ?? 'normal';
+        ctx.textAlign = 'left';
 
         const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png', 0.95));
         if (!blob) return;
