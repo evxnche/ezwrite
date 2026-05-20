@@ -1075,7 +1075,7 @@ const WritingInterface = () => {
 
     const lineIndex = parseInt(target.dataset.line || '0');
     const span = target;
-    const originalName = span.textContent || 'list';
+    const originalName = span.textContent || 'rename list';
 
     // Hide the blinking cursor while editing
     const headerDiv = span.closest('.ce-list-header');
@@ -1094,12 +1094,12 @@ const WritingInterface = () => {
     const commitRename = () => {
       span.contentEditable = 'false';
       if (headerDiv) headerDiv.classList.remove('ce-lh-editing');
-      const newName = (span.textContent || '').trim() || 'list';
+      const newName = (span.textContent || '').trim() || 'rename list';
       span.textContent = newName;
       // Update the underlying content
       pushUndo(true);
       const lines = contentRef.current.split('\n');
-      lines[lineIndex] = newName.toLowerCase() === 'list' ? 'list' : `list::${newName}`;
+      lines[lineIndex] = newName.toLowerCase() === 'rename list' ? 'list' : `list::${newName}`;
       structuralUpdate(lines.join('\n'));
     };
 
@@ -2196,6 +2196,62 @@ const WritingInterface = () => {
         ctx.fillText('ezwrite.', width - 110, height - 130);
         (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = prevSpacing ?? 'normal';
         ctx.textAlign = 'left';
+
+        // Draw polaroid images below text
+        const polaroidLines = content.split('\n').filter((l: string) => l.startsWith('polaroid::'));
+        if (polaroidLines.length > 0) {
+          await document.fonts.load('400 20px "Caveat"');
+          const frameP = 14;
+          const capH = 48;
+          const available = Math.max(80, height - 220 - y - 20);
+          const imgSz = Math.min(240, available - frameP * 2 - capH);
+          if (imgSz >= 60) {
+            const fW = imgSz + frameP * 2;
+            const fH = imgSz + frameP * 2 + capH;
+            const gap = 24;
+            const count = Math.min(polaroidLines.length, Math.floor((width - 220 + gap) / (fW + gap)));
+            const totalW = count * fW + (count - 1) * gap;
+            let px = (width - totalW) / 2;
+            const py = y + 24;
+            for (let li = 0; li < count; li++) {
+              const pm = polaroidLines[li].match(/^polaroid::([^|]+)\|?(.*)?$/);
+              if (!pm) { px += fW + gap; continue; }
+              const imgData = loadImage(pm[1]);
+              if (!imgData) { px += fW + gap; continue; }
+              const cap = (pm[2] ?? '').trim();
+              let hash = 0;
+              for (let ci = 0; ci < pm[1].length; ci++) hash = (hash * 31 + pm[1].charCodeAt(ci)) & 0xffff;
+              const rotateDeg = ((hash % 7) - 3) * 0.85;
+              const img = new Image();
+              await new Promise<void>(res => { img.onload = () => res(); img.onerror = () => res(); img.src = imgData; });
+              const cx = px + fW / 2;
+              const cy = py + fH / 2;
+              ctx.save();
+              ctx.translate(cx, cy);
+              ctx.rotate(rotateDeg * Math.PI / 180);
+              ctx.shadowColor = 'rgba(0,0,0,0.22)';
+              ctx.shadowBlur = 20;
+              ctx.fillStyle = '#F5ECDD';
+              ctx.fillRect(-fW / 2, -fH / 2, fW, fH);
+              ctx.shadowBlur = 0;
+              ctx.save();
+              ctx.beginPath();
+              ctx.rect(-imgSz / 2, -fH / 2 + frameP, imgSz, imgSz);
+              ctx.clip();
+              ctx.drawImage(img, -imgSz / 2, -fH / 2 + frameP, imgSz, imgSz);
+              ctx.restore();
+              if (cap) {
+                ctx.fillStyle = '#3a2e1e';
+                ctx.font = '400 20px "Caveat", cursive';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(cap, 0, fH / 2 - capH / 2);
+              }
+              ctx.restore();
+              px += fW + gap;
+            }
+          }
+        }
 
         const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png', 0.95));
         if (!blob) return;

@@ -27,18 +27,28 @@ export default function PolaroidImage({ imageId, initialCaption, onCaptionChange
   const [cropPos, setCropPos] = useState({ x: 50, y: 50 });
   const [isMultiLine, setIsMultiLine] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const outerRef = useRef<HTMLDivElement>(null);
   const cropPosRef = useRef(cropPos);
   useEffect(() => { cropPosRef.current = cropPos; }, [cropPos]);
   const src = loadImage(imageId);
   const rotation = seedRotation(imageId);
   const imgSize = frameWidth - PADDING * 2;
 
-  // Escape exits move mode
+  // Click outside or Escape exits move mode
   useEffect(() => {
     if (!moveMode) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMoveMode(false); };
+    const onMouseDown = (e: MouseEvent) => {
+      if (outerRef.current && !outerRef.current.contains(e.target as Node)) {
+        setMoveMode(false);
+      }
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('mousedown', onMouseDown);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mousedown', onMouseDown);
+    };
   }, [moveMode]);
 
   // Auto-grow textarea, detect multi-line
@@ -98,6 +108,7 @@ export default function PolaroidImage({ imageId, initialCaption, onCaptionChange
 
   return (
     <div
+      ref={outerRef}
       contentEditable={false}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
