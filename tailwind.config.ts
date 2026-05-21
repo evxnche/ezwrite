@@ -46,7 +46,7 @@ export default {
     				'serif'
     			],
     			mono: [
-    				'Roboto Mono',
+    				'IBM Plex Mono',
     				'ui-monospace',
     				'SFMono-Regular',
     				'Menlo',

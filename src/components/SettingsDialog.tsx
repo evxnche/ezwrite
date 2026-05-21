@@ -29,9 +29,6 @@ interface Props {
   // Spellcheck
   spellCheckEnabled?: boolean;
   onToggleSpellCheck?: () => void;
-  // Paper mode
-  paperMode?: boolean;
-  onTogglePaperMode?: () => void;
   // Folder
   dirName?: string;
   onPickFolder?: () => void;
@@ -67,8 +64,6 @@ export const SettingsDialog: React.FC<Props> = ({
   onToggleFont,
   spellCheckEnabled,
   onToggleSpellCheck,
-  paperMode,
-  onTogglePaperMode,
   dirName,
   onPickFolder,
   onClearFolder,
@@ -207,21 +202,6 @@ export const SettingsDialog: React.FC<Props> = ({
             >
               <span className={`pointer-events-none inline-block h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-transform ${
                 spellCheckEnabled ? 'translate-x-[20px]' : 'translate-x-[2px]'
-              } mt-[2px]`} />
-            </button>
-          </div>
-
-          {/* Paper mode — iOS toggle */}
-          <div className={`flex items-center justify-between`}>
-            <span className={`text-muted-foreground text-xs uppercase tracking-wider`}>paper mode</span>
-            <button
-              onClick={onTogglePaperMode}
-              className={`relative inline-flex h-[22px] w-[40px] shrink-0 cursor-pointer rounded-full transition-colors ${
-                paperMode ? 'bg-accent-foreground' : 'bg-muted-foreground/30'
-              }`}
-            >
-              <span className={`pointer-events-none inline-block h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-transform ${
-                paperMode ? 'translate-x-[20px]' : 'translate-x-[2px]'
               } mt-[2px]`} />
             </button>
           </div>

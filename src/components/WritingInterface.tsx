@@ -146,7 +146,7 @@ function sanitizeFileStem(value: string): string {
 }
 
 const getShareCardFont = (fontSize: number, useSerif: boolean) =>
-  `400 ${fontSize}px ${useSerif ? '"Playfair Display", Georgia, serif' : '"Roboto Mono", monospace'}`;
+  `400 ${fontSize}px ${useSerif ? '"Playfair Display", Georgia, serif' : '"IBM Plex Mono", monospace'}`;
 
 const VISUAL_METRICS = {
   editorMaxWidth: 'none',
@@ -373,18 +373,6 @@ const WritingInterface = () => {
       localStorage.setItem('ezwrite-dot-grid', 'false');
     }
   }, [showDotGrid]);
-
-  // Paper mode toggle (persisted)
-  const [paperMode, setPaperMode] = useState(() =>
-    localStorage.getItem('ezwrite-paper-mode') === 'true'
-  );
-  const handleTogglePaperMode = () => {
-    setPaperMode(v => {
-      const next = !v;
-      localStorage.setItem('ezwrite-paper-mode', String(next));
-      return next;
-    });
-  };
 
   // Show stats (word/char count) toggle (persisted)
   const [showStats, setShowStats] = useState(() =>
@@ -2763,7 +2751,7 @@ const WritingInterface = () => {
               onClick={handleEditorClick}
               onDragOver={handleDragOver}
               onDrop={handleDrop}
-              className={`${useSerif ? 'font-playfair' : 'font-mono'} text-base sm:text-lg font-light tracking-wide text-foreground ce-editor ${paperMode ? 'paper-mode' : ''}`}
+              className={`${useSerif ? 'font-playfair' : 'font-mono'} text-base sm:text-lg font-light tracking-wide text-foreground ce-editor`}
               style={editorStyle}
               spellCheck={spellCheckEnabled}
             />
@@ -2988,8 +2976,6 @@ const WritingInterface = () => {
               onToggleActiveProjectSync={() => {
                 if (activeProjectIdRef.current) handleToggleProjectSync(activeProjectIdRef.current);
               }}
-              paperMode={paperMode}
-              onTogglePaperMode={handleTogglePaperMode}
             />
           </>
         )}
