@@ -348,6 +348,12 @@
   padding: 2px 0;
 }
 
+.ce-editor.font-mono .ce-list-header {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 400;
+  letter-spacing: -0.025em;
+}
+
 .ce-lh-text {
   cursor: pointer;
 }
