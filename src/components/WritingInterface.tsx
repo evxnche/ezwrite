@@ -213,6 +213,56 @@ function wrapShareCardLines(
   return wrapped;
 }
 
+function getCoverCropRect(sourceWidth: number, sourceHeight: number, targetWidth: number, targetHeight: number) {
+  if (sourceWidth <= 0 || sourceHeight <= 0 || targetWidth <= 0 || targetHeight <= 0) {
+    return { sx: 0, sy: 0, sw: sourceWidth, sh: sourceHeight };
+  }
+
+  const sourceAspect = sourceWidth / sourceHeight;
+  const targetAspect = targetWidth / targetHeight;
+  if (sourceAspect > targetAspect) {
+    const sw = sourceHeight * targetAspect;
+    return { sx: (sourceWidth - sw) / 2, sy: 0, sw, sh: sourceHeight };
+  }
+
+  const sh = sourceWidth / targetAspect;
+  return { sx: 0, sy: (sourceHeight - sh) / 2, sw: sourceWidth, sh };
+}
+
+function drawImageCover(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+) {
+  const sourceWidth = img.naturalWidth || img.width;
+  const sourceHeight = img.naturalHeight || img.height;
+  const crop = getCoverCropRect(sourceWidth, sourceHeight, width, height);
+  ctx.drawImage(img, crop.sx, crop.sy, crop.sw, crop.sh, x, y, width, height);
+}
+
+function loadImageElement(src: string): Promise<HTMLImageElement> {
+  const img = new Image();
+  return new Promise((resolve, reject) => {
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Image failed to load'));
+    img.src = src;
+  });
+}
+
+async function createCoverImageDataUrl(src: string, size: number, mimeType: string): Promise<string> {
+  const img = await loadImageElement(src);
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return src;
+  drawImageCover(ctx, img, 0, 0, size, size);
+  return canvas.toDataURL(mimeType, 0.92);
+}
+
 const WritingInterface = () => {
   // --- Projects & Pages ---
   const initialProjectStateRef = useRef<{ projects: ProjectMeta[]; activeProjectId: string | null } | null>(null);
@@ -2398,15 +2448,16 @@ const WritingInterface = () => {
           let y = Math.max(140, Math.round((height - textHeight) / 2) - 10);
           ctx.fillStyle = text;
           ctx.font = getShareCardFont(baseFontSize, useSerif);
+          ctx.textAlign = 'center';
           ctx.textBaseline = 'top';
           visibleLines.forEach((line) => {
             if (!line) { y += Math.round(lineHeight * 0.7); return; }
-            ctx.fillText(line, 110, y);
+            ctx.fillText(line, width / 2, y);
             y += lineHeight;
           });
           if (wrapped.length > visibleLines.length) {
             ctx.fillStyle = muted;
-            ctx.fillText('...', 110, y);
+            ctx.fillText('...', width / 2, y);
           }
         } else {
           // Document-order render: text and images interleaved
@@ -2451,7 +2502,7 @@ const WritingInterface = () => {
               ctx.beginPath();
               ctx.rect(-imgSz / 2, -fH / 2 + frameP, imgSz, imgSz);
               ctx.clip();
-              ctx.drawImage(img, -imgSz / 2, -fH / 2 + frameP, imgSz, imgSz);
+              drawImageCover(ctx, img, -imgSz / 2, -fH / 2 + frameP, imgSz, imgSz);
               ctx.restore();
               if (cap) {
                 ctx.fillStyle = '#3a2e1e';
@@ -2476,14 +2527,14 @@ const WritingInterface = () => {
                 : trimmed;
               ctx.fillStyle = text;
               ctx.font = getShareCardFont(baseFontSize, useSerif);
-              ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+              ctx.textAlign = 'center'; ctx.textBaseline = 'top';
               if (!displayLine) {
                 y += Math.round(lineHeight * 0.7);
               } else {
                 const wls = wrapShareCardLines(ctx, [displayLine], maxTextWidth, baseFontSize, useSerif);
                 for (const wl of wls) {
                   if (y > height - 180) break;
-                  ctx.fillText(wl, 110, y); y += lineHeight;
+                  ctx.fillText(wl, width / 2, y); y += lineHeight;
                 }
               }
             }
@@ -2528,20 +2579,21 @@ const WritingInterface = () => {
     pdf.setFontSize(11);
     let y = margin;
 
-    const renderLines = (lines: string[]) => {
-      lines.forEach((line, i) => {
+    const renderLines = async (lines: string[]) => {
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
         const type = getLineType(lines, i);
         if (type === 'divider') {
           if (y > pageH - margin) { pdf.addPage(); y = margin; }
           pdf.setDrawColor(180); pdf.line(margin, y, pageW - margin, y);
           y += lh;
-          return;
+          continue;
         }
         if (type === 'timer') {
           const text = `⏱ ${getTimerArgs(line) || 'stopwatch'}`;
           if (y > pageH - margin) { pdf.addPage(); y = margin; }
           pdf.text(text, margin, y); y += lh;
-          return;
+          continue;
         }
         if (type === 'heading1') {
           pdf.setFontSize(18); pdf.setFont('helvetica', 'bold');
@@ -2549,7 +2601,7 @@ const WritingInterface = () => {
           if (y > pageH - margin) { pdf.addPage(); y = margin; }
           pdf.text(text, margin, y); y += lh * 1.8;
           pdf.setFontSize(11); pdf.setFont('helvetica', 'normal');
-          return;
+          continue;
         }
         if (type === 'heading2') {
           pdf.setFontSize(15); pdf.setFont('helvetica', 'bold');
@@ -2557,7 +2609,7 @@ const WritingInterface = () => {
           if (y > pageH - margin) { pdf.addPage(); y = margin; }
           pdf.text(text, margin, y); y += lh * 1.5;
           pdf.setFontSize(11); pdf.setFont('helvetica', 'normal');
-          return;
+          continue;
         }
         if (type === 'image') {
           const m = line.match(/^polaroid::([^|]+)\|?(.*)?$/);
@@ -2568,9 +2620,11 @@ const WritingInterface = () => {
                 const fmtRaw = (imgData.match(/^data:image\/(\w+);/) ?? [])[1] ?? 'jpeg';
                 const fmt = fmtRaw.toUpperCase().replace('JPG', 'JPEG');
                 const imgMm = 70;
+                const croppedImgData = await createCoverImageDataUrl(imgData, 900, fmt === 'PNG' ? 'image/png' : 'image/jpeg');
+                const croppedFmt = fmt === 'PNG' ? 'PNG' : 'JPEG';
                 if (y + imgMm > pageH - margin) { pdf.addPage(); y = margin; }
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                (pdf as any).addImage(imgData, fmt, margin, y, imgMm, imgMm);
+                (pdf as any).addImage(croppedImgData, croppedFmt, margin, y, imgMm, imgMm);
                 y += imgMm + lh * 0.5;
                 const cap = m[2]?.trim();
                 if (cap) {
@@ -2583,27 +2637,27 @@ const WritingInterface = () => {
               } catch { /* skip if format unsupported */ }
             }
           }
-          return;
+          continue;
         }
         let text = cleanForExport(line);
-        if (type === 'list-header') { text = ''; y += lh * 0.5; return; }
-        if (!text.trim()) { y += lh; if (y > pageH - margin) { pdf.addPage(); y = margin; } return; }
+        if (type === 'list-header') { text = ''; y += lh * 0.5; continue; }
+        if (!text.trim()) { y += lh; if (y > pageH - margin) { pdf.addPage(); y = margin; } continue; }
         const split = pdf.splitTextToSize(text, maxW);
         split.forEach((wrappedLine: string) => {
           if (y > pageH - margin) { pdf.addPage(); y = margin; }
           pdf.text(wrappedLine, margin, y); y += lh;
         });
         y += lh * 0.3;
-      });
+      }
     };
 
-    pages.forEach((page, pageIndex) => {
+    for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
       if (pageIndex > 0) {
         pdf.addPage();
         y = margin;
       }
-      renderLines(page.split('\n'));
-    });
+      await renderLines(pages[pageIndex].split('\n'));
+    }
 
     return pdf;
   };
