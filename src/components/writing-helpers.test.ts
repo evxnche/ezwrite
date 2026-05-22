@@ -5,6 +5,7 @@ import {
   contentToHTML,
   contentToMarkdown,
   extractContent,
+  getSlashCommands,
   markdownToContent,
   stripLegacyImageLines,
   STRUCK_MARKER,
@@ -87,6 +88,18 @@ test('extractContent keeps text typed as a top-level node in the first line', ()
   });
 
   assert.equal(extractContent(editor as unknown as HTMLElement), 'rewritten first line');
+});
+
+test('getSlashCommands omits image when images are disabled', () => {
+  const names = getSlashCommands(false).map((c) => c.name);
+  assert.equal(names.includes('image'), false);
+  assert.equal(names.includes('photo'), false);
+});
+
+test('getSlashCommands includes image when images are enabled', () => {
+  const names = getSlashCommands(true).map((c) => c.name);
+  assert.equal(names.includes('image'), true);
+  assert.equal(names.includes('photo'), false);
 });
 
 test('stripLegacyImageLines removes stored image markers from legacy content', () => {

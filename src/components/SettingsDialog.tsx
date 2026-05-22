@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Cloud, FolderOpen, Lock, RefreshCw } from 'lucide-react';
 import type { ColorTheme } from './preferences';
@@ -10,40 +10,94 @@ const THEMES = [
   { id: 'red' as ColorTheme, label: 'red', swatch: 'bg-[#7C3232]' },
 ];
 
+const SETTINGS_TABS = ['appearance', 'features', 'storage'] as const;
+type SettingsTab = (typeof SETTINGS_TABS)[number];
+
+const SEGMENT_TRACK = 'flex gap-1 p-1 rounded-xl bg-muted/30 border border-border/60';
+const PANEL_SURFACE = 'rounded-xl border border-border/60';
+
+function segmentItemClass(active: boolean, extra = '') {
+  return [
+    'relative rounded-lg text-xs transition-colors',
+    active
+      ? 'text-accent-foreground after:absolute after:left-1/2 after:bottom-[4px] after:h-[2px] after:w-4 after:-translate-x-1/2 after:rounded-full after:bg-current'
+      : 'text-muted-foreground hover:text-foreground',
+    extra,
+  ].join(' ');
+}
+
+function SettingsToggle({
+  label,
+  checked,
+  onToggle,
+  hint,
+}: {
+  label: string;
+  checked?: boolean;
+  onToggle?: () => void;
+  hint?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-muted-foreground text-xs uppercase tracking-wider">{label}</span>
+      <div className="flex items-center gap-2 shrink-0">
+        {hint}
+        <button
+          type="button"
+          onClick={onToggle}
+          className={`relative inline-flex h-[22px] w-[40px] shrink-0 cursor-pointer rounded-full transition-colors ${
+            checked ? 'bg-accent-foreground' : 'bg-muted-foreground/30'
+          }`}
+        >
+          <span
+            className={`pointer-events-none inline-block h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-transform mt-[2px] ${
+              checked ? 'translate-x-[20px]' : 'translate-x-[2px]'
+            }`}
+          />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  // Stats
   wordCount?: number;
   charCount?: number;
   showStats?: boolean;
   onToggleStats?: () => void;
-  // Theme
   colorTheme?: ColorTheme;
   onSelectColorTheme?: (theme: ColorTheme) => void;
   mode?: 'dark' | 'light';
   onToggleMode?: () => void;
-  // Font
   useSerif?: boolean;
   onToggleFont?: () => void;
-  // Spellcheck
   spellCheckEnabled?: boolean;
   onToggleSpellCheck?: () => void;
-  // Folder
+  cmdArrowPageNav?: boolean;
+  onToggleCmdArrowPageNav?: () => void;
+  imagesEnabled?: boolean;
+  onToggleImages?: () => void;
   dirName?: string;
   onPickFolder?: () => void;
   onClearFolder?: () => void;
   fsSupported?: boolean;
-  // Sync
   syncConfigured?: boolean;
   syncUnlocked?: boolean;
   syncBusy?: boolean;
   syncStatus?: string;
   syncError?: string;
+  syncEmail?: string;
   syncPassword?: string;
+  syncUserEmail?: string;
+  syncPlan?: 'free' | 'paid';
+  syncCanUse?: boolean;
   activeProjectSynced?: boolean;
+  onSyncEmailChange?: (value: string) => void;
   onSyncPasswordChange?: (value: string) => void;
   onUnlockSync?: () => void;
+  onCreateSyncAccount?: () => void;
   onLockSync?: () => void;
   onSyncNow?: () => void;
   onToggleActiveProjectSync?: () => void;
@@ -64,6 +118,10 @@ export const SettingsDialog: React.FC<Props> = ({
   onToggleFont,
   spellCheckEnabled,
   onToggleSpellCheck,
+  cmdArrowPageNav,
+  onToggleCmdArrowPageNav,
+  imagesEnabled,
+  onToggleImages,
   dirName,
   onPickFolder,
   onClearFolder,
@@ -73,247 +131,274 @@ export const SettingsDialog: React.FC<Props> = ({
   syncBusy,
   syncStatus,
   syncError,
+  syncEmail,
   syncPassword,
+  syncUserEmail,
+  syncPlan = 'free',
+  syncCanUse,
   activeProjectSynced,
+  onSyncEmailChange,
   onSyncPasswordChange,
   onUnlockSync,
+  onCreateSyncAccount,
   onLockSync,
   onSyncNow,
   onToggleActiveProjectSync,
 }) => {
+  const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
+
+  useEffect(() => {
+    if (open) setActiveTab('appearance');
+  }, [open]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={`max-w-[90vw] sm:max-w-md bg-popover text-popover-foreground !rounded-2xl font-mono text-sm`}>
+      <DialogContent className="max-w-[90vw] sm:max-w-md h-[min(82vh,34rem)] grid-rows-[auto_auto_minmax(0,1fr)_auto] bg-popover text-popover-foreground !rounded-2xl font-mono text-sm">
         <DialogHeader>
-          <DialogTitle className={`font-mono text-base sm:text-lg lowercase truncate`}>
+          <DialogTitle className="font-mono text-base sm:text-lg lowercase truncate">
             settings
           </DialogTitle>
         </DialogHeader>
 
-        <div className={`space-y-4`}>
-
-          {/* Theme — color orbs */}
-          <div className={`flex items-center justify-between`}>
-            <span className={`text-muted-foreground text-xs uppercase tracking-wider`}>theme</span>
-            <div className={`flex gap-2`}>
-              {THEMES.map(theme => (
-                <button
-                  key={theme.id}
-                  onClick={() => {
-                    if (colorTheme !== theme.id) onSelectColorTheme?.(theme.id);
-                  }}
-                  className={`w-7 h-7 rounded-full border-2 transition-all ${
-                    colorTheme === theme.id ? 'border-accent-foreground scale-110' : 'border-transparent hover:scale-105'
-                  }`}
-                  style={theme.id === '' ? { background: document.documentElement.classList.contains('dark') ? '#171717' : '#EAE7D0' } : undefined}
-                >
-                  {theme.id === 'blue' && <div className={`w-full h-full rounded-full bg-[#0623ad]`} />}
-                  {theme.id === 'green' && <div className={`w-full h-full rounded-full bg-[#285135]`} />}
-                  {theme.id === 'red' && <div className={`w-full h-full rounded-full bg-[#7C3232]`} />}
-                  {theme.id === '' && <div className={`w-full h-full rounded-full`} />}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Mode — light/dark rendered as word toggles */}
-          <div className={`flex items-center justify-between`}>
-            <span className={`text-muted-foreground text-xs uppercase tracking-wider`}>mode</span>
-            <div className={`flex gap-2`}>
-              <button
-                onClick={() => { if (mode !== 'light') onToggleMode?.(); }}
-                className={`px-2.5 py-1 rounded-[6px] text-xs transition-all font-mono ${
-                  mode === 'light'
-                    ? 'bg-accent/20 text-accent-foreground ring-1 ring-accent-foreground/30'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                light
-              </button>
-              <button
-                onClick={() => { if (mode !== 'dark') onToggleMode?.(); }}
-                className={`px-2.5 py-1 rounded-[6px] text-xs transition-all font-mono ${
-                  mode === 'dark'
-                    ? 'bg-accent/20 text-accent-foreground ring-1 ring-accent-foreground/30'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                dark
-              </button>
-            </div>
-          </div>
-
-          {/* Font style — serif/mono rendered in their own typefaces */}
-          <div className={`flex items-center justify-between`}>
-            <span className={`text-muted-foreground text-xs uppercase tracking-wider`}>font style</span>
-            <div className={`flex gap-2`}>
-              <button
-                onClick={() => { if (!useSerif) onToggleFont?.(); }}
-                className={`px-2.5 py-1 rounded-[6px] text-xs transition-all ${
-                  useSerif
-                    ? 'bg-accent/20 text-accent-foreground ring-1 ring-accent-foreground/30'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-                style={{ fontFamily: "'Instrument Serif', serif" }}
-              >
-                serif
-              </button>
-              <button
-                onClick={() => { if (useSerif) onToggleFont?.(); }}
-                className={`px-2.5 py-1 rounded-[6px] text-xs transition-all font-mono ${
-                  !useSerif
-                    ? 'bg-accent/20 text-accent-foreground ring-1 ring-accent-foreground/30'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                mono
-              </button>
-            </div>
-          </div>
-
-          {/* Word/char count — iOS toggle */}
-          <div className={`flex items-center justify-between`}>
-            <span className={`text-muted-foreground text-xs uppercase tracking-wider`}>word/char count</span>
-            <div className={`flex items-center gap-2`}>
-              {showStats && (
-                <span className={`text-xs text-muted-foreground`}>{wordCount ?? 0}w · {charCount ?? 0}c</span>
-              )}
-              <button
-                onClick={onToggleStats}
-                className={`relative inline-flex h-[22px] w-[40px] shrink-0 cursor-pointer rounded-full transition-colors ${
-                  showStats ? 'bg-accent-foreground' : 'bg-muted-foreground/30'
-                }`}
-              >
-                <span className={`pointer-events-none inline-block h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-transform ${
-                  showStats ? 'translate-x-[20px]' : 'translate-x-[2px]'
-                } mt-[2px]`} />
-              </button>
-            </div>
-          </div>
-
-          {/* Spellcheck — iOS toggle */}
-          <div className={`flex items-center justify-between`}>
-            <span className={`text-muted-foreground text-xs uppercase tracking-wider`}>spellcheck</span>
+        <div className={SEGMENT_TRACK} role="tablist" aria-label="settings sections">
+          {SETTINGS_TABS.map(tab => (
             <button
-              onClick={onToggleSpellCheck}
-              className={`relative inline-flex h-[22px] w-[40px] shrink-0 cursor-pointer rounded-full transition-colors ${
-                spellCheckEnabled ? 'bg-accent-foreground' : 'bg-muted-foreground/30'
-              }`}
+              key={tab}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab}
+              onClick={() => setActiveTab(tab)}
+              className={segmentItemClass(activeTab === tab, 'flex-1 px-2 py-1.5 lowercase font-mono')}
             >
-              <span className={`pointer-events-none inline-block h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-transform ${
-                spellCheckEnabled ? 'translate-x-[20px]' : 'translate-x-[2px]'
-              } mt-[2px]`} />
+              {tab}
             </button>
-          </div>
+          ))}
+        </div>
 
-          {/* Storage — highlighted to draw attention */}
-          {fsSupported && (
-            <div className={`mt-2 rounded-xl border-2 border-dashed border-accent-foreground/40 bg-accent/10 p-3`}>
-              {dirName ? (
-                <div className={`flex items-center justify-between`}>
-                  <span className={`flex items-center gap-1.5 text-xs text-foreground`}>
-                    <FolderOpen size={14} className="text-accent-foreground" />
-                    saving to <span className={`text-accent-foreground`}>/{dirName}</span>
-                  </span>
+        <div className="overflow-y-auto pr-1 -mr-1">
+          {activeTab === 'appearance' && (
+            <div role="tabpanel" className="space-y-3 pt-1">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground text-xs uppercase tracking-wider">theme</span>
+                <div className="flex gap-2">
+                  {THEMES.map(theme => (
+                    <button
+                      key={theme.id}
+                      onClick={() => {
+                        if (colorTheme !== theme.id) onSelectColorTheme?.(theme.id);
+                      }}
+                      className={`w-7 h-7 rounded-full border-2 transition-all ${
+                        colorTheme === theme.id ? 'border-accent-foreground scale-110' : 'border-transparent hover:scale-105'
+                      }`}
+                      style={theme.id === '' ? { background: document.documentElement.classList.contains('dark') ? '#171717' : '#EAE7D0' } : undefined}
+                    >
+                      {theme.id === 'blue' && <div className="w-full h-full rounded-full bg-[#0623ad]" />}
+                      {theme.id === 'green' && <div className="w-full h-full rounded-full bg-[#285135]" />}
+                      {theme.id === 'red' && <div className="w-full h-full rounded-full bg-[#7C3232]" />}
+                      {theme.id === '' && <div className="w-full h-full rounded-full" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground text-xs uppercase tracking-wider shrink-0">mode</span>
+                <div className={`${SEGMENT_TRACK} shrink-0`}>
                   <button
-                    onClick={onClearFolder}
-                    className={`text-xs text-muted-foreground hover:text-foreground transition-colors`}
+                    type="button"
+                    onClick={() => { if (mode !== 'light') onToggleMode?.(); }}
+                    className={segmentItemClass(mode === 'light', 'px-2.5 py-1 font-mono')}
                   >
-                    change
+                    light
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { if (mode !== 'dark') onToggleMode?.(); }}
+                    className={segmentItemClass(mode === 'dark', 'px-2.5 py-1 font-mono')}
+                  >
+                    dark
                   </button>
                 </div>
-              ) : (
-                <button
-                  onClick={onPickFolder}
-                  className={`flex items-center gap-1.5 text-xs text-accent-foreground hover:underline w-full`}
-                >
-                  <FolderOpen size={14} />
-                  choose save folder →
-                </button>
-              )}
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground text-xs uppercase tracking-wider shrink-0">font style</span>
+                <div className={`${SEGMENT_TRACK} shrink-0`}>
+                  <button
+                    type="button"
+                    onClick={() => { if (!useSerif) onToggleFont?.(); }}
+                    className={segmentItemClass(useSerif, 'px-2.5 py-1')}
+                    style={{ fontFamily: "'Instrument Serif', serif" }}
+                  >
+                    serif
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { if (useSerif) onToggleFont?.(); }}
+                    className={segmentItemClass(!useSerif, 'px-2.5 py-1 font-mono')}
+                  >
+                    mono
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
-          <div className={`mt-2 rounded-xl border border-border/60 bg-muted/10 p-3 space-y-3`}>
-            <div className={`flex items-center justify-between`}>
-              <span className={`flex items-center gap-1.5 text-muted-foreground text-xs uppercase tracking-wider`}>
-                <Lock size={13} />
-                sync
-              </span>
-              <span className={`text-[10px] text-muted-foreground lowercase`}>{syncStatus}</span>
+          {activeTab === 'features' && (
+            <div role="tabpanel" className="space-y-3 pt-1">
+              <SettingsToggle
+                label="word/char count"
+                checked={showStats}
+                onToggle={onToggleStats}
+                hint={showStats ? (
+                  <span className="text-xs text-muted-foreground">{wordCount ?? 0}w · {charCount ?? 0}c</span>
+                ) : undefined}
+              />
+              <SettingsToggle label="spellcheck" checked={spellCheckEnabled} onToggle={onToggleSpellCheck} />
+              <SettingsToggle label="cmd+←/→ pages" checked={cmdArrowPageNav} onToggle={onToggleCmdArrowPageNav} />
+              <SettingsToggle label="images" checked={imagesEnabled} onToggle={onToggleImages} />
             </div>
+          )}
 
-            {!syncConfigured ? (
-              <div className={`text-xs text-muted-foreground lowercase`}>
-                add supabase env to enable sync
-              </div>
-            ) : (
-              <>
-                <div className={`flex items-center gap-2`}>
-                  <input
-                    type="password"
-                    value={syncPassword ?? ''}
-                    onChange={(e) => onSyncPasswordChange?.(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') onUnlockSync?.();
-                    }}
-                    placeholder={syncUnlocked ? 'sync unlocked' : 'sync password'}
-                    disabled={syncBusy || syncUnlocked}
-                    className={`min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs outline-none focus:border-accent-foreground/50 disabled:opacity-50`}
-                  />
-                  {syncUnlocked ? (
-                    <button
-                      onClick={onLockSync}
-                      disabled={syncBusy}
-                      className={`px-2.5 py-1.5 rounded-md text-xs font-mono text-muted-foreground hover:text-foreground disabled:opacity-40`}
-                    >
-                      lock
-                    </button>
+          {activeTab === 'storage' && (
+            <div role="tabpanel" className="space-y-4 pt-1">
+              {fsSupported && (
+                <div className="space-y-2">
+                  <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">local folder</h3>
+                  <div className={`${PANEL_SURFACE} border-2 border-dashed border-accent-foreground/40 bg-accent/10 p-3`}>
+                    {dirName ? (
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-1.5 text-xs text-foreground">
+                          <FolderOpen size={14} className="text-accent-foreground" />
+                          saving to <span className="text-accent-foreground">/{dirName}</span>
+                        </span>
+                        <button
+                          onClick={onClearFolder}
+                          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          change
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={onPickFolder}
+                        className="flex items-center gap-1.5 text-xs text-accent-foreground hover:underline w-full"
+                      >
+                        <FolderOpen size={14} />
+                        choose save folder →
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">sync</h3>
+                <div className={`${PANEL_SURFACE} bg-muted/10 p-3 space-y-3`}>
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-muted-foreground text-xs uppercase tracking-wider">
+                      <Lock size={13} />
+                      account
+                    </span>
+                    <span className="text-[10px] text-muted-foreground lowercase">{syncStatus}</span>
+                  </div>
+
+                  {!syncConfigured ? (
+                    <div className="text-xs text-muted-foreground lowercase">
+                      add supabase env to enable sync
+                    </div>
                   ) : (
-                    <button
-                      onClick={onUnlockSync}
-                      disabled={syncBusy}
-                      className={`px-2.5 py-1.5 rounded-md text-xs font-mono bg-accent/20 text-accent-foreground disabled:opacity-40`}
-                    >
-                      unlock
-                    </button>
+                    <>
+                      {syncUnlocked ? (
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0 text-xs text-muted-foreground lowercase">
+                            <div className="truncate text-foreground">{syncUserEmail}</div>
+                            <div>{syncPlan === 'paid' ? 'paid sync active' : 'free: local only'}</div>
+                          </div>
+                          <button
+                            onClick={onLockSync}
+                            disabled={syncBusy}
+                            className="px-2.5 py-1.5 rounded-lg text-xs font-mono text-muted-foreground hover:text-foreground disabled:opacity-40"
+                          >
+                            sign out
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <input
+                            type="email"
+                            value={syncEmail ?? ''}
+                            onChange={(e) => onSyncEmailChange?.(e.target.value)}
+                            placeholder="email"
+                            disabled={syncBusy}
+                            className="w-full rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-xs outline-none focus:border-accent-foreground/50 disabled:opacity-50"
+                          />
+                          <input
+                            type="password"
+                            value={syncPassword ?? ''}
+                            onChange={(e) => onSyncPasswordChange?.(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') onUnlockSync?.();
+                            }}
+                            placeholder="password"
+                            disabled={syncBusy}
+                            className="w-full rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-xs outline-none focus:border-accent-foreground/50 disabled:opacity-50"
+                          />
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={onUnlockSync}
+                              disabled={syncBusy}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-mono bg-accent/20 text-accent-foreground disabled:opacity-40"
+                            >
+                              sign in
+                            </button>
+                            <button
+                              onClick={onCreateSyncAccount}
+                              disabled={syncBusy}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-mono text-muted-foreground hover:text-foreground disabled:opacity-40"
+                            >
+                              create
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between">
+                        <button
+                          onClick={onToggleActiveProjectSync}
+                          disabled={syncBusy || !syncCanUse}
+                          className={`flex items-center gap-1.5 text-xs transition-colors ${
+                            activeProjectSynced ? 'text-accent-foreground' : 'text-muted-foreground hover:text-foreground'
+                          } disabled:opacity-40`}
+                        >
+                          <Cloud size={13} />
+                          {activeProjectSynced ? 'current doc synced' : 'sync current doc'}
+                        </button>
+                        <button
+                          onClick={onSyncNow}
+                          disabled={syncBusy || !syncCanUse}
+                          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-40"
+                        >
+                          <RefreshCw size={13} />
+                          now
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {syncError && (
+                    <div className="text-[10px] text-destructive lowercase">
+                      {syncError}
+                    </div>
                   )}
                 </div>
-
-                <div className={`flex items-center justify-between`}>
-                  <button
-                    onClick={onToggleActiveProjectSync}
-                    disabled={syncBusy}
-                    className={`flex items-center gap-1.5 text-xs transition-colors ${
-                      activeProjectSynced ? 'text-accent-foreground' : 'text-muted-foreground hover:text-foreground'
-                    } disabled:opacity-40`}
-                  >
-                    <Cloud size={13} />
-                    {activeProjectSynced ? 'current doc synced' : 'sync current doc'}
-                  </button>
-                  <button
-                    onClick={onSyncNow}
-                    disabled={syncBusy || !syncUnlocked}
-                    className={`flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-40`}
-                  >
-                    <RefreshCw size={13} />
-                    now
-                  </button>
-                </div>
-              </>
-            )}
-
-            {syncError && (
-              <div className={`text-[10px] text-destructive lowercase`}>
-                {syncError}
               </div>
-            )}
-          </div>
-
+            </div>
+          )}
         </div>
 
-        <div className={`border-t border-border pt-3 mt-1`}>
-          <p className={`font-mono text-xs text-muted-foreground lowercase`}>
+        <div className="border-t border-border pt-3 mt-1">
+          <p className="font-mono text-xs text-muted-foreground lowercase">
             ezwrite · built by evan :)
           </p>
         </div>

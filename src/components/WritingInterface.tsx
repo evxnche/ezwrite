@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, Trash2 } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -29,7 +29,7 @@ import {
 } from './editor-behavior';
 import {
   STRUCK_MARKER, LIST_EXIT, getCleanLine, isLineStruck, getLineType,
-  getTimerArgs, SLASH_COMMANDS, INDENT,
+  getTimerArgs, getSlashCommands, INDENT,
   contentToHTML, extractContent, setCursorPosition,
   contentToMarkdown, markdownToContent,
 } from './writing-helpers';
@@ -316,9 +316,10 @@ const WritingInterface = () => {
   const [isExportingShareCard, setIsExportingShareCard] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [syncEmail, setSyncEmail] = useState('');
   const [syncPassword, setSyncPassword] = useState('');
   const [syncSession, setSyncSession] = useState<SyncSession | null>(null);
-  const [syncStatus, setSyncStatus] = useState('sync locked');
+  const [syncStatus, setSyncStatus] = useState('free: local only');
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncError, setSyncError] = useState('');
   const savedFlashTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
@@ -385,6 +386,23 @@ const WritingInterface = () => {
       document.documentElement.removeAttribute('data-color-theme');
     }
   }, [colorTheme]);
+
+  // Keep theme-color meta tag in sync with actual background
+  useEffect(() => {
+    if (!mounted) return;
+    const bg = getComputedStyle(document.body).backgroundColor;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+      // Convert rgb(r, g, b) to hex
+      const m = bg.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+      if (m) {
+        const hex = '#' + [m[1], m[2], m[3]]
+          .map(x => parseInt(x).toString(16).padStart(2, '0'))
+          .join('');
+        meta.setAttribute('content', hex);
+      }
+    }
+  }, [mounted, theme, colorTheme]);
   const handleToggleColorTheme = () => {
     setColorTheme(v => {
       const next = getNextColorTheme(v);
@@ -437,6 +455,31 @@ const WritingInterface = () => {
       return next;
     });
   };
+
+  // Cmd+←/→ page navigation (persisted, default on)
+  const [cmdArrowPageNav, setCmdArrowPageNav] = useState(() =>
+    localStorage.getItem('ezwrite-cmd-arrow-pages') !== 'false'
+  );
+  const handleToggleCmdArrowPageNav = () => {
+    setCmdArrowPageNav(v => {
+      const next = !v;
+      localStorage.setItem('ezwrite-cmd-arrow-pages', String(next));
+      return next;
+    });
+  };
+
+  // Images in editor (persisted, default on)
+  const [imagesEnabled, setImagesEnabled] = useState(() =>
+    localStorage.getItem('ezwrite-images-enabled') !== 'false'
+  );
+  const handleToggleImages = () => {
+    setImagesEnabled(v => {
+      const next = !v;
+      localStorage.setItem('ezwrite-images-enabled', String(next));
+      return next;
+    });
+  };
+  const slashCommands = useMemo(() => getSlashCommands(imagesEnabled), [imagesEnabled]);
 
   // Timer alert mode (persisted)
   const [timerAlertMode, setTimerAlertMode] = useState<'visual' | 'audio' | 'both' | 'silent'>(() =>
@@ -565,6 +608,7 @@ const WritingInterface = () => {
 
   const pushProjectToSync = useCallback(async (projectId: string, session = syncSessionRef.current) => {
     if (!session || getSyncConfigStatus() !== 'ready') return;
+    if (session.plan !== 'paid') return;
     const meta = getProjectMeta(projectId);
     if (!meta?.syncEnabled) return;
     const pages = projectId === activeProjectIdRef.current ? [...pagesRef.current] : getProjectPages(projectId);
@@ -583,6 +627,7 @@ const WritingInterface = () => {
 
   const scheduleSyncPush = useCallback((projectId = activeProjectIdRef.current) => {
     if (!projectId || !syncSessionRef.current) return;
+    if (syncSessionRef.current.plan !== 'paid') return;
     if (!getProjectMeta(projectId)?.syncEnabled) return;
     clearTimeout(syncPushTimeoutRef.current);
     syncPushTimeoutRef.current = setTimeout(() => {
@@ -1044,6 +1089,17 @@ const WritingInterface = () => {
     setScratchpadOpen(true);
   }, []);
 
+  const handleToggleSideTab = useCallback(() => {
+    setNotesOpen(v => {
+      if (v) {
+        setScratchpadOpen(false);
+        return false;
+      }
+      setScratchpadOpen(false);
+      return true;
+    });
+  }, []);
+
   const handleScratchpadChange = useCallback((value: string) => {
     setScratchpad(value);
     persistScratchpad(value);
@@ -1117,6 +1173,10 @@ const WritingInterface = () => {
     setSyncError('');
     setSyncStatus('syncing...');
     try {
+      if (session.plan !== 'paid') {
+        setSyncStatus('paid sync only');
+        return;
+      }
       const rows = await listRemoteSyncNotes(session);
       await applyRemoteSyncRows(rows, session);
       const syncedProjects = listProjects().filter((project) => project.syncEnabled);
@@ -1136,10 +1196,15 @@ const WritingInterface = () => {
     }
   }, [applyRemoteSyncRows, pushProjectToSync]);
 
-  const handleUnlockSync = useCallback(async () => {
+  const handleUnlockSync = useCallback(async (createAccount = false) => {
+    const email = syncEmail.trim().toLowerCase();
     const password = syncPassword.trim();
+    if (!email) {
+      setSyncError('Enter email');
+      return;
+    }
     if (!password) {
-      setSyncError('Enter sync password');
+      setSyncError('Enter password');
       return;
     }
     if (getSyncConfigStatus() !== 'ready') {
@@ -1149,10 +1214,10 @@ const WritingInterface = () => {
     setSyncBusy(true);
     setSyncError('');
     try {
-      const session = await createSyncSession(password);
+      const session = await createSyncSession({ email, password, createAccount });
       setSyncSession(session);
       syncSessionRef.current = session;
-      setSyncStatus('sync unlocked');
+      setSyncStatus(session.plan === 'paid' ? 'sync unlocked' : 'paid sync only');
       await syncAllProjects(session);
     } catch (error) {
       setSyncError(error instanceof Error ? error.message : 'Could not unlock sync');
@@ -1160,27 +1225,32 @@ const WritingInterface = () => {
     } finally {
       setSyncBusy(false);
     }
-  }, [syncPassword, syncAllProjects]);
+  }, [syncEmail, syncPassword, syncAllProjects]);
 
   const handleLockSync = useCallback(() => {
     setSyncSession(null);
     syncSessionRef.current = null;
+    setSyncEmail('');
     setSyncPassword('');
-    setSyncStatus('sync locked');
+    setSyncStatus('free: local only');
   }, []);
 
   const handleToggleProjectSync = useCallback((projectId: string) => {
     flushCurrentProject();
     const project = getProjectMeta(projectId);
     const next = !project?.syncEnabled;
+    if (next && !syncSessionRef.current) {
+      setSyncStatus('sign in to sync');
+      return;
+    }
+    if (next && syncSessionRef.current.plan !== 'paid') {
+      setSyncStatus('paid sync only');
+      return;
+    }
     setProjectSyncEnabled(projectId, next);
     setProjects(listProjects());
     if (!next) {
       setSyncStatus('local only');
-      return;
-    }
-    if (!syncSessionRef.current) {
-      setSyncStatus('enter password to sync');
       return;
     }
     setSyncStatus('syncing...');
@@ -1535,7 +1605,7 @@ const WritingInterface = () => {
       const trimmed = visibleText.trim();
       if (/^\/\w{0,10}$/.test(trimmed)) {
         const filter = trimmed.slice(1);
-        const matches = SLASH_COMMANDS.filter(c => c.name.startsWith(filter.toLowerCase()));
+        const matches = slashCommands.filter(c => c.name.startsWith(filter.toLowerCase()));
         if (matches.length > 0) {
           const sel = window.getSelection();
           if (sel && sel.rangeCount) {
@@ -1603,8 +1673,9 @@ const WritingInterface = () => {
     } else if (command === 'sidetab') {
       lines[lineIndex] = '';
       structuralUpdate(lines.join('\n'), lineIndex, 0, false);
-      handleOpenScratchpad();
-    } else if (command === 'photo') {
+      handleToggleSideTab();
+    } else if (command === 'image') {
+      if (!imagesEnabled) return;
       lines[lineIndex] = '';
       structuralUpdate(lines.join('\n'), lineIndex, 0, false);
       setSlashPopup(null);
@@ -1638,7 +1709,7 @@ const WritingInterface = () => {
       structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
     }
     setSlashPopup(null);
-  }, [handleOpenDocs, handleOpenScratchpad, pushUndo, structuralUpdate]);
+  }, [handleToggleSideTab, imagesEnabled, pushUndo, structuralUpdate]);
 
   // Slash command select
   const handleSlashSelect = useCallback((command: string) => {
@@ -1647,7 +1718,7 @@ const WritingInterface = () => {
   }, [applySlashCommand, slashPopup]);
 
   const filteredCommands = slashPopup
-    ? SLASH_COMMANDS.filter(c => c.name.startsWith(slashPopup.filter.toLowerCase()))
+    ? slashCommands.filter(c => c.name.startsWith(slashPopup.filter.toLowerCase()))
     : [];
 
   useEffect(() => {
@@ -1886,13 +1957,13 @@ const WritingInterface = () => {
       }
     }
 
-    // Cmd/Ctrl+Left/Right — switch page
-    if ((e.metaKey || e.ctrlKey) && e.key === 'ArrowLeft') {
+    // Cmd/Ctrl+Left/Right — switch page (optional; off = native sentence navigation)
+    if (cmdArrowPageNav && (e.metaKey || e.ctrlKey) && e.key === 'ArrowLeft') {
       e.preventDefault();
       switchToPage(currentPageRef.current - 1);
       return;
     }
-    if ((e.metaKey || e.ctrlKey) && e.key === 'ArrowRight') {
+    if (cmdArrowPageNav && (e.metaKey || e.ctrlKey) && e.key === 'ArrowRight') {
       e.preventDefault();
       switchToPage(currentPageRef.current + 1);
       return;
@@ -1964,7 +2035,7 @@ const WritingInterface = () => {
       const freshOffset = offset;
       const li = Math.min(lineIndex, freshLines.length - 1);
       const currentLine = freshLines[li] || '';
-      const exactSlashCommand = getExactSlashCommand(currentLine);
+      const exactSlashCommand = getExactSlashCommand(currentLine, slashCommands);
       if (exactSlashCommand) {
         applySlashCommand(exactSlashCommand, li);
         return;
@@ -2236,13 +2307,15 @@ const WritingInterface = () => {
   }, [saveContent]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!imagesEnabled) return;
     e.preventDefault();
     e.stopPropagation();
     const hasImage = Array.from(e.dataTransfer.types).includes('Files');
     e.dataTransfer.dropEffect = hasImage ? 'copy' : 'none';
-  }, []);
+  }, [imagesEnabled]);
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
+    if (!imagesEnabled) return;
     e.preventDefault();
     e.stopPropagation();
     const file = Array.from(e.dataTransfer.files).find(f => f.type.startsWith('image/'));
@@ -2266,7 +2339,7 @@ const WritingInterface = () => {
     ls.splice(insertAt, 0, `polaroid::${id}|`);
     if (ls[ls.length - 1] !== '') ls.push('');
     structuralUpdate(ls.join('\n'), insertAt + 1, 0);
-  }, [pushUndo, structuralUpdate]);
+  }, [imagesEnabled, pushUndo, structuralUpdate]);
 
   const getLinePointFromDOMPoint = useCallback((container: Node, domOffset: number): { lineIndex: number; offset: number } | null => {
     const editor = editorRef.current;
@@ -2952,6 +3025,7 @@ const WritingInterface = () => {
           onDeleteProject={handleDeleteProject}
           onRenameProject={handleRenameProject}
           isProjectSynced={(id) => Boolean(getProjectMeta(id)?.syncEnabled)}
+          syncCanUse={syncSession?.plan === 'paid'}
           onToggleProjectSync={handleToggleProjectSync}
           onOpenSettings={() => { setNotesOpen(false); setSettingsOpen(true); }}
           onOpenScratchpad={handleOpenScratchpad}
@@ -2993,6 +3067,7 @@ const WritingInterface = () => {
               onToggleFont={handleToggleFont}
               colorTheme={colorTheme}
               onToggleColorTheme={handleToggleColorTheme}
+              imagesEnabled={imagesEnabled}
             />
 
             <SettingsDialog
@@ -3010,19 +3085,29 @@ const WritingInterface = () => {
               onToggleFont={handleToggleFont}
               spellCheckEnabled={spellCheckEnabled}
               onToggleSpellCheck={handleToggleSpellCheck}
+              cmdArrowPageNav={cmdArrowPageNav}
+              onToggleCmdArrowPageNav={handleToggleCmdArrowPageNav}
+              imagesEnabled={imagesEnabled}
+              onToggleImages={handleToggleImages}
               dirName={getDirName(dirHandle)}
               onPickFolder={handlePickFolder}
               onClearFolder={handleClearFolder}
               fsSupported={isFileSystemSupported()}
               syncConfigured={getSyncConfigStatus() === 'ready'}
               syncUnlocked={Boolean(syncSession)}
+              syncUserEmail={syncSession?.email}
+              syncPlan={syncSession?.plan ?? 'free'}
               syncBusy={syncBusy}
               syncStatus={syncStatus}
               syncError={syncError}
+              syncEmail={syncEmail}
               syncPassword={syncPassword}
+              syncCanUse={syncSession?.plan === 'paid'}
               activeProjectSynced={Boolean(activeProjectId && getProjectMeta(activeProjectId)?.syncEnabled)}
+              onSyncEmailChange={setSyncEmail}
               onSyncPasswordChange={setSyncPassword}
-              onUnlockSync={handleUnlockSync}
+              onUnlockSync={() => handleUnlockSync(false)}
+              onCreateSyncAccount={() => handleUnlockSync(true)}
               onLockSync={handleLockSync}
               onSyncNow={() => {
                 if (syncSessionRef.current) void syncAllProjects(syncSessionRef.current);

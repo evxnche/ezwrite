@@ -4,7 +4,6 @@ import {
   buildSyncProjectSnapshot,
   decryptJsonWithPassword,
   encryptJsonWithPassword,
-  getSyncSpaceId,
   hashEncryptedPayload,
   type SyncProjectSnapshot,
 } from './sync-crypto.ts';
@@ -46,16 +45,6 @@ test('wrong password cannot decrypt payload', async () => {
     () => decryptJsonWithPassword<SyncProjectSnapshot>(encrypted, 'wrong password'),
     /operation failed|decrypt/i,
   );
-});
-
-test('sync space id is deterministic and does not expose password', async () => {
-  const first = await getSyncSpaceId('shared password');
-  const second = await getSyncSpaceId('shared password');
-  const different = await getSyncSpaceId('other password');
-
-  assert.equal(first, second);
-  assert.notEqual(first, different);
-  assert.equal(first.includes('shared'), false);
 });
 
 test('encrypted payload hash changes with payload contents', async () => {

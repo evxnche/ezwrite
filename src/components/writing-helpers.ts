@@ -19,15 +19,31 @@ export function getListName(line: string): string {
 
 export type LineType = 'text' | 'heading1' | 'heading2' | 'list-header' | 'list-item' | 'divider' | 'timer' | 'quote' | 'image';
 
-export const SLASH_COMMANDS = [
+const SLASH_COMMANDS_BASE = [
   { name: 'list', description: 'Create a checklist' },
   { name: 'line', description: 'Insert a divider' },
-  { name: 'photo', description: 'Insert a photo' },
   { name: 'timer', description: 'Start a timer' },
-  { name: 'sidetab', description: 'Open side tab' },
+  { name: 'sidetab', description: 'Toggle side tab' },
   { name: 'help', description: 'Show shortcuts & commands' },
   { name: 'settings', description: 'Open settings' },
-];
+] as const;
+
+const IMAGE_SLASH_COMMAND = { name: 'image', description: 'Insert an image' } as const;
+
+export type SlashCommand = { name: string; description: string };
+
+export function getSlashCommands(imagesEnabled = true): SlashCommand[] {
+  if (!imagesEnabled) return [...SLASH_COMMANDS_BASE];
+  return [
+    SLASH_COMMANDS_BASE[0],
+    SLASH_COMMANDS_BASE[1],
+    IMAGE_SLASH_COMMAND,
+    ...SLASH_COMMANDS_BASE.slice(2),
+  ];
+}
+
+/** Default slash commands (images on) for modules that don't read user prefs. */
+export const SLASH_COMMANDS = getSlashCommands(true);
 
 export function stripLegacyImageLines(content: string): string {
   return content

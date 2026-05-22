@@ -17,6 +17,7 @@ interface Props {
   onToggleFont?: () => void;
   colorTheme?: string;
   onToggleColorTheme?: () => void;
+  imagesEnabled?: boolean;
 }
 
 const InfoDialog: React.FC<Props> = ({
@@ -32,6 +33,7 @@ const InfoDialog: React.FC<Props> = ({
   onToggleFont,
   colorTheme,
   onToggleColorTheme,
+  imagesEnabled = true,
 }) => {
   const [canInstall, setCanInstall] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'done'>('idle');
@@ -166,7 +168,10 @@ const InfoDialog: React.FC<Props> = ({
                 <li className="pl-1"><span className="text-accent-foreground">/list</span> — checklist with checkboxes</li>
                 <li className="pl-1"><span className="text-accent-foreground">/line</span> — horizontal divider</li>
                 <li className="pl-1"><span className="text-accent-foreground">/timer</span> — start a timer</li>
-                <li className="pl-1"><span className="text-accent-foreground">/sidetab</span> — open side tab</li>
+                {imagesEnabled && (
+                  <li className="pl-1"><span className="text-accent-foreground">/image</span> — insert an image</li>
+                )}
+                <li className="pl-1"><span className="text-accent-foreground">/sidetab</span> — toggle side tab</li>
                 <li className="pl-1"><span className="text-accent-foreground">/help</span> — shortcuts &amp; commands</li>
                 <li className="pl-1"><span className="text-accent-foreground">/settings</span> — open settings</li>
               </ol>
@@ -196,8 +201,8 @@ const InfoDialog: React.FC<Props> = ({
               <ul className="space-y-1 text-muted-foreground ml-3">
                 <li><span className="text-foreground">cmd/ctrl+↑/↓</span> — move line up/down</li>
                 <li>
-                  <span className="text-foreground">cmd/ctrl+←/→</span> — switch pages in a doc<br />
-                  <span className="ml-0 text-muted-foreground">(or use 2-finger swipe)</span>
+                  <span className="text-foreground">cmd/ctrl+←/→</span> — switch pages in a doc when enabled in settings<br />
+                  <span className="ml-0 text-muted-foreground">(or use 2-finger swipe; turn off to use sentence navigation)</span>
                 </li>
                 <li>type <span className="text-foreground">/x</span> at end of a list item to toggle strikethrough</li>
               </ul>

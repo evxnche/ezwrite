@@ -51,10 +51,6 @@ function decodeBase64(value: string): Uint8Array {
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
-function encodeBase64Url(bytes: Uint8Array): string {
-  return encodeBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}
-
 async function deriveAesKey(password: string, salt: Uint8Array, iterations: number): Promise<CryptoKey> {
   if (!password) throw new Error('Sync password is required');
   const cryptoImpl = getCrypto();
@@ -154,21 +150,11 @@ export async function encryptProjectSnapshot(
   return encryptJsonWithPassword(buildSyncProjectSnapshot(input), password);
 }
 
-export async function getSyncSpaceId(password: string): Promise<string> {
-  if (!password) throw new Error('Sync password is required');
-  const cryptoImpl = getCrypto();
-  const digest = await cryptoImpl.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(`ezwrite-sync-space-v1:${password}`),
-  );
-  return encodeBase64Url(new Uint8Array(digest));
-}
-
 export async function hashEncryptedPayload(payload: PasswordEncryptedPayload): Promise<string> {
   const cryptoImpl = getCrypto();
   const digest = await cryptoImpl.subtle.digest(
     'SHA-256',
     new TextEncoder().encode(JSON.stringify(payload)),
   );
-  return encodeBase64Url(new Uint8Array(digest));
+  return encodeBase64(new Uint8Array(digest)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }

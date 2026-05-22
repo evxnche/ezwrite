@@ -199,13 +199,13 @@ export function getClosestLineIndexForClick(
   return closestIndex;
 }
 
-export function getExactSlashCommand(line: string): string | null {
+export function getExactSlashCommand(line: string, slashCommands: readonly { name: string }[] = SLASH_COMMANDS): string | null {
   const visibleLine = line.startsWith(LIST_EXIT) ? line.slice(LIST_EXIT.length) : line;
   const trimmed = visibleLine.trim().toLowerCase();
   if (!trimmed.startsWith('/')) return null;
 
   const command = trimmed.slice(1);
-  return SLASH_COMMANDS.some(item => item.name === command) ? command : null;
+  return slashCommands.some(item => item.name === command) ? command : null;
 }
 
 export interface SelectedLinePoint {

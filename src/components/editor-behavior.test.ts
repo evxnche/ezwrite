@@ -280,6 +280,8 @@ test('getExactSlashCommand recognizes complete slash commands only', () => {
   assert.equal(getExactSlashCommand('/line'), 'line');
   assert.equal(getExactSlashCommand('  /list  '), 'list');
   assert.equal(getExactSlashCommand(`${LIST_EXIT}/timer`), 'timer');
+  assert.equal(getExactSlashCommand('/image'), 'image');
+  assert.equal(getExactSlashCommand('/photo'), null);
   assert.equal(getExactSlashCommand('/li'), null);
   assert.equal(getExactSlashCommand('/line extra'), null);
   assert.equal(getExactSlashCommand('not /line'), null);

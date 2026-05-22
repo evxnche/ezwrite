@@ -25,6 +25,7 @@ interface Props {
   canExportDoc: boolean;
   isExportingPdf: boolean;
   isExportingPng: boolean;
+  syncCanUse?: boolean;
   onSelectProject: (id: string) => void;
   onNewProject: () => void;
   onDeleteProject: (id: string) => void;
@@ -61,6 +62,7 @@ const NotesPanel: React.FC<Props> = ({
   canExportDoc,
   isExportingPdf,
   isExportingPng,
+  syncCanUse = false,
   onSelectProject,
   onNewProject,
   onDeleteProject,
@@ -395,6 +397,7 @@ const NotesPanel: React.FC<Props> = ({
               <button
                 className="w-full flex items-center gap-2 px-3 py-2 text-left font-mono text-xs text-foreground/85 hover:bg-muted/30 transition-colors"
                 onClick={() => handleMenuSync(docMenu.id)}
+                disabled={!syncCanUse && !isProjectSynced(docMenu.id)}
               >
                 {isProjectSynced(docMenu.id) ? <CloudOff size={13} /> : <Cloud size={13} />}
                 <span>{isProjectSynced(docMenu.id) ? 'make local only' : 'sync doc'}</span>
