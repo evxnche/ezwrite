@@ -362,6 +362,12 @@ export function setCursorPosition(editor: HTMLElement, lineIndex: number, offset
     const textSpan = el.querySelector('.ce-li-text');
     if (textSpan) targetNode = textSpan;
   }
+  if (el.dataset?.indent) {
+    remaining = Math.max(0, remaining - parseInt(el.dataset.indent) * INDENT.length);
+  }
+  if (el.dataset?.quotePrefix) {
+    remaining = Math.max(0, remaining - parseInt(el.dataset.quotePrefix));
+  }
   if (el.dataset?.headingPrefix) {
     remaining = Math.max(0, remaining - parseInt(el.dataset.headingPrefix));
   }

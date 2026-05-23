@@ -595,39 +595,60 @@ test('round-trip: multiple cursor positions in a single line', () => {
 });
 
 // ====================================================================
-// PART 5 — Known asymmetry: indent / quote prefix
-// `getCursorInfo` (in WritingInterface.tsx) adds indent*8 and quote*3 to the
-// offset on save, but `setCursorPosition` does NOT subtract them on restore.
-// Only headingPrefix is symmetric. These tests pin the current behaviour.
+// PART 5 — Symmetric prefix handling for indent / quote / heading
+// `getCursorInfo` adds indent*8, quote*3, and headingPrefix to the saved
+// offset. `setCursorPosition` must subtract all three so save/restore
+// round-trips on indented, quoted, and heading lines.
 // ====================================================================
 
-test('asymmetry: setCursorPosition does NOT subtract data-indent (drifts past text end)', () => {
+test('symmetric: indent prefix is subtracted (8 chars per level)', () => {
   const cap = installSelectionMock();
-  const t = tx('text');
+  const t = tx('text'); // 4 chars
   const line = el({ dataset: { type: 'text', indent: '1' }, childNodes: [t] });
   const editor = el({ childNodes: [line] });
-  // Raw offset would include 8 indent chars; DOM text node has only 4 chars.
-  // The walker can't find the position → falls through to selectNodeContents.
+  // Raw offset 10 = 8 indent chars + 'te' (2 in visible text)
   setCursorPosition(editor as unknown as HTMLElement, 0, 10);
-  assert.equal(cap.selected, line);
+  assert.equal(cap.startNode, t);
+  assert.equal(cap.startOffset, 2);
 });
 
-test('asymmetry: setCursorPosition does NOT subtract data-quotePrefix', () => {
+test('symmetric: quote prefix is subtracted (3 chars for ">> ")', () => {
   const cap = installSelectionMock();
-  const t = tx('hi');
+  const t = tx('hi'); // 2 chars
   const line = el({ dataset: { type: 'quote', quotePrefix: '3' }, childNodes: [t] });
   const editor = el({ childNodes: [line] });
-  // Raw ">> hi" → offset 5 = after 'h'. Without subtraction we look for offset 5 in a 2-char node → overflow.
-  setCursorPosition(editor as unknown as HTMLElement, 0, 5);
-  assert.equal(cap.selected, line);
+  // Raw ">> hi" → offset 4 = after 'h'. Subtract 3 → DOM offset 1.
+  setCursorPosition(editor as unknown as HTMLElement, 0, 4);
+  assert.equal(cap.startNode, t);
+  assert.equal(cap.startOffset, 1);
 });
 
-test('symmetry: heading prefix IS subtracted (this one works)', () => {
+test('symmetric: heading prefix is subtracted (2 or 3 chars for # / ##)', () => {
   const cap = installSelectionMock();
   const t = tx('Hello');
   const line = el({ dataset: { type: 'heading1', headingPrefix: '2' }, childNodes: [t] });
   const editor = el({ childNodes: [line] });
   setCursorPosition(editor as unknown as HTMLElement, 0, 4);
   assert.equal(cap.startNode, t);
-  assert.equal(cap.startOffset, 2); // 4 - 2 prefix
+  assert.equal(cap.startOffset, 2);
+});
+
+test('symmetric: indent + list-item also round-trips correctly', () => {
+  const cap = installSelectionMock();
+  const t = tx('task');
+  const textSpan = el({ tag: 'SPAN', classes: ['ce-li-text'], childNodes: [t] });
+  const checkbox = el({
+    tag: 'SPAN',
+    contentEditable: 'false',
+    classes: ['ce-checkbox'],
+  });
+  const li = el({
+    dataset: { type: 'list-item', indent: '1' },
+    childNodes: [checkbox, textSpan],
+  });
+  const editor = el({ childNodes: [li] });
+  // Raw offset 10 = 8 indent + 'ta' (2 in visible text)
+  setCursorPosition(editor as unknown as HTMLElement, 0, 10);
+  assert.equal(cap.startNode, t);
+  assert.equal(cap.startOffset, 2);
 });
