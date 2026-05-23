@@ -31,7 +31,7 @@ import {
   STRUCK_MARKER, LIST_EXIT, getCleanLine, isLineStruck, getLineType,
   getTimerArgs, getSlashCommands, INDENT,
   contentToHTML, extractContent, setCursorPosition,
-  contentToMarkdown, markdownToContent, getRawOffsetUpTo,
+  contentToMarkdown, markdownToContent, getRawOffsetUpTo, hasRenderableInlineMarkdown,
 } from './writing-helpers';
 import {
   isFileSystemSupported, getSavedHandle, pickSaveDirectory,
@@ -1643,6 +1643,11 @@ const WritingInterface = () => {
       })();
       const domIndent = lineEl ? parseInt(lineEl.dataset.indent || '0') || 0 : 0;
       if (currentIndentLevel !== domIndent) {
+        structuralUpdate(newContent, info.lineIndex, info.offset);
+        return;
+      }
+
+      if (lineEl && hasRenderableInlineMarkdown(lineEl.textContent || '')) {
         structuralUpdate(newContent, info.lineIndex, info.offset);
         return;
       }

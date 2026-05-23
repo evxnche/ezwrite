@@ -402,19 +402,24 @@ test('forward: contentEditable=false subtree contributes 0', () => {
   assert.equal(offset, 1 + 0 + 3); // 'a' + (hidden=0) + 'aft'
 });
 
-test('forward edge: target IS the root — child-offset path uses inner extractText (KNOWN: misses ** wrappers)', () => {
+test('forward edge: target IS the line root — child-offset path counts hidden wrappers', () => {
   const a = tx('hello');
   const strong = el({ tag: 'STRONG', childNodes: [tx('XX')] });
   const line = el({ dataset: { type: 'text' }, childNodes: [a, strong] });
-  // When the cursor is positioned at the line-div boundary (between children),
-  // getRawOffsetUpTo hits its root === target branch. That branch calls
-  // extractText(child) which returns the INNER text only — it does not add
-  // the surrounding ** wrappers like the recursive path does. So we get 7,
-  // not 11. Visually fine for a cursor-between-children position, but it
-  // would underreport the raw offset if anything relied on this.
+  // When the cursor is positioned at the line-div boundary after the strong
+  // child, the raw offset must include both hidden ** wrappers.
   const { offset, found } = getRawOffsetUpTo(line as unknown as Node, line as unknown as Node, 2);
   assert.equal(found, true);
-  assert.equal(offset, 5 + 2); // 'hello' + extractText(strong)='XX', no ** wrapping
+  assert.equal(offset, 5 + 2 + 2 + 2); // 'hello' + '**XX**'
+});
+
+test('forward edge: target IS a STRONG element at its end counts closing wrapper', () => {
+  const inner = tx('bold');
+  const strong = el({ tag: 'STRONG', childNodes: [inner] });
+  const line = el({ dataset: { type: 'text' }, childNodes: [tx('I am '), strong] });
+  const { offset, found } = getRawOffsetUpTo(line as unknown as Node, strong as unknown as Node, 1);
+  assert.equal(found, true);
+  assert.equal(offset, 5 + 2 + 4 + 2);
 });
 
 // ====================================================================

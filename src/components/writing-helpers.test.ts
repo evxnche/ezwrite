@@ -7,6 +7,7 @@ import {
   extractContent,
   getSlashCommands,
   markdownToContent,
+  hasRenderableInlineMarkdown,
   stripLegacyImageLines,
   STRUCK_MARKER,
   INDENT,
@@ -149,4 +150,34 @@ test('contentToHTML treats plain img:: text as normal editor text after image re
 
   assert.match(html, /data-type="text"/);
   assert.doesNotMatch(html, /ce-image/);
+});
+
+test('contentToHTML hides inline markdown markers in normal text', () => {
+  const html = contentToHTML('I am **bold** and ~~done~~');
+
+  assert.match(html, /<strong>bold<\/strong>/);
+  assert.match(html, /<del>done<\/del>/);
+  assert.doesNotMatch(html, /I am \*\*bold\*\*/);
+});
+
+test('contentToHTML hides inline markdown markers inside headings and list items', () => {
+  const html = contentToHTML(['# **Title**', 'list', '**Task**'].join('\n'));
+
+  assert.match(html, /data-type="heading1" data-heading-prefix="2"/);
+  assert.match(html, /<strong>Title<\/strong>/);
+  assert.match(html, /data-type="list-item"/);
+  assert.match(html, /<strong>Task<\/strong>/);
+});
+
+test('contentToHTML records quote raw prefix width for cursor restoration', () => {
+  const html = contentToHTML('>> **quoted**');
+
+  assert.match(html, /data-type="quote" data-quote-prefix="3"/);
+  assert.match(html, /<strong>quoted<\/strong>/);
+});
+
+test('hasRenderableInlineMarkdown detects complete visible inline markers only', () => {
+  assert.equal(hasRenderableInlineMarkdown('I am **bold**'), true);
+  assert.equal(hasRenderableInlineMarkdown('I am **not closed'), false);
+  assert.equal(hasRenderableInlineMarkdown(String.raw`escaped \**bold**`), false);
 });

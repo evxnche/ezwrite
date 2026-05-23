@@ -90,6 +90,18 @@ export function getTimerArgs(line: string): string {
 
 // --- HTML helpers for contentEditable ---
 
+const getInlineWrapperWidth = (tagName: string): number => {
+  const tag = tagName.toUpperCase();
+  if (tag === 'STRONG' || tag === 'B' || tag === 'DEL' || tag === 'S' || tag === 'STRIKE') return 2;
+  if (tag === 'EM' || tag === 'I' || tag === 'CODE') return 1;
+  return 0;
+};
+
+export function hasRenderableInlineMarkdown(text: string): boolean {
+  return /(^|[^\\])(\*\*|__|~~|`)(.+?)\2/.test(text) ||
+    /(^|[^\\*_])(\*|_)(?!\2)(.+?)\2/.test(text);
+}
+
 export function escapeHTML(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -103,7 +115,7 @@ function applyInlineFormatting(text: string): string {
   // bold: ** or __
   html = html.replace(/(^|[^\\])(\*\*|__)(.+?)\2/g, '$1<strong>$3</strong>');
   // italic: * or _
-  html = html.replace(/(^|[^\\])(\*|_)(?!\1)(.+?)\2/g, '$1<em>$3</em>');
+  html = html.replace(/(^|[^\\*_])(\*|_)(?!\2)(.+?)\2/g, '$1<em>$3</em>');
   // strikethrough: ~~
   html = html.replace(/(^|[^\\])(~~)(.+?)\2/g, '$1<del>$3</del>');
   // code: `
@@ -134,12 +146,12 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
     const type = getLineType(lines, i);
     switch (type) {
       case 'heading1': {
-        const escaped = escapeHTML(line.replace(/^# /, ''));
-        return `<div data-type="heading1" data-heading-prefix="2" class="ce-heading1">${escaped || '<br>'}</div>`;
+        const html = applyLinkHighlight(line.replace(/^# /, ''));
+        return `<div data-type="heading1" data-heading-prefix="2" class="ce-heading1">${html || '<br>'}</div>`;
       }
       case 'heading2': {
-        const escaped = escapeHTML(line.replace(/^## /, ''));
-        return `<div data-type="heading2" data-heading-prefix="3" class="ce-heading2">${escaped || '<br>'}</div>`;
+        const html = applyLinkHighlight(line.replace(/^## /, ''));
+        return `<div data-type="heading2" data-heading-prefix="3" class="ce-heading2">${html || '<br>'}</div>`;
       }
       case 'list-header': {
         const listName = getListName(line);
@@ -162,7 +174,7 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
       }
       case 'quote': {
         const text = line.replace(/^>> ?/, '');
-        return `<div data-type="quote" data-quote-prefix="1" class="ce-quote">${applyLinkHighlight(text) || '<br>'}</div>`;
+        return `<div data-type="quote" data-quote-prefix="3" class="ce-quote">${applyLinkHighlight(text) || '<br>'}</div>`;
       }
       case 'list-item': {
         const struck = isLineStruck(line);
@@ -171,8 +183,8 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
         let indentLevel = 0;
         while (clean.startsWith(INDENT)) { indentLevel++; clean = clean.slice(INDENT.length); }
         const indentAttr = indentLevel > 0 ? ` data-indent="${indentLevel}" style="padding-left: ${indentLevel * 2}em"` : '';
-        const escaped = escapeHTML(clean);
-        return `<div data-type="list-item" data-struck="${struck}" data-line="${i}"${indentAttr} class="ce-list-item ${struck ? 'ce-struck' : ''}"><span contenteditable="false" class="ce-checkbox ${struck ? 'ce-checked' : ''}" data-action="toggle" data-line="${i}"></span><span class="ce-li-text">${escaped || '<br>'}</span></div>`;
+        const html = applyLinkHighlight(clean);
+        return `<div data-type="list-item" data-struck="${struck}" data-line="${i}"${indentAttr} class="ce-list-item ${struck ? 'ce-struck' : ''}"><span contenteditable="false" class="ce-checkbox ${struck ? 'ce-checked' : ''}" data-action="toggle" data-line="${i}"></span><span class="ce-li-text">${html || '<br>'}</span></div>`;
       }
       default: {
         const isListExit = line.startsWith(LIST_EXIT);
@@ -303,17 +315,36 @@ function extractText(el: Element): string {
   return result;
 }
 
+function getRawTextLength(node: Node): number {
+  if (node.nodeType === Node.TEXT_NODE) return (node.textContent || '').length;
+  if (node.nodeType !== Node.ELEMENT_NODE) return 0;
+
+  const el = node as HTMLElement;
+  const tag = el.tagName.toUpperCase();
+  if (tag === 'BR' || tag === 'BUTTON' || el.contentEditable === 'false' || el.classList.contains('ce-checkbox')) {
+    return 0;
+  }
+
+  const wrapperWidth = getInlineWrapperWidth(tag);
+  let total = wrapperWidth;
+  node.childNodes.forEach((child) => {
+    total += getRawTextLength(child);
+  });
+  return total + wrapperWidth;
+}
+
 export function getRawOffsetUpTo(root: Node, targetContainer: Node, targetOffset: number): { offset: number, found: boolean } {
   if (root === targetContainer) {
     if (root.nodeType === Node.TEXT_NODE) return { offset: targetOffset, found: true };
+    const rootWrapperWidth = root.nodeType === Node.ELEMENT_NODE
+      ? getInlineWrapperWidth((root as HTMLElement).tagName)
+      : 0;
     let offset = 0;
+    if (rootWrapperWidth > 0) offset += rootWrapperWidth;
     for (let i = 0; i < targetOffset; i++) {
-      if (root.childNodes[i].nodeType === Node.ELEMENT_NODE) {
-         offset += extractText(root.childNodes[i] as Element).length;
-      } else if (root.childNodes[i].nodeType === Node.TEXT_NODE) {
-         offset += (root.childNodes[i].textContent || '').length;
-      }
+      offset += getRawTextLength(root.childNodes[i]);
     }
+    if (rootWrapperWidth > 0 && targetOffset >= root.childNodes.length) offset += rootWrapperWidth;
     return { offset, found: true };
   }
   
@@ -327,9 +358,7 @@ export function getRawOffsetUpTo(root: Node, targetContainer: Node, targetOffset
     if (el.contentEditable === 'false' || el.classList.contains('ce-checkbox')) return { offset: 0, found: false };
     
     const tag = el.tagName.toUpperCase();
-    let prefix = 0;
-    if (tag === 'STRONG' || tag === 'B' || tag === 'DEL' || tag === 'S' || tag === 'STRIKE') prefix = 2;
-    else if (tag === 'EM' || tag === 'I' || tag === 'CODE') prefix = 1;
+    const prefix = getInlineWrapperWidth(tag);
     
     total += prefix;
     
@@ -386,9 +415,7 @@ export function setCursorPosition(editor: HTMLElement, lineIndex: number, offset
       if (el.contentEditable === 'false' || el.classList.contains('ce-checkbox')) return false;
 
       const tag = el.tagName.toUpperCase();
-      let prefix = 0;
-      if (tag === 'STRONG' || tag === 'B' || tag === 'DEL' || tag === 'S' || tag === 'STRIKE') prefix = 2;
-      else if (tag === 'EM' || tag === 'I' || tag === 'CODE') prefix = 1;
+      const prefix = getInlineWrapperWidth(tag);
 
       if (remaining <= prefix) {
          range.setStart(node, 0);
