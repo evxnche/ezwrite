@@ -7,6 +7,8 @@ import TimerWidget from './TimerWidget';
 import PolaroidImage from './PolaroidImage';
 import { useImagePicker } from './useImagePicker';
 import { saveImage, loadImage, processImageForStorage, gcOrphanImages } from '@/lib/imageStore';
+import ImageDropDialog from './ImageDropDialog';
+import { recognizeImage } from '@/lib/ocr';
 import {
   getNextColorTheme,
   pickColorTheme,
@@ -316,6 +318,12 @@ const WritingInterface = () => {
   const [isExportingShareCard, setIsExportingShareCard] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [imageDropDialog, setImageDropDialog] = useState<{
+    open: boolean;
+    dataUrl: string | null;
+    insertAtLine: number;
+    isProcessing: boolean;
+  }>({ open: false, dataUrl: null, insertAtLine: 0, isProcessing: false });
   const [syncEmail, setSyncEmail] = useState('');
   const [syncPassword, setSyncPassword] = useState('');
   const [syncSession, setSyncSession] = useState<SyncSession | null>(null);
@@ -2307,19 +2315,9 @@ const WritingInterface = () => {
     }
   }, [saveContent]);
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    if (!imagesEnabled) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const hasImage = Array.from(e.dataTransfer.types).includes('Files');
-    e.dataTransfer.dropEffect = hasImage ? 'copy' : 'none';
-  }, [imagesEnabled]);
-
-  const handleDrop = useCallback(async (e: React.DragEvent) => {
-    if (!imagesEnabled) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const file = Array.from(e.dataTransfer.files).find(f => f.type.startsWith('image/'));
+  const processDroppedFiles = useCallback(async (files: FileList | null, clientY: number) => {
+    if (!imagesEnabled || !files) return;
+    const file = Array.from(files).find(f => f.type.startsWith('image/'));
     if (!file) return;
     const dataUrl = await new Promise<string | null>((resolve) => {
       const reader = new FileReader();
@@ -2328,19 +2326,117 @@ const WritingInterface = () => {
       reader.readAsDataURL(file);
     });
     if (!dataUrl) return;
+
+    const current = editorRef.current ? extractContent(editorRef.current) : contentRef.current;
+    const ls = current.split('\n');
+    let insertAt = ls.length;
+    if (editorRef.current) {
+      const lineNodes = Array.from(editorRef.current.childNodes) as HTMLElement[];
+      const lineRects = lineNodes.map((node) => node.getBoundingClientRect());
+      const closest = getClosestLineIndexForClick(clientY, lineRects);
+      insertAt = closest !== null ? closest + 1 : ls.length;
+    }
+    insertAt = Math.min(Math.max(0, insertAt), ls.length);
+
+    setImageDropDialog({ open: true, dataUrl, insertAtLine: insertAt, isProcessing: false });
+  }, [imagesEnabled]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!imagesEnabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const hasImage = Array.from(e.dataTransfer.types).includes('Files');
+    e.dataTransfer.dropEffect = hasImage ? 'copy' : 'none';
+  }, [imagesEnabled]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    if (!imagesEnabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    void processDroppedFiles(e.dataTransfer.files, e.clientY);
+  }, [imagesEnabled, processDroppedFiles]);
+
+  useEffect(() => {
+    const onWindowDragOver = (e: DragEvent) => {
+      if (!imagesEnabled || !e.dataTransfer) return;
+      if (!Array.from(e.dataTransfer.types).includes('Files')) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    };
+    const onWindowDrop = (e: DragEvent) => {
+      if (!imagesEnabled || !e.dataTransfer) return;
+      if (!Array.from(e.dataTransfer.files).some(f => f.type.startsWith('image/'))) return;
+      e.preventDefault();
+      void processDroppedFiles(e.dataTransfer.files, e.clientY);
+    };
+    window.addEventListener('dragover', onWindowDragOver);
+    window.addEventListener('drop', onWindowDrop);
+    return () => {
+      window.removeEventListener('dragover', onWindowDragOver);
+      window.removeEventListener('drop', onWindowDrop);
+    };
+  }, [imagesEnabled, processDroppedFiles]);
+
+  const handleInsertDroppedImage = useCallback(async () => {
+    const { dataUrl, insertAtLine } = imageDropDialog;
+    if (!dataUrl) return;
+    setImageDropDialog(prev => ({ ...prev, isProcessing: true }));
     const processed = await processImageForStorage(dataUrl);
     const id = saveImage(processed);
     pushUndo(true);
     const current = editorRef.current ? extractContent(editorRef.current) : contentRef.current;
     const ls = current.split('\n');
-    const dropLine = editorRef.current
-      ? getClosestLineIndexForClick(editorRef.current, e.clientX, e.clientY) + 1
-      : ls.length;
-    const insertAt = Math.min(Math.max(0, dropLine), ls.length);
+    const insertAt = Math.min(Math.max(0, insertAtLine), ls.length);
     ls.splice(insertAt, 0, `polaroid::${id}|`);
     if (ls[ls.length - 1] !== '') ls.push('');
     structuralUpdate(ls.join('\n'), insertAt + 1, 0);
-  }, [imagesEnabled, pushUndo, structuralUpdate]);
+    setImageDropDialog({ open: false, dataUrl: null, insertAtLine: 0, isProcessing: false });
+  }, [imageDropDialog, pushUndo, structuralUpdate]);
+
+  const handleOCRDroppedImage = useCallback(async () => {
+    const { dataUrl, insertAtLine } = imageDropDialog;
+    if (!dataUrl) return;
+    setImageDropDialog(prev => ({ ...prev, isProcessing: true }));
+    try {
+      const text = await recognizeImage(dataUrl);
+      const current = editorRef.current ? extractContent(editorRef.current) : contentRef.current;
+      const ls = current.split('\n');
+      const insertAt = Math.min(Math.max(0, insertAtLine), ls.length);
+      if (text) {
+        pushUndo(true);
+        const ocrLines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+        if (ocrLines.length > 0) {
+          ls.splice(insertAt, 0, ...ocrLines);
+          if (ls[ls.length - 1] !== '') ls.push('');
+          structuralUpdate(ls.join('\n'), insertAt + ocrLines.length, 0);
+        } else {
+          const processed = await processImageForStorage(dataUrl);
+          const id = saveImage(processed);
+          ls.splice(insertAt, 0, `polaroid::${id}|`);
+          if (ls[ls.length - 1] !== '') ls.push('');
+          structuralUpdate(ls.join('\n'), insertAt + 1, 0);
+        }
+      } else {
+        const processed = await processImageForStorage(dataUrl);
+        const id = saveImage(processed);
+        pushUndo(true);
+        ls.splice(insertAt, 0, `polaroid::${id}|`);
+        if (ls[ls.length - 1] !== '') ls.push('');
+        structuralUpdate(ls.join('\n'), insertAt + 1, 0);
+      }
+    } catch {
+      const processed = await processImageForStorage(dataUrl);
+      const id = saveImage(processed);
+      pushUndo(true);
+      const current = editorRef.current ? extractContent(editorRef.current) : contentRef.current;
+      const ls = current.split('\n');
+      const insertAt = Math.min(Math.max(0, insertAtLine), ls.length);
+      ls.splice(insertAt, 0, `polaroid::${id}|`);
+      if (ls[ls.length - 1] !== '') ls.push('');
+      structuralUpdate(ls.join('\n'), insertAt + 1, 0);
+    }
+    setImageDropDialog({ open: false, dataUrl: null, insertAtLine: 0, isProcessing: false });
+  }, [imageDropDialog, pushUndo, structuralUpdate]);
 
   const getLinePointFromDOMPoint = useCallback((container: Node, domOffset: number): { lineIndex: number; offset: number } | null => {
     const editor = editorRef.current;
@@ -3120,6 +3216,14 @@ const WritingInterface = () => {
           </>
         )}
       </Suspense>
+
+      <ImageDropDialog
+        open={imageDropDialog.open}
+        onClose={() => setImageDropDialog({ open: false, dataUrl: null, insertAtLine: 0, isProcessing: false })}
+        onOCR={handleOCRDroppedImage}
+        onInsertImage={handleInsertDroppedImage}
+        isProcessing={imageDropDialog.isProcessing}
+      />
     </div>
   );
 };
