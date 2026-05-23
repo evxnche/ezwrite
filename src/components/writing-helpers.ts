@@ -98,15 +98,28 @@ export function escapeHTML(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
+function applyInlineFormatting(text: string): string {
+  let html = text;
+  // bold: ** or __
+  html = html.replace(/(^|[^\\])(\*\*|__)(.+?)\2/g, '$1<strong>$3</strong>');
+  // italic: * or _
+  html = html.replace(/(^|[^\\])(\*|_)(?!\1)(.+?)\2/g, '$1<em>$3</em>');
+  // strikethrough: ~~
+  html = html.replace(/(^|[^\\])(~~)(.+?)\2/g, '$1<del>$3</del>');
+  // code: `
+  html = html.replace(/(^|[^\\])(`)(.+?)\2/g, '$1<code>$3</code>');
+  return html;
+}
+
 function applyLinkHighlight(text: string): string {
   const urlRegex = /(https?:\/\/[^\s]+)/g;
   const parts = text.split(urlRegex);
-  if (parts.length === 1) return escapeHTML(text); // no URLs
+  if (parts.length === 1) return applyInlineFormatting(escapeHTML(text));
   return parts.map((part, i) => {
     if (i % 2 === 1) {
-      return `<span class="ce-link">${escapeHTML(part)}</span>`;
+      return `<span class="ce-link">${applyInlineFormatting(escapeHTML(part))}</span>`;
     }
-    return escapeHTML(part);
+    return applyInlineFormatting(escapeHTML(part));
   }).join('');
 }
 
@@ -278,11 +291,57 @@ function extractText(el: Element): string {
       } else if (htmlEl.contentEditable === 'false' || htmlEl.classList.contains('ce-checkbox')) {
         // skip
       } else if (tag !== 'BUTTON') {
-        result += extractText(htmlEl);
+        const innerText = extractText(htmlEl);
+        if (tag === 'STRONG' || tag === 'B') result += '**' + innerText + '**';
+        else if (tag === 'EM' || tag === 'I') result += '*' + innerText + '*';
+        else if (tag === 'DEL' || tag === 'S' || tag === 'STRIKE') result += '~~' + innerText + '~~';
+        else if (tag === 'CODE') result += '`' + innerText + '`';
+        else result += innerText;
       }
     }
   });
   return result;
+}
+
+export function getRawOffsetUpTo(root: Node, targetContainer: Node, targetOffset: number): { offset: number, found: boolean } {
+  if (root === targetContainer) {
+    if (root.nodeType === Node.TEXT_NODE) return { offset: targetOffset, found: true };
+    let offset = 0;
+    for (let i = 0; i < targetOffset; i++) {
+      if (root.childNodes[i].nodeType === Node.ELEMENT_NODE) {
+         offset += extractText(root.childNodes[i] as Element).length;
+      } else if (root.childNodes[i].nodeType === Node.TEXT_NODE) {
+         offset += (root.childNodes[i].textContent || '').length;
+      }
+    }
+    return { offset, found: true };
+  }
+  
+  if (root.nodeType === Node.TEXT_NODE) {
+    return { offset: (root.textContent || '').length, found: false };
+  }
+  
+  let total = 0;
+  if (root.nodeType === Node.ELEMENT_NODE) {
+    const el = root as HTMLElement;
+    if (el.contentEditable === 'false' || el.classList.contains('ce-checkbox')) return { offset: 0, found: false };
+    
+    const tag = el.tagName.toUpperCase();
+    let prefix = 0;
+    if (tag === 'STRONG' || tag === 'B' || tag === 'DEL' || tag === 'S' || tag === 'STRIKE') prefix = 2;
+    else if (tag === 'EM' || tag === 'I' || tag === 'CODE') prefix = 1;
+    
+    total += prefix;
+    
+    for (let i = 0; i < root.childNodes.length; i++) {
+      const res = getRawOffsetUpTo(root.childNodes[i], targetContainer, targetOffset);
+      total += res.offset;
+      if (res.found) return { offset: total, found: true };
+    }
+    
+    total += prefix; // suffix if not found inside
+  }
+  return { offset: total, found: false };
 }
 
 // Cursor helpers
@@ -316,15 +375,32 @@ export function setCursorPosition(editor: HTMLElement, lineIndex: number, offset
         return true;
       }
       remaining -= len;
-    } else {
-      for (let i = 0; i < node.childNodes.length; i++) {
-        const child = node.childNodes[i];
-        if (child.nodeType === Node.ELEMENT_NODE) {
-          const childEl = child as HTMLElement;
-          if (childEl.contentEditable === 'false' || childEl.classList.contains('ce-checkbox')) continue;
-        }
-        if (walkNodes(child)) return true;
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as HTMLElement;
+      if (el.contentEditable === 'false' || el.classList.contains('ce-checkbox')) return false;
+
+      const tag = el.tagName.toUpperCase();
+      let prefix = 0;
+      if (tag === 'STRONG' || tag === 'B' || tag === 'DEL' || tag === 'S' || tag === 'STRIKE') prefix = 2;
+      else if (tag === 'EM' || tag === 'I' || tag === 'CODE') prefix = 1;
+
+      if (remaining <= prefix) {
+         range.setStart(node, 0);
+         range.collapse(true);
+         return true;
       }
+      remaining -= prefix;
+
+      for (let i = 0; i < node.childNodes.length; i++) {
+        if (walkNodes(node.childNodes[i])) return true;
+      }
+
+      if (remaining <= prefix) {
+         range.setStart(node, node.childNodes.length);
+         range.collapse(true);
+         return true;
+      }
+      remaining -= prefix;
     }
     return false;
   }
