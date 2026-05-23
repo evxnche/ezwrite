@@ -31,7 +31,7 @@ import {
   STRUCK_MARKER, LIST_EXIT, getCleanLine, isLineStruck, getLineType,
   getTimerArgs, getSlashCommands, INDENT,
   contentToHTML, extractContent, setCursorPosition,
-  contentToMarkdown, markdownToContent,
+  contentToMarkdown, markdownToContent, getRawOffsetUpTo,
 } from './writing-helpers';
 import {
   isFileSystemSupported, getSavedHandle, pickSaveDirectory,
@@ -118,7 +118,7 @@ const playChime = () => {
 };
 
 const DEFAULT_PAGE_CONTENT = 'start writing.';
-const WELCOME_PROJECT_CONTENT = `hi.\n\ni am evan.\n\nthinking is cool.\nwriting is thinking.\n\ni write. you write. we all write.\nwriting today is a slog.\na battle of point sizes, typefaces, and colours.\n\nhence, ezwrite.\ni like pen and paper. this is close.\n\nthere isn't much to it.\n/line splits things up.\n/list keeps you on track with checklists.\n/timer pulls up a timer + some more func (check out /help).\nor just type in "/help" and you'll find all the help you need.\neach project (document) opens in the side tab, and pages inside are like sheets in a notebook. these can be navigated by a two-finger swipe or cmd+← →.\nbtw your data stays on your device. go to /settings and pick your location.\n\nit's yours now. go write.\n\nto report bugs or just say hi, evanbuildsstuff@gmail.com\n\njust do things. ez.\n\n-evan`;
+const WELCOME_PROJECT_CONTENT = `hi.\n\ni am evan.\n\nthinking is cool.\nwriting is thinking.\n\ni write. you write. we all write.\nwriting today is a slog.\na battle of point sizes, typefaces, and colours.\n\nhence, ezwrite.\ni like pen and paper. this is close.\n\nthere isn't much to it.\n/line splits things up.\n/list keeps you on track with checklists.\n/timer pulls up a timer + some more func (check out /help).\nor just type in "/help" and you'll find all the help you need.\neach project (document) opens in the side tab, and pages inside are like sheets in a notebook. these can be navigated with a two-finger swipe or cmd+← →.\nbtw your data stays on your device. go to /settings and pick your location.\n\nit's yours now. go write.\n\nto report bugs or just say hi, evanbuildsstuff@gmail.com\n\njust do things. ez.\n\n-evan`;
 
 const getDefaultPage = (index: number): string => {
   if (index === 0) return DEFAULT_PAGE_CONTENT;
@@ -1503,7 +1503,6 @@ const WritingInterface = () => {
 
     if (foundIdx < 0 || !foundEl) return null;
 
-    // For list-items, measure offset within the text span
     let textContainer: Node = foundEl;
     if (foundEl.dataset?.type === 'list-item') {
       const textSpan = foundEl.querySelector('.ce-li-text');
@@ -1512,22 +1511,19 @@ const WritingInterface = () => {
 
     let offset = 0;
     try {
-      const lineRange = document.createRange();
-      lineRange.selectNodeContents(textContainer);
-      lineRange.setEnd(range.startContainer, range.startOffset);
-      offset = lineRange.toString().length;
-    } catch {
-      // If cursor is at container level after this child, offset = full length
       if (range.startContainer === editorRef.current) {
         offset = range.startOffset > foundIdx ? (foundEl.textContent?.length ?? 0) : 0;
+      } else {
+        const res = getRawOffsetUpTo(textContainer, range.startContainer, range.startOffset);
+        offset = res.offset;
       }
+    } catch {
+      offset = 0;
     }
 
-    // Adjust for indent prefix stripped from display (applies to text and list-item with data-indent)
     if (foundEl.dataset?.indent) {
       offset += parseInt(foundEl.dataset.indent) * INDENT.length;
     }
-    // Adjust for '>> ' prefix stripped from display in quote lines
     if (foundEl.dataset?.quotePrefix) {
       offset += 3;
     }
