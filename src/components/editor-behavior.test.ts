@@ -6,7 +6,9 @@ import path from 'node:path';
 import { INDENT, LIST_EXIT } from './writing-helpers.ts';
 import {
   getFloatingSlashButtonCursor,
+  getTouchGestureIntent,
   getPageEndCursor,
+  prepareFloatingSlashButtonCommand,
   getShareCardLines,
   getShareCardPalette,
   normalizePastedPlainText,
@@ -74,6 +76,68 @@ test('getFloatingSlashButtonCursor reuses an existing trailing blank line', () =
       lineIndex: 1,
       offset: 0,
     },
+  );
+});
+
+test('prepareFloatingSlashButtonCommand inserts a slash command line after regular text', () => {
+  assert.deepEqual(
+    prepareFloatingSlashButtonCommand('first line\nsecond line', 0),
+    {
+      content: 'first line\n/\nsecond line',
+      lineIndex: 1,
+      offset: 1,
+      filter: '',
+    },
+  );
+});
+
+test('prepareFloatingSlashButtonCommand reuses an empty current line', () => {
+  assert.deepEqual(
+    prepareFloatingSlashButtonCommand('first line\n', 1),
+    {
+      content: 'first line\n/',
+      lineIndex: 1,
+      offset: 1,
+      filter: '',
+    },
+  );
+});
+
+test('prepareFloatingSlashButtonCommand preserves an in-progress slash filter', () => {
+  assert.deepEqual(
+    prepareFloatingSlashButtonCommand('first line\n/li', 1),
+    {
+      content: 'first line\n/li',
+      lineIndex: 1,
+      offset: 3,
+      filter: 'li',
+    },
+  );
+});
+
+test('getTouchGestureIntent prefers keyboard dismissal for a downward editor swipe', () => {
+  assert.equal(
+    getTouchGestureIntent({
+      dx: 18,
+      dy: 96,
+      hasSelection: false,
+      isKeyboardOpen: true,
+      isEditorFocused: true,
+    }),
+    'dismiss-keyboard',
+  );
+});
+
+test('getTouchGestureIntent keeps horizontal page swipes when the keyboard is closed', () => {
+  assert.equal(
+    getTouchGestureIntent({
+      dx: -90,
+      dy: 12,
+      hasSelection: false,
+      isKeyboardOpen: false,
+      isEditorFocused: true,
+    }),
+    'page-next',
   );
 });
 

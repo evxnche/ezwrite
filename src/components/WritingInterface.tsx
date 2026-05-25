@@ -17,8 +17,9 @@ import {
 } from './preferences';
 import { buildTimerSlots } from './timer-identity';
 import {
-  getFloatingSlashButtonCursor,
+  getTouchGestureIntent,
   getPageEndCursor,
+  prepareFloatingSlashButtonCommand,
   getShareCardLines,
   getShareCardPalette,
   normalizePastedPlainText,
@@ -161,6 +162,13 @@ const VISUAL_METRICS = {
   warmEditorGlow: '0 0 10px hsl(40 60% 70% / 0.22), 0 0 25px hsl(35 50% 60% / 0.12)',
   darkTextColor: '#F0EEDE',
 } as const;
+
+const MOBILE_FIXED_UI_CLEARANCE_PX = 132;
+const MOBILE_EDITOR_BOTTOM_PADDING = 'calc(env(safe-area-inset-bottom, 0px) + 13rem)';
+const MOBILE_SLASH_BUTTON_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 1rem)';
+const MOBILE_FOOTER_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 0.5rem)';
+const MOBILE_PAGE_DOTS_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 2.75rem)';
+const MOBILE_SAVE_INDICATOR_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 1.25rem)';
 
 function drawRoundedRect(
   ctx: CanvasRenderingContext2D,
@@ -1284,16 +1292,29 @@ const WritingInterface = () => {
   const handleTouchEnd = (e: React.TouchEvent) => {
     const hadSelection = touchHasSelection.current;
     touchHasSelection.current = false;
-    // Don't trigger page switch if user was selecting text.
-    // Use isCollapsed instead of toString() — toString() can return
-    // whitespace from a collapsed cursor inside contentEditable.
     const sel = window.getSelection();
-    if (hadSelection || (sel && !sel.isCollapsed)) return;
     const dx = e.changedTouches[0].clientX - touchStartX.current;
     const dy = e.changedTouches[0].clientY - touchStartY.current;
-    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 60) {
-      if (dx < 0) switchToPage(currentPageRef.current + 1);
-      else switchToPage(currentPageRef.current - 1);
+    const intent = getTouchGestureIntent({
+      dx,
+      dy,
+      hasSelection: hadSelection || Boolean(sel && !sel.isCollapsed),
+      isKeyboardOpen: kbHeightRef.current > 0,
+      isEditorFocused: document.activeElement === editorRef.current,
+    });
+
+    if (intent === 'dismiss-keyboard') {
+      dismissEditorKeyboard();
+      return;
+    }
+
+    if (intent === 'page-next') {
+      switchToPage(currentPageRef.current + 1);
+      return;
+    }
+
+    if (intent === 'page-prev') {
+      switchToPage(currentPageRef.current - 1);
     }
   };
 
@@ -1328,14 +1349,36 @@ const WritingInterface = () => {
     typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 1000);
   };
 
-  const scrollToLine = (lineIndex: number) => {
+  const keepLineComfortablyVisible = useCallback((lineNode: HTMLElement, behavior: ScrollBehavior = 'smooth') => {
+    const rect = lineNode.getBoundingClientRect();
+    const maxBottom = window.innerHeight - MOBILE_FIXED_UI_CLEARANCE_PX;
+    if (rect.bottom <= maxBottom) return;
+
+    window.scrollBy({
+      top: rect.bottom - maxBottom,
+      behavior,
+    });
+  }, []);
+
+  const scrollToLine = useCallback((lineIndex: number, behavior: ScrollBehavior = 'smooth') => {
     requestAnimationFrame(() => {
       if (!editorRef.current) return;
       const lineNode = editorRef.current.childNodes[lineIndex] as HTMLElement;
       if (!lineNode) return;
-      lineNode.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      if (isTouchDevice) {
+        keepLineComfortablyVisible(lineNode, behavior);
+        return;
+      }
+      lineNode.scrollIntoView({ block: 'nearest', behavior });
     });
-  };
+  }, [isTouchDevice, keepLineComfortablyVisible]);
+
+  const dismissEditorKeyboard = useCallback(() => {
+    setSlashPopup(null);
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) active.blur();
+    window.getSelection()?.removeAllRanges();
+  }, []);
 
   // Click anywhere to focus editor
   const handleContainerClick = (e: React.MouseEvent) => {
@@ -1356,12 +1399,14 @@ const WritingInterface = () => {
         const lineRect = lineRects[lineIndex];
         const offset = e.clientX <= lineRect.left ? 0 : (lineNodes[lineIndex]?.textContent?.length ?? 0);
         setCursorPosition(editorRef.current!, lineIndex, offset);
+        if (isTouchDevice) scrollToLine(lineIndex, 'auto');
         return;
       }
 
       const lines = contentRef.current.split('\n');
       const lastLine = lines.length - 1;
       setCursorPosition(editorRef.current!, lastLine, lines[lastLine]?.length || 0);
+      if (isTouchDevice) scrollToLine(lastLine, 'auto');
     }
   };
 
@@ -1663,7 +1708,7 @@ const WritingInterface = () => {
     }
 
     if (slashPopup) setSlashPopup(null);
-  }, [slashPopup, pushUndo, structuralUpdate, saveContent]);
+  }, [slashCommands, slashPopup, pushUndo, structuralUpdate, saveContent, scrollToLine]);
 
   const applySlashCommand = useCallback((command: string, lineIndex: number) => {
     // Bug 7: use fresh DOM content instead of potentially stale contentRef
@@ -1733,40 +1778,36 @@ const WritingInterface = () => {
     if (slashPopup && filteredCommands.length === 0) setSlashPopup(null);
   }, [slashPopup, filteredCommands.length]);
 
-  const handleFloatingSlashButton = useCallback(() => {
-    if (!editorRef.current) return;
-
-    pushUndo(true);
-
-    // If the editor already has an active cursor inside it, insert at that position.
-    // Only fall back to the bottom of the document when there is no cursor.
-    const sel = window.getSelection();
-    const hasCursor = sel && sel.rangeCount > 0 &&
-      editorRef.current.contains(sel.getRangeAt(0).startContainer);
-
-    if (hasCursor) {
+  const openSlashPopup = useCallback((lineIndex: number, filter = '') => {
+    requestAnimationFrame(() => {
+      if (!editorRef.current) return;
       editorRef.current.focus({ preventScroll: true });
-      // On mobile: scroll line to upper portion of viewport before inserting /
-      // so the popup rect is stable and the cursor doesn't visually jump
-      if (isTouchDevice && kbHeightRef.current > 0) {
-        const info = getCursorInfo();
-        if (info?.lineDiv) {
-          const vp = window.visualViewport;
-          const vpHeight = vp ? vp.height : window.innerHeight;
-          const lineRect = info.lineDiv.getBoundingClientRect();
-          window.scrollBy({ top: lineRect.top - vpHeight * 0.35, behavior: 'instant' } as ScrollToOptions);
-        }
-      }
-      document.execCommand('insertText', false, '/');
-    } else {
-      const { content, lineIndex, offset } = getFloatingSlashButtonCursor(contentRef.current);
-      structuralUpdate(content, lineIndex, offset, true);
+      setCursorPosition(editorRef.current, lineIndex, filter.length + 1);
+      if (isTouchDevice) scrollToLine(lineIndex, 'auto');
       requestAnimationFrame(() => {
-        editorRef.current?.focus({ preventScroll: true });
-        document.execCommand('insertText', false, '/');
+        const sel = window.getSelection();
+        if (!sel || !sel.rangeCount) return;
+        const rect = sel.getRangeAt(0).getBoundingClientRect();
+        setPopupHighlight(0);
+        setSlashPopup({ rect, filter, lineIndex });
       });
+    });
+  }, [isTouchDevice, scrollToLine]);
+
+  const handleFloatingSlashButton = useCallback(() => {
+    const currentLineIndex = getCursorInfo()?.lineIndex ?? trackedCursor.current?.lineIndex ?? null;
+    const { content, lineIndex, offset, filter } = prepareFloatingSlashButtonCommand(
+      contentRef.current,
+      currentLineIndex,
+    );
+
+    if (content !== contentRef.current) {
+      pushUndo(true);
+      structuralUpdate(content, lineIndex, offset, true);
     }
-  }, [pushUndo, structuralUpdate]);
+
+    openSlashPopup(lineIndex, filter);
+  }, [openSlashPopup, pushUndo, structuralUpdate]);
 
   // Key handler
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -2880,6 +2921,7 @@ const WritingInterface = () => {
   const editorShellStyle: React.CSSProperties = {
     maxWidth: visualMetrics.editorMaxWidth,
   };
+  const editorBottomPadding = isTouchDevice ? MOBILE_EDITOR_BOTTOM_PADDING : '200px';
 
   // Editor styles
   const editorStyle: React.CSSProperties = {
@@ -2959,6 +3001,7 @@ const WritingInterface = () => {
               pageTransition === 'slide-left' ? 'animate-slide-left' :
               pageTransition === 'slide-right' ? 'animate-slide-right' : ''
             }`}
+            style={{ paddingBottom: editorBottomPadding }}
             data-editor-bg="true"
           >
             <div
@@ -2987,6 +3030,7 @@ const WritingInterface = () => {
       {/* Pages */}
       <div
         className={`fixed bottom-10 left-0 right-0 flex justify-center items-center gap-2 pointer-events-none transition-opacity duration-500 ${showDots ? 'opacity-60' : 'opacity-0'}`}
+        style={isTouchDevice ? { bottom: MOBILE_PAGE_DOTS_BOTTOM } : undefined}
         aria-label="Pages in this doc"
       >
         {pageCount <= 8 ? (
@@ -3013,7 +3057,10 @@ const WritingInterface = () => {
 
       {/* Save indicator */}
       {savedFlash && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 font-mono text-[10px] text-foreground/40 pointer-events-none select-none">
+        <div
+          className="fixed bottom-5 left-1/2 -translate-x-1/2 font-mono text-[10px] text-foreground/40 pointer-events-none select-none"
+          style={isTouchDevice ? { bottom: MOBILE_SAVE_INDICATOR_BOTTOM } : undefined}
+        >
           saved
         </div>
       )}
@@ -3026,7 +3073,7 @@ const WritingInterface = () => {
             handleFloatingSlashButton();
           }}
           className="fixed right-4 z-50 w-11 h-11 rounded-full bg-popover border border-border text-muted-foreground flex items-center justify-center shadow-lg transition-colors"
-          style={{ bottom: kbHeight + 20 }}
+          style={{ bottom: MOBILE_SLASH_BUTTON_BOTTOM }}
           aria-label="Insert slash command"
         >
           <span className="font-mono text-lg leading-none">/</span>
@@ -3034,7 +3081,10 @@ const WritingInterface = () => {
       )}
 
       {/* Footer */}
-      <div className="fixed bottom-3 left-0 right-0 text-center pointer-events-none opacity-40 hover:opacity-70 transition-opacity duration-300">
+      <div
+        className="fixed bottom-3 left-0 right-0 text-center pointer-events-none opacity-40 hover:opacity-70 transition-opacity duration-300"
+        style={isTouchDevice ? { bottom: MOBILE_FOOTER_BOTTOM } : undefined}
+      >
         <span
           className="font-playfair text-xs sm:text-sm text-foreground tracking-wide pointer-events-auto"
           style={titleGlow}

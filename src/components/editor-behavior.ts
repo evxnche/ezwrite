@@ -78,6 +78,56 @@ export function getFloatingSlashButtonCursor(content: string): {
   };
 }
 
+export function prepareFloatingSlashButtonCommand(content: string, currentLineIndex?: number | null): {
+  content: string;
+  lineIndex: number;
+  offset: number;
+  filter: string;
+} {
+  const lines = content.split('\n');
+
+  if (
+    currentLineIndex === null ||
+    currentLineIndex === undefined ||
+    currentLineIndex < 0 ||
+    currentLineIndex >= lines.length
+  ) {
+    const fallback = getFloatingSlashButtonCursor(content);
+    const nextLines = fallback.content.split('\n');
+    nextLines[fallback.lineIndex] = '/';
+    return {
+      content: nextLines.join('\n'),
+      lineIndex: fallback.lineIndex,
+      offset: 1,
+      filter: '',
+    };
+  }
+
+  const visibleLine = lines[currentLineIndex].startsWith(LIST_EXIT)
+    ? lines[currentLineIndex].slice(LIST_EXIT.length)
+    : lines[currentLineIndex];
+  const trimmed = visibleLine.trim();
+
+  if (trimmed === '' || /^\/\w{0,10}$/.test(trimmed)) {
+    const filter = trimmed.startsWith('/') ? trimmed.slice(1) : '';
+    lines[currentLineIndex] = `/${filter}`;
+    return {
+      content: lines.join('\n'),
+      lineIndex: currentLineIndex,
+      offset: filter.length + 1,
+      filter,
+    };
+  }
+
+  lines.splice(currentLineIndex + 1, 0, '/');
+  return {
+    content: lines.join('\n'),
+    lineIndex: currentLineIndex + 1,
+    offset: 1,
+    filter: '',
+  };
+}
+
 export function normalizePastedPlainText(text: string): string {
   return text
     .replace(/\r\n/g, '\n')
@@ -246,4 +296,35 @@ export function getMarkdownRangeForSelection(
   if (!touchesStructuredLine) return null;
 
   return { start, end };
+}
+
+export function getTouchGestureIntent({
+  dx,
+  dy,
+  hasSelection,
+  isKeyboardOpen,
+  isEditorFocused,
+}: {
+  dx: number;
+  dy: number;
+  hasSelection: boolean;
+  isKeyboardOpen: boolean;
+  isEditorFocused: boolean;
+}): 'dismiss-keyboard' | 'page-next' | 'page-prev' | null {
+  if (hasSelection) return null;
+
+  if (
+    isKeyboardOpen &&
+    isEditorFocused &&
+    dy > 72 &&
+    dy > Math.abs(dx) * 1.35
+  ) {
+    return 'dismiss-keyboard';
+  }
+
+  if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 60) {
+    return dx < 0 ? 'page-next' : 'page-prev';
+  }
+
+  return null;
 }
