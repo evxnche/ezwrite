@@ -14,7 +14,7 @@ bun run dev
 1. Run `docs/supabase-sync.sql` in Supabase SQL editor.
 2. Run `docs/supabase-bug-reports.sql` for in-app bug reports.
 3. Copy `.env.example` to `.env.local`.
-4. Fill `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+4. Fill `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_LANDING_PAGE_URL` (waitlist/landing site for settings → about).
 5. Open ezWrite settings, create/sign in with email + password.
 6. Mark paid accounts in Supabase:
    `update public.ezwrite_profiles set sync_plan = 'paid' where email = 'demo@example.com';`

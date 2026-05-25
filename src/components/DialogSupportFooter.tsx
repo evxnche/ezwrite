@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BUG_REPORT_EMAIL } from '@/lib/bug-report';
+import { BRANDING_LINE } from '@/lib/app-links';
 import BugReportDialog from './BugReportDialog';
 
 type Props = {
@@ -29,16 +29,7 @@ const DialogSupportFooter: React.FC<Props> = ({
         >
           report a bug
         </button>
-        {variant === 'help' ? (
-          <p>
-            dev hotline{' '}
-            <a href={`mailto:${BUG_REPORT_EMAIL}`} className="text-accent-foreground hover:underline">
-              {BUG_REPORT_EMAIL}
-            </a>
-          </p>
-        ) : (
-          <p>ezwrite · built by evan :)</p>
-        )}
+        <p>{BRANDING_LINE}</p>
       </div>
       <BugReportDialog
         open={bugOpen}

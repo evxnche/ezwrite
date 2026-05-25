@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Cloud, FolderOpen, Lock, RefreshCw } from 'lucide-react';
 import DialogSupportFooter from './DialogSupportFooter';
+import { BUG_REPORT_EMAIL } from '@/lib/bug-report';
+import { getLandingPageUrl } from '@/lib/app-links';
 import type { ColorTheme } from './preferences';
 
 const THEMES = [
@@ -11,7 +13,7 @@ const THEMES = [
   { id: 'red' as ColorTheme, label: 'red', swatch: 'bg-[#7C3232]' },
 ];
 
-const SETTINGS_TABS = ['appearance', 'features', 'storage'] as const;
+const SETTINGS_TABS = ['appearance', 'features', 'storage', 'about'] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 const SEGMENT_TRACK = 'flex gap-1 p-1 rounded-xl bg-muted/30 border border-border/60';
@@ -151,6 +153,7 @@ export const SettingsDialog: React.FC<Props> = ({
   userId,
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
+  const landingPageUrl = getLandingPageUrl();
 
   useEffect(() => {
     if (open) setActiveTab('appearance');
@@ -397,6 +400,39 @@ export const SettingsDialog: React.FC<Props> = ({
                     </div>
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'about' && (
+            <div role="tabpanel" className="space-y-4 pt-1 lowercase">
+              <div className="space-y-1.5">
+                <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">dev hotline</h3>
+                <p className="text-sm text-foreground">
+                  <a href={`mailto:${BUG_REPORT_EMAIL}`} className="text-accent-foreground hover:underline">
+                    {BUG_REPORT_EMAIL}
+                  </a>
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">share w/ friends</h3>
+                {landingPageUrl ? (
+                  <a
+                    href={landingPageUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-accent-foreground hover:underline break-all"
+                  >
+                    {landingPageUrl}
+                  </a>
+                ) : (
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    set <span className="text-foreground">VITE_LANDING_PAGE_URL</span> in env to show your waitlist link.
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  send friends here to join the waitlist and get access.
+                </p>
               </div>
             </div>
           )}
