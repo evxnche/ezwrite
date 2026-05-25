@@ -11,6 +11,9 @@ interface Props {
   onClearFolder?: () => void;
   onInstall?: () => void;
   imagesEnabled?: boolean;
+  contactEmail?: string;
+  accessToken?: string;
+  userId?: string;
 }
 
 const InfoDialog: React.FC<Props> = ({
@@ -21,6 +24,9 @@ const InfoDialog: React.FC<Props> = ({
   onClearFolder,
   onInstall,
   imagesEnabled = true,
+  contactEmail,
+  accessToken,
+  userId,
 }) => {
   const [canInstall, setCanInstall] = useState(false);
   const fsSupported = isFileSystemSupported();
@@ -161,7 +167,12 @@ const InfoDialog: React.FC<Props> = ({
             <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-popover to-transparent" />
           )}
         </div>
-        <DialogSupportFooter variant="help" />
+        <DialogSupportFooter
+          variant="help"
+          contactEmail={contactEmail}
+          accessToken={accessToken}
+          userId={userId}
+        />
       </DialogContent>
     </Dialog>
   );

@@ -3158,6 +3158,9 @@ const WritingInterface = () => {
               onClearFolder={handleClearFolder}
               onInstall={handleInstall}
               imagesEnabled={imagesEnabled}
+              contactEmail={syncSession?.email}
+              accessToken={syncSession?.accessToken}
+              userId={syncSession?.userId}
             />
 
             <SettingsDialog
@@ -3186,6 +3189,8 @@ const WritingInterface = () => {
               syncConfigured={getSyncConfigStatus() === 'ready'}
               syncUnlocked={Boolean(syncSession)}
               syncUserEmail={syncSession?.email}
+              accessToken={syncSession?.accessToken}
+              userId={syncSession?.userId}
               syncPlan={syncSession?.plan ?? 'free'}
               syncBusy={syncBusy}
               syncStatus={syncStatus}

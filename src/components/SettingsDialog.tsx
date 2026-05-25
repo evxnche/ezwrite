@@ -102,6 +102,8 @@ interface Props {
   onLockSync?: () => void;
   onSyncNow?: () => void;
   onToggleActiveProjectSync?: () => void;
+  accessToken?: string;
+  userId?: string;
 }
 
 export const SettingsDialog: React.FC<Props> = ({
@@ -145,6 +147,8 @@ export const SettingsDialog: React.FC<Props> = ({
   onLockSync,
   onSyncNow,
   onToggleActiveProjectSync,
+  accessToken,
+  userId,
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
 
@@ -398,7 +402,12 @@ export const SettingsDialog: React.FC<Props> = ({
           )}
         </div>
 
-        <DialogSupportFooter variant="settings" />
+        <DialogSupportFooter
+          variant="settings"
+          contactEmail={syncUserEmail}
+          accessToken={accessToken}
+          userId={userId}
+        />
       </DialogContent>
     </Dialog>
   );
