@@ -18,6 +18,7 @@ export interface ProjectMeta {
   syncLastRemoteUpdatedAt?: number;
   syncLastPushedAt?: number;
   syncLastPulledAt?: number;
+  syncLastPayloadHash?: string;
 }
 
 const PROJECTS_KEY = 'ezwrite-projects';
@@ -152,7 +153,7 @@ export function setProjectSyncEnabled(id: string, syncEnabled: boolean): Project
   return updateProjectMeta(id, { syncEnabled, updatedAt: Date.now() });
 }
 
-export function markProjectSynced(id: string, remoteUpdatedAt: number, localUpdatedAt?: number): ProjectMeta | null {
+export function markProjectSynced(id: string, remoteUpdatedAt: number, localUpdatedAt?: number, payloadHash?: string): ProjectMeta | null {
   const now = Date.now();
   const meta = getProjectMeta(id);
   return updateProjectMeta(id, {
@@ -160,6 +161,7 @@ export function markProjectSynced(id: string, remoteUpdatedAt: number, localUpda
     syncLastRemoteUpdatedAt: remoteUpdatedAt,
     syncLastPushedAt: localUpdatedAt ?? meta?.updatedAt ?? now,
     syncLastPulledAt: now,
+    ...(payloadHash !== undefined ? { syncLastPayloadHash: payloadHash } : {}),
   });
 }
 
@@ -203,6 +205,7 @@ export function createProjectWithId(id: string, firstPageContent = '', metaPatch
     syncLastRemoteUpdatedAt: metaPatch.syncLastRemoteUpdatedAt,
     syncLastPushedAt: metaPatch.syncLastPushedAt,
     syncLastPulledAt: metaPatch.syncLastPulledAt,
+    syncLastPayloadHash: metaPatch.syncLastPayloadHash,
   };
 
   const projects = listProjects().filter((project) => project.id !== id);
@@ -307,6 +310,7 @@ export function saveProjectSnapshot(input: {
   syncLastRemoteUpdatedAt?: number;
   syncLastPushedAt?: number;
   syncLastPulledAt?: number;
+  syncLastPayloadHash?: string;
 }): ProjectMeta {
   const safePages = input.pages.length ? input.pages.map((page) => String(page ?? '')) : [''];
   const existing = getProjectMeta(input.id);
@@ -318,6 +322,7 @@ export function saveProjectSnapshot(input: {
     syncLastRemoteUpdatedAt: input.syncLastRemoteUpdatedAt,
     syncLastPushedAt: input.syncLastPushedAt,
     syncLastPulledAt: input.syncLastPulledAt,
+    syncLastPayloadHash: input.syncLastPayloadHash,
   };
 
   const meta = existing

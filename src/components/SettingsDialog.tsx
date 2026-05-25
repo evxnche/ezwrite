@@ -91,13 +91,13 @@ interface Props {
   syncBusy?: boolean;
   syncStatus?: string;
   syncError?: string;
-  syncEmail?: string;
+  syncUsername?: string;
   syncPassword?: string;
-  syncUserEmail?: string;
+  syncAccount?: string;
   syncPlan?: 'free' | 'paid';
   syncCanUse?: boolean;
   activeProjectSynced?: boolean;
-  onSyncEmailChange?: (value: string) => void;
+  onSyncUsernameChange?: (value: string) => void;
   onSyncPasswordChange?: (value: string) => void;
   onUnlockSync?: () => void;
   onCreateSyncAccount?: () => void;
@@ -136,13 +136,13 @@ export const SettingsDialog: React.FC<Props> = ({
   syncBusy,
   syncStatus,
   syncError,
-  syncEmail,
+  syncUsername,
   syncPassword,
-  syncUserEmail,
+  syncAccount,
   syncPlan = 'free',
   syncCanUse,
   activeProjectSynced,
-  onSyncEmailChange,
+  onSyncUsernameChange,
   onSyncPasswordChange,
   onUnlockSync,
   onCreateSyncAccount,
@@ -333,8 +333,8 @@ export const SettingsDialog: React.FC<Props> = ({
                       {syncUnlocked ? (
                         <div className="flex items-center justify-between gap-2">
                           <div className="min-w-0 text-xs text-muted-foreground lowercase">
-                            <div className="truncate text-foreground">{syncUserEmail}</div>
-                            <div>{syncPlan === 'paid' ? 'paid sync active' : 'free: local only'}</div>
+                            <div className="truncate text-foreground">{syncAccount}</div>
+                            <div>{syncPlan === 'paid' ? 'paid sync active' : 'sync active'}</div>
                           </div>
                           <button
                             onClick={onLockSync}
@@ -347,10 +347,13 @@ export const SettingsDialog: React.FC<Props> = ({
                       ) : (
                         <div className="space-y-2">
                           <input
-                            type="email"
-                            value={syncEmail ?? ''}
-                            onChange={(e) => onSyncEmailChange?.(e.target.value)}
-                            placeholder="email"
+                            type="text"
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            value={syncUsername ?? ''}
+                            onChange={(e) => onSyncUsernameChange?.(e.target.value)}
+                            placeholder="username"
                             disabled={syncBusy}
                             className="w-full rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-xs outline-none focus:border-accent-foreground/50 disabled:opacity-50"
                           />
@@ -460,7 +463,6 @@ export const SettingsDialog: React.FC<Props> = ({
 
         <DialogSupportFooter
           variant="settings"
-          contactEmail={syncUserEmail}
           accessToken={accessToken}
           userId={userId}
         />

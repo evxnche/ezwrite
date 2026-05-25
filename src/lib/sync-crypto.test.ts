@@ -1,55 +1,81 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+
 import {
   buildSyncProjectSnapshot,
-  decryptJsonWithPassword,
-  encryptJsonWithPassword,
-  hashEncryptedPayload,
+  decryptSnapshotWithKey,
+  deriveAuthSecret,
+  deriveMasterKey,
+  encryptSnapshotWithKey,
+  hashSnapshot,
   type SyncProjectSnapshot,
 } from './sync-crypto.ts';
 
-test('password encryption round-trips a sync project snapshot', async () => {
+test('v2 round-trips a sync project snapshot via the master key', async () => {
   const snapshot = buildSyncProjectSnapshot({
     projectId: 'note-1',
     title: 'private note',
     pages: ['one', 'two'],
-    scratchpad: 'side thought',
+    scratchpad: 'side',
     updatedAt: 123,
   });
 
-  const encrypted = await encryptJsonWithPassword(snapshot, 'correct horse', { iterations: 1_000 });
-  assert.notEqual(encrypted.ciphertext.includes('private note'), true);
+  const masterKey = await deriveMasterKey('correct horse', 'alice');
+  const encrypted = await encryptSnapshotWithKey(snapshot, masterKey);
 
-  const decrypted = await decryptJsonWithPassword<SyncProjectSnapshot>(encrypted, 'correct horse');
+  assert.equal(encrypted.version, 2);
+  assert.equal(encrypted.ciphertext.includes('private note'), false);
+
+  const decrypted = await decryptSnapshotWithKey<SyncProjectSnapshot>(encrypted, masterKey);
   assert.deepEqual(decrypted, snapshot);
 });
 
-test('password encryption uses fresh salt and iv each time', async () => {
-  const value = { text: 'same note' };
-  const first = await encryptJsonWithPassword(value, 'pw', { iterations: 1_000 });
-  const second = await encryptJsonWithPassword(value, 'pw', { iterations: 1_000 });
+test('auth secret is deterministic and username-scoped', async () => {
+  // Same passphrase, normalized username -> identical auth secret (so device B logs in).
+  assert.equal(await deriveAuthSecret('pw', 'alice'), await deriveAuthSecret('pw', 'ALICE '));
+  assert.notEqual(await deriveAuthSecret('pw', 'alice'), await deriveAuthSecret('pw', 'bob'));
+  assert.notEqual(await deriveAuthSecret('pw', 'alice'), await deriveAuthSecret('pw2', 'alice'));
+});
 
+test('the server-visible auth secret cannot decrypt note payloads', async () => {
+  // The auth secret is the only password-derived value sent to the server. Prove that
+  // it cannot be used to reconstruct the encryption key.
+  const masterKey = await deriveMasterKey('pw', 'alice');
+  const snapshot = buildSyncProjectSnapshot({ projectId: 'n', title: 'secret', pages: ['x'] });
+  const encrypted = await encryptSnapshotWithKey(snapshot, masterKey);
+
+  const authSecret = await deriveAuthSecret('pw', 'alice');
+  const keyFromAuthSecret = await deriveMasterKey(authSecret, 'alice');
+  await assert.rejects(() => decryptSnapshotWithKey(encrypted, keyFromAuthSecret));
+});
+
+test('each encryption uses a fresh salt and iv', async () => {
+  const masterKey = await deriveMasterKey('pw', 'alice');
+  const snapshot = buildSyncProjectSnapshot({ projectId: 'n', title: 't', pages: ['same'] });
+
+  const first = await encryptSnapshotWithKey(snapshot, masterKey);
+  const second = await encryptSnapshotWithKey(snapshot, masterKey);
+
+  assert.notEqual(first.salt, second.salt);
+  assert.notEqual(first.iv, second.iv);
   assert.notEqual(first.ciphertext, second.ciphertext);
-  assert.notEqual(first.kdf.salt, second.kdf.salt);
-  assert.notEqual(first.cipher.iv, second.cipher.iv);
 });
 
-test('wrong password cannot decrypt payload', async () => {
-  const encrypted = await encryptJsonWithPassword({
-    projectId: 'note-1',
-    title: 'private note',
-    pages: ['one'],
-  }, 'right password', { iterations: 1_000 });
+test('a wrong password or username cannot decrypt', async () => {
+  const snapshot = buildSyncProjectSnapshot({ projectId: 'n', title: 't', pages: ['x'] });
+  const encrypted = await encryptSnapshotWithKey(snapshot, await deriveMasterKey('right', 'alice'));
 
-  await assert.rejects(
-    () => decryptJsonWithPassword<SyncProjectSnapshot>(encrypted, 'wrong password'),
-    /operation failed|decrypt/i,
-  );
+  const wrongPassword = await deriveMasterKey('wrong', 'alice');
+  const wrongUsername = await deriveMasterKey('right', 'bob');
+  await assert.rejects(() => decryptSnapshotWithKey(encrypted, wrongPassword));
+  await assert.rejects(() => decryptSnapshotWithKey(encrypted, wrongUsername));
 });
 
-test('encrypted payload hash changes with payload contents', async () => {
-  const first = await encryptJsonWithPassword({ text: 'one' }, 'pw', { iterations: 1_000 });
-  const second = await encryptJsonWithPassword({ text: 'two' }, 'pw', { iterations: 1_000 });
+test('snapshot hash is stable and content-sensitive', async () => {
+  const a = buildSyncProjectSnapshot({ projectId: 'n', title: 't', pages: ['one'], updatedAt: 1 });
+  const aAgain = buildSyncProjectSnapshot({ projectId: 'n', title: 't', pages: ['one'], updatedAt: 1 });
+  const b = buildSyncProjectSnapshot({ projectId: 'n', title: 't', pages: ['two'], updatedAt: 1 });
 
-  assert.notEqual(await hashEncryptedPayload(first), await hashEncryptedPayload(second));
+  assert.equal(await hashSnapshot(a), await hashSnapshot(aAgain));
+  assert.notEqual(await hashSnapshot(a), await hashSnapshot(b));
 });

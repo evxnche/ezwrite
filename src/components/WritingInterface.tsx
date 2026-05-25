@@ -61,18 +61,21 @@ import {
   saveProjectScratchpad,
   setProjectSyncEnabled,
   markProjectSynced,
+  updateProjectMeta,
   pageToTitle,
   type ProjectMeta,
 } from '@/lib/projects';
 import {
   createSyncSession,
   decryptRemoteSyncNote,
+  deleteRemoteSyncNote,
   getSyncConfigStatus,
   listRemoteSyncNotes,
   upsertRemoteSyncNote,
   type RemoteSyncNote,
   type SyncSession,
 } from '@/lib/sync-client';
+import { buildSyncProjectSnapshot, hashSnapshot } from '@/lib/sync-crypto';
 import { recordBugReportBreadcrumb, setBugReportRuntimeContext } from '@/lib/bug-report';
 
 
@@ -80,6 +83,11 @@ const InfoDialog = lazy(() => import('./InfoDialog'));
 const SettingsDialog = lazy(() => import('./SettingsDialog'));
 const NotesPanel = lazy(() => import('./NotesPanel'));
 const ScratchpadPanel = lazy(() => import('./ScratchpadPanel'));
+
+const SYNC_DEBOUNCE_MS = 1800;
+// Slack allowed between a project's local edit time and its last push/pull marker
+// before we treat it as a genuine local change (covers clock + write jitter).
+const SYNC_FUDGE_MS = 500;
 
 function buildImageSlots(lines: string[]): Array<{ id: string; caption: string; lineIndex: number }> {
   return lines.flatMap((line, i) => {
@@ -333,14 +341,14 @@ const WritingInterface = () => {
     insertAtLine: number;
     isProcessing: boolean;
   }>({ open: false, dataUrl: null, insertAtLine: 0, isProcessing: false });
-  const [syncEmail, setSyncEmail] = useState('');
+  const [syncUsername, setSyncUsername] = useState('');
   const [syncPassword, setSyncPassword] = useState('');
   const [syncSession, setSyncSession] = useState<SyncSession | null>(null);
   const [syncStatus, setSyncStatus] = useState('free: local only');
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncError, setSyncError] = useState('');
   const savedFlashTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
-  const syncPushTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const syncPushTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const syncSessionRef = useRef<SyncSession | null>(null);
   const [timerAlert, setTimerAlert] = useState(false);
   const [pageTransition, setPageTransition] = useState<'none' | 'slide-left' | 'slide-right'>('none');
@@ -737,36 +745,54 @@ const WritingInterface = () => {
     return pageCount > 1 ? `${base}-p${currentPageRef.current + 1}` : base;
   };
 
-  const pushProjectToSync = useCallback(async (projectId: string, session = syncSessionRef.current) => {
+  const pushProjectToSync = useCallback(async (
+    projectId: string,
+    session = syncSessionRef.current,
+    opts: { keepalive?: boolean } = {},
+  ) => {
     if (!session || getSyncConfigStatus() !== 'ready') return;
-    if (session.plan !== 'paid') return;
     const meta = getProjectMeta(projectId);
     if (!meta?.syncEnabled) return;
     const pages = projectId === activeProjectIdRef.current ? [...pagesRef.current] : getProjectPages(projectId);
     const scratch = projectId === activeProjectIdRef.current ? scratchpadRef.current : getProjectScratchpad(projectId);
-    const row = await upsertRemoteSyncNote(session, {
+    const snapshot = buildSyncProjectSnapshot({
       projectId,
       title: pageToTitle(pages[0] ?? ''),
       pages,
       scratchpad: scratch,
       updatedAt: meta.updatedAt,
     });
-    markProjectSynced(projectId, row.updated_at, meta.updatedAt);
+    const hash = await hashSnapshot(snapshot);
+    if (hash === meta.syncLastPayloadHash) {
+      // Unchanged since last push — advance the marker so we stop re-checking.
+      updateProjectMeta(projectId, { syncLastPushedAt: meta.updatedAt });
+      return;
+    }
+    const row = await upsertRemoteSyncNote(session, {
+      projectId,
+      title: snapshot.title,
+      pages,
+      scratchpad: scratch,
+      updatedAt: meta.updatedAt,
+    }, opts);
+    markProjectSynced(projectId, row.updated_at, meta.updatedAt, hash);
     setProjects(listProjects());
     setSyncStatus('synced');
   }, []);
 
   const scheduleSyncPush = useCallback((projectId = activeProjectIdRef.current) => {
     if (!projectId || !syncSessionRef.current) return;
-    if (syncSessionRef.current.plan !== 'paid') return;
     if (!getProjectMeta(projectId)?.syncEnabled) return;
-    clearTimeout(syncPushTimeoutRef.current);
-    syncPushTimeoutRef.current = setTimeout(() => {
+    const timers = syncPushTimersRef.current;
+    const existing = timers.get(projectId);
+    if (existing) clearTimeout(existing);
+    timers.set(projectId, setTimeout(() => {
+      timers.delete(projectId);
       pushProjectToSync(projectId).catch((error) => {
         setSyncError(error instanceof Error ? error.message : 'Sync failed');
         setSyncStatus('sync failed');
       });
-    }, 1800);
+    }, SYNC_DEBOUNCE_MS));
   }, [pushProjectToSync]);
 
   const persistScratchpad = useCallback((value: string, projectId = activeProjectIdRef.current) => {
@@ -825,7 +851,18 @@ const WritingInterface = () => {
   }, [scheduleSyncPush]);
 
   useEffect(() => {
-    const flushForLifecycle = () => flushCurrentProject();
+    const timers = syncPushTimersRef.current;
+    const flushForLifecycle = () => {
+      flushCurrentProject();
+      const session = syncSessionRef.current;
+      const projectId = activeProjectIdRef.current;
+      if (session && projectId && getProjectMeta(projectId)?.syncEnabled) {
+        const pending = timers.get(projectId);
+        if (pending) { clearTimeout(pending); timers.delete(projectId); }
+        // Best-effort immediate push so the last edit isn't lost on tab close.
+        void pushProjectToSync(projectId, session, { keepalive: true }).catch(() => {});
+      }
+    };
     const flushWhenHidden = () => {
       if (document.visibilityState === 'hidden') flushForLifecycle();
     };
@@ -839,9 +876,10 @@ const WritingInterface = () => {
       window.removeEventListener('beforeunload', flushForLifecycle);
       clearTimeout(deferredPersistTimeoutRef.current);
       clearTimeout(scratchpadPersistTimeoutRef.current);
-      clearTimeout(syncPushTimeoutRef.current);
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
     };
-  }, [flushCurrentProject]);
+  }, [flushCurrentProject, pushProjectToSync]);
 
   // --- Save helper ---
   const saveContent = useCallback((content: string) => {
@@ -1179,6 +1217,8 @@ const WritingInterface = () => {
   }, [persistScratchpad, scratchpad, switchToProject]);
 
   const handleDeleteProject = useCallback((id: string) => {
+    const meta = getProjectMeta(id);
+    const wasSynced = Boolean(meta?.syncEnabled);
     deleteProject(id);
     const newProjects = listProjects();
     setProjects(newProjects);
@@ -1186,10 +1226,16 @@ const WritingInterface = () => {
       if (newProjects.length > 0) {
         switchToProject(newProjects[0].id);
       } else {
-        const meta = createProject('');
-        setProjects([meta]);
-        switchToProject(meta.id);
+        const created = createProject('');
+        setProjects([created]);
+        switchToProject(created.id);
       }
+    }
+    const session = syncSessionRef.current;
+    if (wasSynced && session) {
+      deleteRemoteSyncNote(session, id).catch((error) => {
+        setSyncError(error instanceof Error ? error.message : 'Sync delete failed');
+      });
     }
   }, [switchToProject]);
 
@@ -1253,16 +1299,31 @@ const WritingInterface = () => {
     structuralUpdate(contentRef.current, lineIndex, offset, !isTouchDevice, false);
   }, [isTouchDevice, structuralUpdate]);
 
-  const applyRemoteSyncRows = useCallback(async (rows: RemoteSyncNote[], session: SyncSession) => {
+  const applyRemoteSyncRows = useCallback(async (rows: RemoteSyncNote[], session: SyncSession): Promise<number> => {
     const touchedIds = new Set<string>();
+    let activeDeleted = false;
+    let maxUpdatedAt = 0;
     for (const row of rows) {
-      const snapshot = await decryptRemoteSyncNote(row, session.password);
-      const local = getProjectMeta(snapshot.projectId);
+      maxUpdatedAt = Math.max(maxUpdatedAt, row.updated_at);
+      const projectId = row.project_id;
+      const local = getProjectMeta(projectId);
       const remoteChanged = row.updated_at > (local?.syncLastRemoteUpdatedAt ?? 0);
       const localChanged = Boolean(
         local?.syncEnabled &&
-        local.updatedAt > (local.syncLastPushedAt ?? local.syncLastPulledAt ?? 0) + 500,
+        local.updatedAt > (local.syncLastPushedAt ?? local.syncLastPulledAt ?? 0) + SYNC_FUDGE_MS,
       );
+
+      if (row.deleted) {
+        // Remote tombstone: drop the local copy unless it has unsynced local edits.
+        if (local && !localChanged) {
+          if (projectId === activeProjectIdRef.current) activeDeleted = true;
+          deleteProject(projectId);
+          touchedIds.add(projectId);
+        }
+        continue;
+      }
+
+      const snapshot = await decryptRemoteSyncNote(row, session);
 
       if (local && remoteChanged && localChanged) {
         const conflictId = `${snapshot.projectId}-conflict-${Date.now().toString(36)}`;
@@ -1289,14 +1350,33 @@ const WritingInterface = () => {
           syncLastRemoteUpdatedAt: row.updated_at,
           syncLastPushedAt: snapshot.updatedAt,
           syncLastPulledAt: Date.now(),
+          syncLastPayloadHash: await hashSnapshot(snapshot),
         });
         touchedIds.add(snapshot.projectId);
       }
     }
     setProjects(listProjects());
-    if (activeProjectIdRef.current && touchedIds.has(activeProjectIdRef.current)) {
+
+    const activeId = activeProjectIdRef.current;
+    const projectsNow = listProjects();
+    if (activeDeleted || (activeId && !projectsNow.some((p) => p.id === activeId))) {
+      const fallback = projectsNow[0];
+      if (fallback) {
+        activeProjectIdRef.current = fallback.id;
+        setActiveProjectIdState(fallback.id);
+        setActiveProjectId(fallback.id);
+        refreshActiveProjectFromStorage();
+      } else {
+        const created = createProject('');
+        setProjects(listProjects());
+        activeProjectIdRef.current = created.id;
+        setActiveProjectIdState(created.id);
+        refreshActiveProjectFromStorage();
+      }
+    } else if (activeId && touchedIds.has(activeId)) {
       refreshActiveProjectFromStorage();
     }
+    return maxUpdatedAt;
   }, [refreshActiveProjectFromStorage]);
 
   const syncAllProjects = useCallback(async (session: SyncSession) => {
@@ -1304,19 +1384,18 @@ const WritingInterface = () => {
     setSyncError('');
     setSyncStatus('syncing...');
     try {
-      if (session.plan !== 'paid') {
-        setSyncStatus('paid sync only');
-        return;
-      }
-      const rows = await listRemoteSyncNotes(session);
-      await applyRemoteSyncRows(rows, session);
+      const cursorKey = `ezwrite-sync-cursor-${session.userId}`;
+      const since = Number(localStorage.getItem(cursorKey) ?? '0') || 0;
+      const rows = await listRemoteSyncNotes(session, since);
+      const maxUpdatedAt = await applyRemoteSyncRows(rows, session);
       const syncedProjects = listProjects().filter((project) => project.syncEnabled);
       for (const project of syncedProjects) {
         const latest = getProjectMeta(project.id);
         if (!latest) continue;
-        const needsPush = !latest.syncLastPushedAt || latest.updatedAt > latest.syncLastPushedAt + 500;
+        const needsPush = !latest.syncLastPushedAt || latest.updatedAt > latest.syncLastPushedAt + SYNC_FUDGE_MS;
         if (needsPush) await pushProjectToSync(project.id, session);
       }
+      if (maxUpdatedAt > since) localStorage.setItem(cursorKey, String(maxUpdatedAt));
       setProjects(listProjects());
       setSyncStatus('synced');
     } catch (error) {
@@ -1328,10 +1407,10 @@ const WritingInterface = () => {
   }, [applyRemoteSyncRows, pushProjectToSync]);
 
   const handleUnlockSync = useCallback(async (createAccount = false) => {
-    const email = syncEmail.trim().toLowerCase();
+    const username = syncUsername.trim().toLowerCase();
     const password = syncPassword.trim();
-    if (!email) {
-      setSyncError('Enter email');
+    if (!username) {
+      setSyncError('Enter username');
       return;
     }
     if (!password) {
@@ -1345,10 +1424,10 @@ const WritingInterface = () => {
     setSyncBusy(true);
     setSyncError('');
     try {
-      const session = await createSyncSession({ email, password, createAccount });
+      const session = await createSyncSession({ username, password, createAccount });
       setSyncSession(session);
       syncSessionRef.current = session;
-      setSyncStatus(session.plan === 'paid' ? 'sync unlocked' : 'paid sync only');
+      setSyncStatus('sync unlocked');
       await syncAllProjects(session);
     } catch (error) {
       setSyncError(error instanceof Error ? error.message : 'Could not unlock sync');
@@ -1356,12 +1435,14 @@ const WritingInterface = () => {
     } finally {
       setSyncBusy(false);
     }
-  }, [syncEmail, syncPassword, syncAllProjects]);
+  }, [syncUsername, syncPassword, syncAllProjects]);
 
   const handleLockSync = useCallback(() => {
+    const session = syncSessionRef.current;
+    if (session) localStorage.removeItem(`ezwrite-sync-cursor-${session.userId}`);
     setSyncSession(null);
     syncSessionRef.current = null;
-    setSyncEmail('');
+    setSyncUsername('');
     setSyncPassword('');
     setSyncStatus('free: local only');
   }, []);
@@ -1372,10 +1453,6 @@ const WritingInterface = () => {
     const next = !project?.syncEnabled;
     if (next && !syncSessionRef.current) {
       setSyncStatus('sign in to sync');
-      return;
-    }
-    if (next && syncSessionRef.current.plan !== 'paid') {
-      setSyncStatus('paid sync only');
       return;
     }
     setProjectSyncEnabled(projectId, next);
@@ -3287,7 +3364,7 @@ const WritingInterface = () => {
           onDeleteProject={handleDeleteProject}
           onRenameProject={handleRenameProject}
           isProjectSynced={(id) => Boolean(getProjectMeta(id)?.syncEnabled)}
-          syncCanUse={syncSession?.plan === 'paid'}
+          syncCanUse={Boolean(syncSession)}
           onToggleProjectSync={handleToggleProjectSync}
           onOpenSettings={() => { setNotesOpen(false); setSettingsOpen(true); }}
           onOpenScratchpad={handleOpenScratchpad}
@@ -3324,7 +3401,6 @@ const WritingInterface = () => {
               onClearFolder={handleClearFolder}
               onInstall={handleInstall}
               imagesEnabled={imagesEnabled}
-              contactEmail={syncSession?.email}
               accessToken={syncSession?.accessToken}
               userId={syncSession?.userId}
             />
@@ -3354,18 +3430,18 @@ const WritingInterface = () => {
               fsSupported={isFileSystemSupported()}
               syncConfigured={getSyncConfigStatus() === 'ready'}
               syncUnlocked={Boolean(syncSession)}
-              syncUserEmail={syncSession?.email}
+              syncAccount={syncSession?.username}
               accessToken={syncSession?.accessToken}
               userId={syncSession?.userId}
               syncPlan={syncSession?.plan ?? 'free'}
               syncBusy={syncBusy}
               syncStatus={syncStatus}
               syncError={syncError}
-              syncEmail={syncEmail}
+              syncUsername={syncUsername}
               syncPassword={syncPassword}
-              syncCanUse={syncSession?.plan === 'paid'}
+              syncCanUse={Boolean(syncSession)}
               activeProjectSynced={Boolean(activeProjectId && getProjectMeta(activeProjectId)?.syncEnabled)}
-              onSyncEmailChange={setSyncEmail}
+              onSyncUsernameChange={setSyncUsername}
               onSyncPasswordChange={setSyncPassword}
               onUnlockSync={() => handleUnlockSync(false)}
               onCreateSyncAccount={() => handleUnlockSync(true)}
