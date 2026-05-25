@@ -10,6 +10,7 @@ import { saveImage, loadImage, processImageForStorage, gcOrphanImages } from '@/
 import ImageDropDialog from './ImageDropDialog';
 import { recognizeImage } from '@/lib/ocr';
 import {
+  getInitialColorTheme,
   getNextColorTheme,
   pickColorTheme,
   type ColorTheme,
@@ -384,9 +385,7 @@ const WritingInterface = () => {
   }, [isTouchDevice]);
 
   // Color theme toggle — cycles: '' → 'blue' → 'green' → 'red' → ''
-  const [colorTheme, setColorTheme] = useState<ColorTheme>(() =>
-    pickColorTheme(localStorage.getItem('ezwrite-color-theme') || '')
-  );
+  const [colorTheme, setColorTheme] = useState<ColorTheme>(() => getInitialColorTheme());
   useEffect(() => {
     if (colorTheme) {
       document.documentElement.setAttribute('data-color-theme', colorTheme);

@@ -2,10 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  DEFAULT_COLOR_THEME,
   getNextColorTheme,
   getNextTimerAlertMode,
   pickColorTheme,
   pickTimerAlertMode,
+  resolveColorTheme,
 } from './preferences.ts';
 import { buildTimerSlots } from './timer-identity.ts';
 
@@ -13,6 +15,13 @@ test('pickColorTheme returns the exact theme that was clicked', () => {
   assert.equal(pickColorTheme('green'), 'green');
   assert.equal(pickColorTheme('red'), 'red');
   assert.equal(pickColorTheme(''), '');
+});
+
+test('resolveColorTheme defaults to red on first visit', () => {
+  assert.equal(DEFAULT_COLOR_THEME, 'red');
+  assert.equal(resolveColorTheme(null), 'red');
+  assert.equal(resolveColorTheme(''), '');
+  assert.equal(resolveColorTheme('blue'), 'blue');
 });
 
 test('pickTimerAlertMode returns the exact alert mode that was clicked', () => {

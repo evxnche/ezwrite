@@ -1,11 +1,23 @@
 export const COLOR_THEMES = ['', 'blue', 'green', 'red'] as const;
 export type ColorTheme = (typeof COLOR_THEMES)[number];
 
+export const DEFAULT_COLOR_THEME: ColorTheme = 'red';
+
 export const TIMER_ALERT_MODES = ['both', 'visual', 'audio', 'silent'] as const;
 export type TimerAlertMode = (typeof TIMER_ALERT_MODES)[number];
 
 export function pickColorTheme(theme: string): ColorTheme {
   return (COLOR_THEMES as readonly string[]).includes(theme) ? (theme as ColorTheme) : '';
+}
+
+/** First visit uses DEFAULT_COLOR_THEME; explicit '' in storage means original. */
+export function resolveColorTheme(stored: string | null): ColorTheme {
+  if (stored === null) return DEFAULT_COLOR_THEME;
+  return pickColorTheme(stored);
+}
+
+export function getInitialColorTheme(): ColorTheme {
+  return resolveColorTheme(localStorage.getItem('ezwrite-color-theme'));
 }
 
 export function getNextColorTheme(currentTheme: string): ColorTheme {
