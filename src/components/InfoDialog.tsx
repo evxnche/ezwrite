@@ -1,8 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { SpellCheck, Folder, Palette } from 'lucide-react';
 import { isFileSystemSupported } from '@/lib/storage';
+import DialogSupportFooter from './DialogSupportFooter';
 
 interface Props {
   open: boolean;
@@ -11,12 +10,6 @@ interface Props {
   onPickFolder?: () => void;
   onClearFolder?: () => void;
   onInstall?: () => void;
-  spellCheckEnabled?: boolean;
-  onToggleSpellCheck?: () => void;
-  useSerif?: boolean;
-  onToggleFont?: () => void;
-  colorTheme?: string;
-  onToggleColorTheme?: () => void;
   imagesEnabled?: boolean;
 }
 
@@ -27,28 +20,9 @@ const InfoDialog: React.FC<Props> = ({
   onPickFolder,
   onClearFolder,
   onInstall,
-  spellCheckEnabled,
-  onToggleSpellCheck,
-  useSerif,
-  onToggleFont,
-  colorTheme,
-  onToggleColorTheme,
   imagesEnabled = true,
 }) => {
   const [canInstall, setCanInstall] = useState(false);
-  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'done'>('idle');
-
-  const handleCheckUpdate = async () => {
-    setUpdateStatus('checking');
-    try {
-      const reg = await navigator.serviceWorker?.getRegistration();
-      if (reg) await reg.update();
-    } catch {
-      // Ignore update check failures and keep the dialog responsive.
-    }
-    setUpdateStatus('done');
-    setTimeout(() => setUpdateStatus('idle'), 3000);
-  };
   const fsSupported = isFileSystemSupported();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(false);
@@ -57,7 +31,6 @@ const InfoDialog: React.FC<Props> = ({
     setCanInstall(!!onInstall);
   }, [onInstall]);
 
-  // Check scroll position when dialog opens or content changes
   useEffect(() => {
     if (!open) return;
     const el = scrollRef.current;
@@ -65,7 +38,6 @@ const InfoDialog: React.FC<Props> = ({
     const check = () => {
       setIsAtBottom(el.scrollHeight - el.scrollTop <= el.clientHeight + 4);
     };
-    // Defer to let the DOM settle
     const id = setTimeout(check, 50);
     return () => clearTimeout(id);
   }, [open]);
@@ -82,79 +54,6 @@ const InfoDialog: React.FC<Props> = ({
         <DialogHeader>
           <DialogTitle className="font-mono text-base sm:text-lg truncate lowercase">shortcuts &amp; commands</DialogTitle>
         </DialogHeader>
-        {/* Toolbar row below header */}
-        <div className="flex items-center gap-3 pb-2 border-b border-border w-full">
-          {onToggleFont && (
-            <Tooltip delayDuration={400}>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={onToggleFont}
-                  tabIndex={-1}
-                  className="transition-colors font-serif text-base leading-none select-none"
-                  style={{ color: useSerif ? 'hsl(var(--accent-foreground))' : 'hsl(var(--muted-foreground))' }}
-                >
-                  A
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{useSerif ? 'switch to sans serif' : 'switch to serif'}</TooltipContent>
-            </Tooltip>
-          )}
-          {onToggleSpellCheck && (
-            <Tooltip delayDuration={400}>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={onToggleSpellCheck}
-                  tabIndex={-1}
-                  className="transition-colors"
-                  style={{ color: spellCheckEnabled ? 'hsl(var(--accent-foreground))' : 'hsl(var(--muted-foreground))' }}
-                >
-                  <SpellCheck size={15} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{spellCheckEnabled ? 'disable spellcheck' : 'enable spellcheck'}</TooltipContent>
-            </Tooltip>
-          )}
-          {onToggleColorTheme && (
-            <Tooltip delayDuration={400}>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={onToggleColorTheme}
-                  tabIndex={-1}
-                  className="transition-colors"
-                  style={{ color: colorTheme ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))' }}
-                >
-                  <Palette size={15} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {!colorTheme ? 'blue theme' : colorTheme === 'blue' ? 'green theme' : colorTheme === 'green' ? 'red theme' : 'original theme'}
-              </TooltipContent>
-            </Tooltip>
-          )}
-          {fsSupported && onPickFolder && (
-            <Tooltip delayDuration={400}>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={onPickFolder}
-                  tabIndex={-1}
-                  className="transition-colors"
-                  style={{ color: dirName ? 'hsl(var(--accent-foreground))' : 'hsl(var(--muted-foreground))' }}
-                >
-                  <Folder size={15} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{dirName ? `saving to /${dirName} — click to change` : 'choose save folder'}</TooltipContent>
-            </Tooltip>
-          )}
-          <button
-            onClick={handleCheckUpdate}
-            disabled={updateStatus === 'checking'}
-            className="ml-auto font-mono text-xs lowercase transition-colors disabled:opacity-40"
-            style={{ color: updateStatus === 'done' ? 'hsl(var(--accent-foreground))' : 'hsl(var(--muted-foreground))' }}
-          >
-            {updateStatus === 'checking' ? 'checking...' : updateStatus === 'done' ? 'up to date ✓' : 'click to update'}
-          </button>
-        </div>
         <div className="relative">
           <div
             ref={scrollRef}
@@ -213,7 +112,13 @@ const InfoDialog: React.FC<Props> = ({
               <ul className="space-y-1.5 text-muted-foreground ml-3">
                 <li>your writing lives on your device.</li>
                 <li>scratchpad notes stay local to each doc and are never exported.</li>
-                <li className="text-amber-500 dark:text-amber-400">⚠ on mobile, browser storage can be wiped by the os — download regularly to back up.</li>
+                <li className="text-amber-500 dark:text-amber-400">
+                  on mobile, the local storage can be wiped by the browser. so turn on web sync for notes on mobile. this is being solved in the native apps that are coming soon.
+                </li>
+                <li>
+                  theme, spellcheck, fonts, folder export, and sync live in{' '}
+                  <span className="text-accent-foreground">/settings</span>.
+                </li>
                 {fsSupported && !dirName && (
                   <li className="pt-1">
                     <button onClick={onPickFolder} className="text-accent-foreground hover:underline lowercase font-mono">
@@ -256,9 +161,7 @@ const InfoDialog: React.FC<Props> = ({
             <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-popover to-transparent" />
           )}
         </div>
-        <div className="border-t border-border pt-3 mt-1">
-          <p className="font-mono text-xs text-muted-foreground lowercase">dev hotline — <a href="mailto:evanbuildsstuff@gmail.com" className="text-accent-foreground hover:underline">evanbuildsstuff@gmail.com</a></p>
-        </div>
+        <DialogSupportFooter variant="help" />
       </DialogContent>
     </Dialog>
   );

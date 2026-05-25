@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Cloud, FolderOpen, Lock, RefreshCw } from 'lucide-react';
+import DialogSupportFooter from './DialogSupportFooter';
 import type { ColorTheme } from './preferences';
 
 const THEMES = [
@@ -397,11 +398,7 @@ export const SettingsDialog: React.FC<Props> = ({
           )}
         </div>
 
-        <div className="border-t border-border pt-3 mt-1">
-          <p className="font-mono text-xs text-muted-foreground lowercase">
-            ezwrite · built by evan :)
-          </p>
-        </div>
+        <DialogSupportFooter variant="settings" />
       </DialogContent>
     </Dialog>
   );

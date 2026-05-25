@@ -3157,12 +3157,6 @@ const WritingInterface = () => {
               onPickFolder={handlePickFolder}
               onClearFolder={handleClearFolder}
               onInstall={handleInstall}
-              spellCheckEnabled={spellCheckEnabled}
-              onToggleSpellCheck={handleToggleSpellCheck}
-              useSerif={useSerif}
-              onToggleFont={handleToggleFont}
-              colorTheme={colorTheme}
-              onToggleColorTheme={handleToggleColorTheme}
               imagesEnabled={imagesEnabled}
             />
 
