@@ -5,7 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ez - Distraction-Free Writing</title>
     <meta name="description" content="A minimal, distraction-free writing environment">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital,wght@0,400;1,400&family=Caveat:wght@400;600&display=swap">
+    <link rel="preload" href="/fonts/InstrumentSerif-Regular.ttf" as="font" type="font/ttf" crossorigin />
+    <style>
+      @font-face {
+        font-family: 'Instrument Serif';
+        src: url('/fonts/InstrumentSerif-Regular.ttf') format('truetype');
+        font-weight: 400;
+        font-style: normal;
+        font-display: block;
+      }
+      html.font-loading .brand-title {
+        visibility: hidden;
+      }
+    </style>
+    <script>
+      (function () {
+        document.documentElement.classList.add('font-loading');
+        var fontReady = document.fonts.load('400 26px "Instrument Serif"');
+        var timeout = new Promise(function (resolve) { setTimeout(resolve, 2500); });
+        Promise.race([fontReady, timeout]).finally(function () {
+          document.documentElement.classList.remove('font-loading');
+        });
+      })();
+    </script>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&display=swap">
     <meta name="author" content="Evan Cheriyan" />
 
     <!-- PWA -->
