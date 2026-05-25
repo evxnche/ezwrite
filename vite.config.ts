@@ -2,11 +2,34 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { VitePWA } from "vite-plugin-pwa";
+import fs from "node:fs";
+import { execSync } from "node:child_process";
+
+const packageJson = JSON.parse(fs.readFileSync(new URL("./package.json", import.meta.url), "utf8")) as {
+  version?: string;
+};
+
+function getGitCommitSha(): string {
+  const envSha = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA;
+  if (envSha) return envSha.slice(0, 7);
+  try {
+    return execSync("git rev-parse --short HEAD", {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "unknown";
+  }
+}
 
 export default defineConfig({
   server: {
     host: "::",
     port: 8080,
+  },
+  define: {
+    __APP_VERSION__: JSON.stringify(packageJson.version ?? "0.0.0"),
+    __APP_COMMIT_SHA__: JSON.stringify(getGitCommitSha()),
   },
   plugins: [
     react(),

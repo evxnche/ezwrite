@@ -12,6 +12,7 @@ import {
   getShareCardLines,
   getShareCardPalette,
   normalizePastedPlainText,
+  normalizeClipboardPasteText,
   normalizeEditorContent,
   shouldAutoFocusAfterPageSwitch,
   splitExitedListLine,
@@ -146,6 +147,13 @@ test('normalizePastedPlainText preserves line breaks from plain-text paste', () 
     normalizePastedPlainText('first line\nsecond line\n\nthird line'),
     'first line\nsecond line\n\nthird line',
   );
+});
+
+test('normalizeClipboardPasteText prefers Markdown task plain text over rendered HTML', () => {
+  const plain = '- [ ] open task\n- [x] done task';
+  const html = '<ul><li>open task</li><li>done task</li></ul>';
+
+  assert.equal(normalizeClipboardPasteText(plain, html), plain);
 });
 
 test('getShareCardLines formats the current page for a clean read-only card', () => {
@@ -293,10 +301,12 @@ test('project storage keeps a last-known-good backup for pages and scratchpad', 
   assert.equal(projectsSource.includes('localStorage.setItem(projectScratchpadBackupKey(id), value);'), true);
 });
 
-test('OPFS backup writes coalesce to the latest pending payload', () => {
+test('OPFS backup writes coalesce to the latest pending Markdown payload', () => {
   const storageSource = fs.readFileSync(path.join(process.cwd(), 'src/lib/storage.ts'), 'utf8');
   assert.equal(storageSource.includes('let opfsPendingWrite'), true);
-  assert.equal(storageSource.includes('opfsPendingWrite = { pages: [...pages], projectId, scratchpad };'), true);
+  assert.equal(storageSource.includes("import { contentToMarkdown } from '@/components/writing-helpers';"), true);
+  assert.equal(storageSource.includes('const markdowns = pages.map((page) => contentToMarkdown(page));'), true);
+  assert.equal(storageSource.includes('opfsPendingWrite = { pages: markdowns, projectId, scratchpad };'), true);
   assert.equal(storageSource.includes('if (opfsWriteScheduled) return;'), true);
   assert.equal(storageSource.includes('opfsLastProjectId'), false);
 });

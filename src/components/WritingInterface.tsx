@@ -22,8 +22,7 @@ import {
   prepareFloatingSlashButtonCommand,
   getShareCardLines,
   getShareCardPalette,
-  normalizePastedPlainText,
-  htmlToPlainLines,
+  normalizeClipboardPasteText,
   normalizeEditorContent,
   shouldAutoFocusAfterPageSwitch,
   splitExitedListLine,
@@ -74,6 +73,7 @@ import {
   type RemoteSyncNote,
   type SyncSession,
 } from '@/lib/sync-client';
+import { recordBugReportBreadcrumb, setBugReportRuntimeContext } from '@/lib/bug-report';
 
 
 const InfoDialog = lazy(() => import('./InfoDialog'));
@@ -614,6 +614,122 @@ const WritingInterface = () => {
   const textForStats = contentRef.current || '';
   const wordCount = textForStats.trim() ? textForStats.trim().split(/\s+/).length : 0;
   const charCount = textForStats.length;
+  const bugReportTelemetryReadyRef = useRef(false);
+  const lastBugReportPageRef = useRef(currentPage);
+  const lastBugReportProjectRef = useRef(activeProjectId);
+  const lastBugReportSyncUnlockedRef = useRef(Boolean(syncSession));
+  const lastBugReportSyncErrorRef = useRef(syncError);
+
+  useEffect(() => {
+    setBugReportRuntimeContext({
+      activeProjectId: activeProjectId ?? 'none',
+      activeProjectSynced: Boolean(activeProjectId && getProjectMeta(activeProjectId)?.syncEnabled),
+      cmdArrowPageNav,
+      currentPage: currentPage + 1,
+      dirHandleAttached: Boolean(dirHandle),
+      imagesEnabled,
+      infoOpen,
+      isTouchDevice,
+      keyboardOpen: kbHeight > 0,
+      notesOpen,
+      pageCharCount: charCount,
+      pageCount,
+      projectCount: projects.length,
+      scratchpadCharCount: scratchpad.length,
+      scratchpadOpen,
+      settingsOpen,
+      spellCheckEnabled,
+      syncConfigured: getSyncConfigStatus() === 'ready',
+      syncError,
+      syncPlan: syncSession?.plan ?? 'free',
+      syncStatus,
+      syncUnlocked: Boolean(syncSession),
+      wordCount,
+    });
+  }, [
+    activeProjectId,
+    charCount,
+    cmdArrowPageNav,
+    currentPage,
+    dirHandle,
+    imagesEnabled,
+    infoOpen,
+    isTouchDevice,
+    kbHeight,
+    notesOpen,
+    pageCount,
+    projects.length,
+    scratchpad.length,
+    scratchpadOpen,
+    settingsOpen,
+    spellCheckEnabled,
+    syncError,
+    syncSession,
+    syncStatus,
+    wordCount,
+  ]);
+
+  useEffect(() => {
+    if (!bugReportTelemetryReadyRef.current) {
+      bugReportTelemetryReadyRef.current = true;
+      return;
+    }
+    if (lastBugReportPageRef.current !== currentPage) {
+      recordBugReportBreadcrumb('switched page', {
+        currentPage: currentPage + 1,
+        pageCount,
+      });
+      lastBugReportPageRef.current = currentPage;
+    }
+  }, [currentPage, pageCount]);
+
+  useEffect(() => {
+    if (!bugReportTelemetryReadyRef.current) return;
+    if (lastBugReportProjectRef.current !== activeProjectId) {
+      recordBugReportBreadcrumb('switched project', {
+        activeProjectId: activeProjectId ?? 'none',
+        projectCount: projects.length,
+      });
+      lastBugReportProjectRef.current = activeProjectId;
+    }
+  }, [activeProjectId, projects.length]);
+
+  useEffect(() => {
+    if (!bugReportTelemetryReadyRef.current) return;
+    if (notesOpen) recordBugReportBreadcrumb('opened notes');
+  }, [notesOpen]);
+
+  useEffect(() => {
+    if (!bugReportTelemetryReadyRef.current) return;
+    if (infoOpen) recordBugReportBreadcrumb('opened help');
+  }, [infoOpen]);
+
+  useEffect(() => {
+    if (!bugReportTelemetryReadyRef.current) return;
+    if (settingsOpen) recordBugReportBreadcrumb('opened settings');
+  }, [settingsOpen]);
+
+  useEffect(() => {
+    if (!bugReportTelemetryReadyRef.current) return;
+    if (scratchpadOpen) recordBugReportBreadcrumb('opened scratchpad');
+  }, [scratchpadOpen]);
+
+  useEffect(() => {
+    if (!bugReportTelemetryReadyRef.current) return;
+    const unlocked = Boolean(syncSession);
+    if (lastBugReportSyncUnlockedRef.current === unlocked) return;
+    recordBugReportBreadcrumb(unlocked ? 'unlocked sync' : 'locked sync', {
+      syncPlan: syncSession?.plan ?? 'free',
+    });
+    lastBugReportSyncUnlockedRef.current = unlocked;
+  }, [syncSession]);
+
+  useEffect(() => {
+    if (!bugReportTelemetryReadyRef.current) return;
+    if (!syncError || syncError === lastBugReportSyncErrorRef.current) return;
+    recordBugReportBreadcrumb('sync error', { syncError });
+    lastBugReportSyncErrorRef.current = syncError;
+  }, [syncError]);
 
   const getCurrentDocExportStem = () => sanitizeFileStem(pageToTitle(pagesRef.current[0] ?? ''));
   const getCurrentExportStem = () => {
@@ -2242,7 +2358,7 @@ const WritingInterface = () => {
     pushUndo(true);
 
     const htmlData = e.clipboardData.getData('text/html');
-    const plain = htmlData ? htmlToPlainLines(htmlData) : normalizePastedPlainText(raw);
+    const plain = normalizeClipboardPasteText(raw, htmlData);
     // Re-hydrate markdown checklists back into ezWrite's internal list representation.
     const normalized = markdownToContent(plain);
     const pastedLines = normalized.split('\n');

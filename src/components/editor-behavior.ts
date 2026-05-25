@@ -134,6 +134,14 @@ export function normalizePastedPlainText(text: string): string {
     .replace(/\r/g, '\n');
 }
 
+const MARKDOWN_TASK_LINE = /^\s*[-*+]\s+\[[ xX]\]\s?/m;
+
+export function normalizeClipboardPasteText(rawPlainText: string, htmlData: string): string {
+  const plainText = normalizePastedPlainText(rawPlainText);
+  if (MARKDOWN_TASK_LINE.test(plainText)) return plainText;
+  return htmlData ? htmlToPlainLines(htmlData) : plainText;
+}
+
 export function getShareCardLines(content: string): string[] {
   const lines = content.split('\n');
   return lines

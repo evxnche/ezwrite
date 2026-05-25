@@ -145,6 +145,15 @@ test('copy-then-paste round-trip preserves checklist state', () => {
   assert.equal(roundTripped, original);
 });
 
+test('markdownToContent preserves uppercase checked markers and mixed checklist blocks', () => {
+  const md = ['intro', '- [X] done', '  - [ ] nested', 'outro'].join('\n');
+
+  assert.equal(
+    markdownToContent(md),
+    ['intro', 'list', `${STRUCK_MARKER}done`, `${INDENT}nested`, 'outro'].join('\n'),
+  );
+});
+
 test('contentToHTML treats plain img:: text as normal editor text after image removal', () => {
   const html = contentToHTML('img::placeholder');
 

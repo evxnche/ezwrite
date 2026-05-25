@@ -4,7 +4,7 @@ import BugReportDialog from './BugReportDialog';
 
 type Props = {
   variant: 'help' | 'settings';
-  bugContext?: Record<string, string>;
+  bugContext?: Record<string, unknown>;
   contactEmail?: string;
   accessToken?: string;
   userId?: string;

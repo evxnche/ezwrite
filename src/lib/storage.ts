@@ -1,6 +1,8 @@
 // File System Access API — persistent local file storage
 // Falls back to localStorage-only on unsupported platforms (iOS Safari, Firefox)
 
+import { contentToMarkdown } from '@/components/writing-helpers';
+
 const IDB_DB = 'ezwrite-storage';
 const IDB_STORE = 'handles';
 const IDB_KEY = 'saveDir';
@@ -229,7 +231,8 @@ export async function writeToOPFS(
   options: OPFSWriteOptions = {},
 ): Promise<void> {
   if (!('storage' in navigator && 'getDirectory' in navigator.storage)) return;
-  opfsPendingWrite = { pages: [...pages], projectId, scratchpad };
+  const markdowns = pages.map((page) => contentToMarkdown(page));
+  opfsPendingWrite = { pages: markdowns, projectId, scratchpad };
 
   const delay = options.delay ?? 500;
   if (delay <= 0) {

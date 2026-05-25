@@ -6,13 +6,40 @@ type BugReportEnv = {
   VITE_SUPABASE_URL?: string;
 };
 
+export type BugReportContextValue = string | number | boolean;
+export type BugReportContext = Record<string, BugReportContextValue>;
+
 let bugReportEnvOverride: BugReportEnv | null = null;
+let bugReportRuntimeContext: BugReportContext = {};
+let recentBugReportErrors: string[] = [];
+let recentBugReportConsoleErrors: string[] = [];
+let recentBugReportActions: string[] = [];
+let bugReportDiagnosticsInstalled = false;
+let originalConsoleError: typeof console.error | null = null;
+
+const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
+const APP_COMMIT_SHA = typeof __APP_COMMIT_SHA__ !== 'undefined' ? __APP_COMMIT_SHA__ : 'unknown';
+const MAX_BUG_REPORT_ERRORS = 6;
+const MAX_BUG_REPORT_ACTIONS = 12;
 
 export type BugReportSource = 'help' | 'settings';
 export type BugReportConfigStatus = 'ready' | 'missing-env';
 
 export function setBugReportEnvForTests(env: BugReportEnv | null): void {
   bugReportEnvOverride = env;
+}
+
+export function resetBugReportStateForTests(): void {
+  bugReportEnvOverride = null;
+  bugReportRuntimeContext = {};
+  recentBugReportErrors = [];
+  recentBugReportConsoleErrors = [];
+  recentBugReportActions = [];
+  bugReportDiagnosticsInstalled = false;
+  if (originalConsoleError) {
+    console.error = originalConsoleError;
+    originalConsoleError = null;
+  }
 }
 
 function getBugReportEnv(): BugReportEnv {
@@ -31,17 +58,137 @@ export function getBugReportConfigStatus(): BugReportConfigStatus {
   return env.VITE_SUPABASE_URL && env.VITE_SUPABASE_ANON_KEY ? 'ready' : 'missing-env';
 }
 
-export function getBugReportContext(extra?: Record<string, string>): Record<string, string> {
-  if (typeof window === 'undefined') return { ...extra };
+function normalizeBugReportContext(input?: Record<string, unknown>): BugReportContext {
+  const entries: Array<[string, BugReportContextValue]> = [];
+  for (const [key, value] of Object.entries(input ?? {})) {
+    if (value === undefined || value === null || value === '') continue;
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      entries.push([key, value]);
+      continue;
+    }
+    if (Array.isArray(value)) {
+      entries.push([key, value.map((item) => String(item)).join(' | ')]);
+      continue;
+    }
+    entries.push([key, JSON.stringify(value)]);
+  }
+  return Object.fromEntries(entries);
+}
 
-  return {
+export function setBugReportRuntimeContext(context: Record<string, unknown>): void {
+  bugReportRuntimeContext = normalizeBugReportContext(context);
+}
+
+function recordRecentBugReportError(message: string): void {
+  if (!message.trim()) return;
+  recentBugReportErrors = [message.trim(), ...recentBugReportErrors].slice(0, MAX_BUG_REPORT_ERRORS);
+}
+
+function recordRecentBugReportConsoleError(message: string): void {
+  if (!message.trim()) return;
+  recentBugReportConsoleErrors = [message.trim(), ...recentBugReportConsoleErrors].slice(0, MAX_BUG_REPORT_ERRORS);
+}
+
+function stringifyBugReportConsoleArg(value: unknown): string {
+  if (value instanceof Error) return `${value.name}: ${value.message}`;
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function formatBugReportBreadcrumb(label: string, data?: Record<string, unknown>): string {
+  const normalized = normalizeBugReportContext(data);
+  const details = Object.entries(normalized)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(', ');
+  return details ? `${label} (${details})` : label;
+}
+
+export function recordBugReportBreadcrumb(label: string, data?: Record<string, unknown>): void {
+  const entry = formatBugReportBreadcrumb(label, data).trim();
+  if (!entry) return;
+  recentBugReportActions = [entry, ...recentBugReportActions].slice(0, MAX_BUG_REPORT_ACTIONS);
+}
+
+function formatBugReportErrorMessage(prefix: string, details: string): string {
+  return `${prefix}: ${details}`.slice(0, 1200);
+}
+
+export function installBugReportDiagnostics(): void {
+  if (bugReportDiagnosticsInstalled || typeof window === 'undefined') return;
+  bugReportDiagnosticsInstalled = true;
+
+  window.addEventListener('error', (event) => {
+    const errorEvent = event as ErrorEvent;
+    const location = errorEvent.filename
+      ? ` @ ${errorEvent.filename}:${errorEvent.lineno ?? 0}:${errorEvent.colno ?? 0}`
+      : '';
+    const details = errorEvent.error instanceof Error
+      ? `${errorEvent.error.name}: ${errorEvent.error.message}${location}`
+      : `${errorEvent.message || 'Unknown error'}${location}`;
+    recordRecentBugReportError(formatBugReportErrorMessage('uncaught', details));
+  });
+
+  window.addEventListener('unhandledrejection', (event) => {
+    const rejectionEvent = event as PromiseRejectionEvent;
+    const reason = rejectionEvent.reason instanceof Error
+      ? `${rejectionEvent.reason.name}: ${rejectionEvent.reason.message}`
+      : String(rejectionEvent.reason ?? 'Unknown rejection');
+    recordRecentBugReportError(formatBugReportErrorMessage('unhandled rejection', reason));
+  });
+
+  if (!originalConsoleError) {
+    originalConsoleError = console.error.bind(console);
+    console.error = (...args: Parameters<typeof console.error>) => {
+      const message = args.map(stringifyBugReportConsoleArg).join(' ');
+      recordRecentBugReportConsoleError(message.slice(0, 1200));
+      originalConsoleError?.(...args);
+    };
+  }
+}
+
+function getDisplayMode(): string {
+  if (typeof window === 'undefined') return 'server';
+  if (window.matchMedia?.('(display-mode: standalone)').matches) return 'standalone';
+  if ((navigator as Navigator & { standalone?: boolean }).standalone) return 'ios-standalone';
+  return 'browser-tab';
+}
+
+export function getBugReportContext(extra?: Record<string, unknown>): BugReportContext {
+  if (typeof window === 'undefined') return normalizeBugReportContext(extra);
+
+  const context: BugReportContext = {
+    appVersion: APP_VERSION,
+    buildCommit: APP_COMMIT_SHA,
+    buildMode: typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.MODE : 'unknown',
     page: window.location.href,
     time: new Date().toISOString(),
     colorTheme: localStorage.getItem('ezwrite-color-theme') ?? '(first visit default)',
     mode: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+    displayMode: getDisplayMode(),
+    viewport: `${window.innerWidth}x${window.innerHeight}@${window.devicePixelRatio || 1}`,
+    screen: `${window.screen?.width ?? 0}x${window.screen?.height ?? 0}`,
+    language: navigator.language || 'unknown',
+    online: navigator.onLine,
     userAgent: navigator.userAgent,
-    ...extra,
+    ...bugReportRuntimeContext,
+    ...normalizeBugReportContext(extra),
   };
+
+  if (recentBugReportErrors.length) {
+    context.recentErrors = recentBugReportErrors.join('\n');
+  }
+  if (recentBugReportConsoleErrors.length) {
+    context.recentConsoleErrors = recentBugReportConsoleErrors.join('\n');
+  }
+  if (recentBugReportActions.length) {
+    context.recentActions = recentBugReportActions.join('\n');
+  }
+
+  return context;
 }
 
 export function validateBugReportMessage(message: string): string | null {
@@ -87,7 +234,7 @@ function shouldFallbackToEmail(status: number, body: string): boolean {
   }
 }
 
-export function buildBugReportMailto(extra?: Record<string, string>): string {
+export function buildBugReportMailto(extra?: Record<string, unknown>): string {
   const context = getBugReportContext(extra);
   const body = [
     'What happened:',
@@ -109,7 +256,7 @@ export function buildBugReportMailto(extra?: Record<string, string>): string {
   return `mailto:${BUG_REPORT_EMAIL}?${params.toString()}`;
 }
 
-export function openBugReportMailto(extra?: Record<string, string>): void {
+export function openBugReportMailto(extra?: Record<string, unknown>): void {
   window.location.href = buildBugReportMailto(extra);
 }
 
@@ -119,7 +266,7 @@ export interface SubmitBugReportInput {
   contactEmail?: string;
   accessToken?: string;
   userId?: string;
-  extra?: Record<string, string>;
+  extra?: Record<string, unknown>;
 }
 
 export async function submitBugReport(input: SubmitBugReportInput): Promise<'database' | 'email'> {
