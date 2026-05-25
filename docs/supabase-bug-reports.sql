@@ -16,6 +16,10 @@ create index if not exists ezwrite_bug_reports_created_idx
 
 alter table public.ezwrite_bug_reports enable row level security;
 
+-- Be explicit about Data API exposure for newer Supabase projects.
+revoke all on table public.ezwrite_bug_reports from anon, authenticated;
+grant insert on table public.ezwrite_bug_reports to anon, authenticated;
+
 drop policy if exists "anyone can submit bug reports" on public.ezwrite_bug_reports;
 create policy "anyone can submit bug reports"
   on public.ezwrite_bug_reports

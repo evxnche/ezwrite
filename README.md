@@ -23,6 +23,7 @@ bun run dev
 Supabase stores encrypted note blobs only. Account auth controls who can access rows, and the account password encrypts/decrypts note blobs in the browser.
 
 Bug reports from settings/help save to `ezwrite_bug_reports` (message + debug context only, never note content). Read them in the Supabase table editor.
+If the app says the bug-report table is missing, rerun `docs/supabase-bug-reports.sql` in the `ezwrite lp` project.
 
 ## Build
 

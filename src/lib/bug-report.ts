@@ -1,15 +1,34 @@
 export const BUG_REPORT_EMAIL = 'evanbuildsstuff@gmail.com';
 export const BUG_REPORTS_TABLE = 'ezwrite_bug_reports';
 
-const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : {};
-const SUPABASE_URL = env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_ANON_KEY = env.VITE_SUPABASE_ANON_KEY as string | undefined;
+type BugReportEnv = {
+  VITE_SUPABASE_ANON_KEY?: string;
+  VITE_SUPABASE_URL?: string;
+};
+
+let bugReportEnvOverride: BugReportEnv | null = null;
 
 export type BugReportSource = 'help' | 'settings';
 export type BugReportConfigStatus = 'ready' | 'missing-env';
 
+export function setBugReportEnvForTests(env: BugReportEnv | null): void {
+  bugReportEnvOverride = env;
+}
+
+function getBugReportEnv(): BugReportEnv {
+  if (bugReportEnvOverride) return bugReportEnvOverride;
+  if (typeof import.meta !== 'undefined' && import.meta.env) {
+    return {
+      VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL as string | undefined,
+      VITE_SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined,
+    };
+  }
+  return {};
+}
+
 export function getBugReportConfigStatus(): BugReportConfigStatus {
-  return SUPABASE_URL && SUPABASE_ANON_KEY ? 'ready' : 'missing-env';
+  const env = getBugReportEnv();
+  return env.VITE_SUPABASE_URL && env.VITE_SUPABASE_ANON_KEY ? 'ready' : 'missing-env';
 }
 
 export function getBugReportContext(extra?: Record<string, string>): Record<string, string> {
@@ -33,18 +52,39 @@ export function validateBugReportMessage(message: string): string | null {
 }
 
 function getRestUrl(table: string): string {
-  if (!SUPABASE_URL) throw new Error('Missing VITE_SUPABASE_URL');
-  return `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/${table}`;
+  const { VITE_SUPABASE_URL } = getBugReportEnv();
+  if (!VITE_SUPABASE_URL) throw new Error('Missing VITE_SUPABASE_URL');
+  return `${VITE_SUPABASE_URL.replace(/\/$/, '')}/rest/v1/${table}`;
 }
 
 function getHeaders(accessToken?: string): HeadersInit {
-  if (!SUPABASE_ANON_KEY) throw new Error('Missing VITE_SUPABASE_ANON_KEY');
+  const { VITE_SUPABASE_ANON_KEY } = getBugReportEnv();
+  if (!VITE_SUPABASE_ANON_KEY) throw new Error('Missing VITE_SUPABASE_ANON_KEY');
   return {
-    apikey: SUPABASE_ANON_KEY,
-    Authorization: `Bearer ${accessToken ?? SUPABASE_ANON_KEY}`,
+    apikey: VITE_SUPABASE_ANON_KEY,
+    Authorization: `Bearer ${accessToken ?? VITE_SUPABASE_ANON_KEY}`,
     'Content-Type': 'application/json',
     Prefer: 'return=minimal',
   };
+}
+
+function shouldFallbackToEmail(status: number, body: string): boolean {
+  const normalized = body.toLowerCase();
+  if (
+    normalized.includes("could not find the table 'public.ezwrite_bug_reports'") ||
+    normalized.includes('schema cache')
+  ) {
+    return true;
+  }
+
+  if (status !== 403 && status !== 404) return false;
+
+  try {
+    const parsed = JSON.parse(body) as { code?: string; message?: string };
+    return parsed.code === 'PGRST205' || parsed.code === '42501';
+  } catch {
+    return false;
+  }
 }
 
 export function buildBugReportMailto(extra?: Record<string, string>): string {
@@ -86,18 +126,20 @@ export async function submitBugReport(input: SubmitBugReportInput): Promise<'dat
   const validationError = validateBugReportMessage(input.message);
   if (validationError) throw new Error(validationError);
 
+  const message = input.message.trim();
+  const contactEmail = input.contactEmail?.trim().toLowerCase() || null;
+
   if (getBugReportConfigStatus() !== 'ready') {
     openBugReportMailto({
       ...input.extra,
-      report: input.message.trim(),
-      contact: input.contactEmail?.trim() || '(not provided)',
+      report: message,
+      contact: contactEmail || '(not provided)',
     });
     return 'email';
   }
 
-  const contactEmail = input.contactEmail?.trim().toLowerCase() || null;
   const row = {
-    message: input.message.trim(),
+    message,
     contact_email: contactEmail,
     user_id: input.userId ?? null,
     source: input.source,
@@ -112,6 +154,14 @@ export async function submitBugReport(input: SubmitBugReportInput): Promise<'dat
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');
+    if (shouldFallbackToEmail(res.status, body)) {
+      openBugReportMailto({
+        ...input.extra,
+        report: message,
+        contact: contactEmail || '(not provided)',
+      });
+      return 'email';
+    }
     throw new Error(`Could not send report (${res.status}). ${body || res.statusText}`);
   }
 
