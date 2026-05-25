@@ -6,6 +6,9 @@ export const DEFAULT_COLOR_THEME: ColorTheme = 'red';
 export const TIMER_ALERT_MODES = ['both', 'visual', 'audio', 'silent'] as const;
 export type TimerAlertMode = (typeof TIMER_ALERT_MODES)[number];
 
+export const NOTES_TRANSFER_MODES = ['move', 'copy'] as const;
+export type NotesTransferMode = (typeof NOTES_TRANSFER_MODES)[number];
+
 export function pickColorTheme(theme: string): ColorTheme {
   return (COLOR_THEMES as readonly string[]).includes(theme) ? (theme as ColorTheme) : '';
 }
@@ -34,4 +37,12 @@ export function getNextTimerAlertMode(currentMode: string): TimerAlertMode {
   const current = pickTimerAlertMode(currentMode);
   const nextIndex = (TIMER_ALERT_MODES.indexOf(current) + 1) % TIMER_ALERT_MODES.length;
   return TIMER_ALERT_MODES[nextIndex];
+}
+
+export function pickNotesTransferMode(mode: string | null): NotesTransferMode {
+  return mode === 'copy' ? 'copy' : 'move';
+}
+
+export function getInitialNotesTransferMode(): NotesTransferMode {
+  return pickNotesTransferMode(localStorage.getItem('ezwrite-notes-transfer-mode'));
 }

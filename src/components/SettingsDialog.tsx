@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Cloud, Copy, FolderOpen, Lock, RefreshCw } from 'lucide-react';
+import { Cloud, Copy, Eye, EyeOff, FolderOpen, Lock, RefreshCw } from 'lucide-react';
 import DialogSupportFooter from './DialogSupportFooter';
 import { BUG_REPORT_EMAIL } from '@/lib/bug-report';
 import { copyLandingPageUrl, getLandingPageDisplayLabel, getLandingPageUrl } from '@/lib/app-links';
@@ -13,7 +13,7 @@ const THEMES = [
   { id: 'red' as ColorTheme, label: 'red', swatch: 'bg-[#7C3232]' },
 ];
 
-const SETTINGS_TABS = ['appearance', 'features', 'storage', 'about'] as const;
+const SETTINGS_TABS = ['features', 'storage', 'customization', 'about'] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 const SEGMENT_TRACK = 'flex gap-1 p-1 rounded-xl bg-muted/30 border border-border/60';
@@ -82,6 +82,24 @@ interface Props {
   onToggleCmdArrowPageNav?: () => void;
   imagesEnabled?: boolean;
   onToggleImages?: () => void;
+  sidetabEnabled?: boolean;
+  onToggleSidetab?: () => void;
+  scratchpadEnabled?: boolean;
+  onToggleScratchpad?: () => void;
+  listEnabled?: boolean;
+  onToggleList?: () => void;
+  lineEnabled?: boolean;
+  onToggleLine?: () => void;
+  timerEnabled?: boolean;
+  onToggleTimer?: () => void;
+  helpEnabled?: boolean;
+  onToggleHelp?: () => void;
+  settingsCommandEnabled?: boolean;
+  onToggleSettingsCommand?: () => void;
+  polaroidFramesEnabled?: boolean;
+  onTogglePolaroidFrames?: () => void;
+  notesTransferMode?: 'move' | 'copy';
+  onToggleNotesTransferMode?: () => void;
   dirName?: string;
   onPickFolder?: () => void;
   onClearFolder?: () => void;
@@ -127,6 +145,24 @@ export const SettingsDialog: React.FC<Props> = ({
   onToggleCmdArrowPageNav,
   imagesEnabled,
   onToggleImages,
+  sidetabEnabled,
+  onToggleSidetab,
+  scratchpadEnabled,
+  onToggleScratchpad,
+  listEnabled,
+  onToggleList,
+  lineEnabled,
+  onToggleLine,
+  timerEnabled,
+  onToggleTimer,
+  helpEnabled,
+  onToggleHelp,
+  settingsCommandEnabled,
+  onToggleSettingsCommand,
+  polaroidFramesEnabled,
+  onTogglePolaroidFrames,
+  notesTransferMode,
+  onToggleNotesTransferMode,
   dirName,
   onPickFolder,
   onClearFolder,
@@ -154,11 +190,12 @@ export const SettingsDialog: React.FC<Props> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
   const [landingCopied, setLandingCopied] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const landingPageUrl = getLandingPageUrl();
   const landingPageLabel = getLandingPageDisplayLabel();
 
   useEffect(() => {
-    if (open) setActiveTab('appearance');
+    if (open) setActiveTab('features');
   }, [open]);
 
   useEffect(() => {
@@ -197,87 +234,135 @@ export const SettingsDialog: React.FC<Props> = ({
         </div>
 
         <div className="overflow-y-auto pr-1 -mr-1">
-          {activeTab === 'appearance' && (
-            <div role="tabpanel" className="space-y-3 pt-1">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground text-xs uppercase tracking-wider">theme</span>
-                <div className="flex gap-2">
-                  {THEMES.map(theme => (
-                    <button
-                      key={theme.id}
-                      onClick={() => {
-                        if (colorTheme !== theme.id) onSelectColorTheme?.(theme.id);
-                      }}
-                      className={`w-7 h-7 rounded-full border-2 transition-all ${
-                        colorTheme === theme.id ? 'border-accent-foreground scale-110' : 'border-transparent hover:scale-105'
-                      }`}
-                      style={theme.id === '' ? { background: document.documentElement.classList.contains('dark') ? '#171717' : '#EAE7D0' } : undefined}
-                    >
-                      {theme.id === 'blue' && <div className="w-full h-full rounded-full bg-[#0623ad]" />}
-                      {theme.id === 'green' && <div className="w-full h-full rounded-full bg-[#285135]" />}
-                      {theme.id === 'red' && <div className="w-full h-full rounded-full bg-[#7C3232]" />}
-                      {theme.id === '' && <div className="w-full h-full rounded-full" />}
-                    </button>
-                  ))}
+          {activeTab === 'features' && (
+            <div role="tabpanel" className="space-y-6 pt-1">
+              <div className="space-y-3">
+                <div className="font-mono text-[10px] text-muted-foreground/50 uppercase tracking-widest border-b border-border/50 pb-1.5 mb-2">
+                  Preferences
+                </div>
+                <SettingsToggle
+                  label="word/char count"
+                  checked={showStats}
+                  onToggle={onToggleStats}
+                  hint={showStats ? (
+                    <span className="text-xs text-muted-foreground">{wordCount ?? 0}w · {charCount ?? 0}c</span>
+                  ) : undefined}
+                />
+                <SettingsToggle label="spellcheck" checked={spellCheckEnabled} onToggle={onToggleSpellCheck} />
+                <SettingsToggle label="polaroid frames" checked={polaroidFramesEnabled} onToggle={onTogglePolaroidFrames} />
+                <SettingsToggle label="cmd+←/→ pages" checked={cmdArrowPageNav} onToggle={onToggleCmdArrowPageNav} />
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground text-xs uppercase tracking-wider">notes transfer</span>
+                    <div className={`${SEGMENT_TRACK} w-32`}>
+                      <button
+                        type="button"
+                        onClick={() => { if (notesTransferMode === 'copy') onToggleNotesTransferMode?.(); }}
+                        className={`${segmentItemClass(notesTransferMode === 'move', 'flex-1 py-1 font-mono')}`}
+                      >
+                        move
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { if (notesTransferMode === 'move') onToggleNotesTransferMode?.(); }}
+                        className={`${segmentItemClass(notesTransferMode === 'copy', 'flex-1 py-1 font-mono')}`}
+                      >
+                        copy
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-muted-foreground/50 text-[10px] leading-snug">
+                    {notesTransferMode === 'move'
+                      ? 'selected text is moved from the editor to the scratchpad.'
+                      : 'selected text is copied to the scratchpad.'}
+                  </p>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-muted-foreground text-xs uppercase tracking-wider shrink-0">mode</span>
-                <div className={`${SEGMENT_TRACK} shrink-0`}>
-                  <button
-                    type="button"
-                    onClick={() => { if (mode !== 'light') onToggleMode?.(); }}
-                    className={segmentItemClass(mode === 'light', 'px-2.5 py-1 font-mono')}
-                  >
-                    light
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { if (mode !== 'dark') onToggleMode?.(); }}
-                    className={segmentItemClass(mode === 'dark', 'px-2.5 py-1 font-mono')}
-                  >
-                    dark
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-muted-foreground text-xs uppercase tracking-wider shrink-0">font style</span>
-                <div className={`${SEGMENT_TRACK} shrink-0`}>
-                  <button
-                    type="button"
-                    onClick={() => { if (!useSerif) onToggleFont?.(); }}
-                    className={segmentItemClass(useSerif, 'px-2.5 py-1')}
-                    style={{ fontFamily: "'Instrument Serif', serif" }}
-                  >
-                    serif
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { if (useSerif) onToggleFont?.(); }}
-                    className={segmentItemClass(!useSerif, 'px-2.5 py-1 font-mono')}
-                  >
-                    mono
-                  </button>
-                </div>
-              </div>
             </div>
           )}
 
-          {activeTab === 'features' && (
-            <div role="tabpanel" className="space-y-3 pt-1">
-              <SettingsToggle
-                label="word/char count"
-                checked={showStats}
-                onToggle={onToggleStats}
-                hint={showStats ? (
-                  <span className="text-xs text-muted-foreground">{wordCount ?? 0}w · {charCount ?? 0}c</span>
-                ) : undefined}
-              />
-              <SettingsToggle label="spellcheck" checked={spellCheckEnabled} onToggle={onToggleSpellCheck} />
-              <SettingsToggle label="cmd+←/→ pages" checked={cmdArrowPageNav} onToggle={onToggleCmdArrowPageNav} />
-              <SettingsToggle label="images" checked={imagesEnabled} onToggle={onToggleImages} />
+          {activeTab === 'customization' && (
+            <div role="tabpanel" className="space-y-6 pt-1">
+              <div className="space-y-3">
+                <div className="font-mono text-[10px] text-muted-foreground/50 uppercase tracking-widest border-b border-border/50 pb-1.5 mb-2">
+                  Appearance
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground text-xs uppercase tracking-wider">theme</span>
+                  <div className="flex gap-2">
+                    {THEMES.map(theme => (
+                      <button
+                        key={theme.id}
+                        onClick={() => {
+                          if (colorTheme !== theme.id) onSelectColorTheme?.(theme.id);
+                        }}
+                        className={`w-7 h-7 rounded-full border-2 transition-all ${
+                          colorTheme === theme.id ? 'border-accent-foreground scale-110' : 'border-transparent hover:scale-105'
+                        }`}
+                        style={theme.id === '' ? { background: document.documentElement.classList.contains('dark') ? '#171717' : '#EAE7D0' } : undefined}
+                      >
+                        {theme.id === 'blue' && <div className="w-full h-full rounded-full bg-[#0623ad]" />}
+                        {theme.id === 'green' && <div className="w-full h-full rounded-full bg-[#285135]" />}
+                        {theme.id === 'red' && <div className="w-full h-full rounded-full bg-[#7C3232]" />}
+                        {theme.id === '' && <div className="w-full h-full rounded-full" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground text-xs uppercase tracking-wider">mode</span>
+                  <div className={`${SEGMENT_TRACK} w-32`}>
+                    <button
+                      type="button"
+                      onClick={() => { if (mode === 'dark') onToggleMode?.(); }}
+                      className={segmentItemClass(mode === 'light', 'flex-1 py-1 font-mono')}
+                    >
+                      light
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { if (mode === 'light') onToggleMode?.(); }}
+                      className={segmentItemClass(mode === 'dark', 'flex-1 py-1 font-mono')}
+                    >
+                      dark
+                    </button>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground text-xs uppercase tracking-wider">font style</span>
+                  <div className={`${SEGMENT_TRACK} w-32`}>
+                    <button
+                      type="button"
+                      onClick={() => { if (useSerif) onToggleFont?.(); }}
+                      className={`${segmentItemClass(!useSerif, 'flex-1 py-1 font-mono')}`}
+                    >
+                      mono
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { if (!useSerif) onToggleFont?.(); }}
+                      className={`${segmentItemClass(!!useSerif, 'flex-1 py-1 font-playfair italic')}`}
+                    >
+                      serif
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="font-mono text-[10px] text-muted-foreground/50 uppercase tracking-widest border-b border-border/50 pb-1.5 mb-2">
+                  / command
+                </div>
+                <SettingsToggle label="list" checked={listEnabled} onToggle={onToggleList} />
+                <SettingsToggle label="line" checked={lineEnabled} onToggle={onToggleLine} />
+                <SettingsToggle label="timer" checked={timerEnabled} onToggle={onToggleTimer} />
+                <SettingsToggle label="side tab" checked={sidetabEnabled} onToggle={onToggleSidetab} />
+                <SettingsToggle label="scratchpad" checked={scratchpadEnabled} onToggle={onToggleScratchpad} />
+                <SettingsToggle label="insert images" checked={imagesEnabled} onToggle={onToggleImages} />
+                <SettingsToggle label="help" checked={helpEnabled} onToggle={onToggleHelp} />
+                <SettingsToggle label="settings" checked={settingsCommandEnabled} onToggle={onToggleSettingsCommand} />
+              </div>
             </div>
           )}
 
@@ -357,17 +442,29 @@ export const SettingsDialog: React.FC<Props> = ({
                             disabled={syncBusy}
                             className="w-full rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-xs outline-none focus:border-accent-foreground/50 disabled:opacity-50"
                           />
-                          <input
-                            type="password"
-                            value={syncPassword ?? ''}
-                            onChange={(e) => onSyncPasswordChange?.(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') onUnlockSync?.();
-                            }}
-                            placeholder="password"
-                            disabled={syncBusy}
-                            className="w-full rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-xs outline-none focus:border-accent-foreground/50 disabled:opacity-50"
-                          />
+                          <div className="relative">
+                            <input
+                              type={showPassword ? 'text' : 'password'}
+                              value={syncPassword ?? ''}
+                              onChange={(e) => onSyncPasswordChange?.(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') onUnlockSync?.();
+                              }}
+                              placeholder="password"
+                              disabled={syncBusy}
+                              className="w-full rounded-lg border border-border bg-background px-2 py-1.5 pr-8 font-mono text-xs outline-none focus:border-accent-foreground/50 disabled:opacity-50"
+                            />
+                            <button
+                              type="button"
+                              tabIndex={-1}
+                              onClick={() => setShowPassword((v) => !v)}
+                              disabled={syncBusy}
+                              aria-label={showPassword ? 'hide password' : 'show password'}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground disabled:opacity-40"
+                            >
+                              {showPassword ? <EyeOff size={13} /> : <Eye size={13} />}
+                            </button>
+                          </div>
                           <div className="flex items-center gap-2">
                             <button
                               onClick={onUnlockSync}
@@ -383,6 +480,11 @@ export const SettingsDialog: React.FC<Props> = ({
                             >
                               create
                             </button>
+                          </div>
+                          <div className="mt-2 text-xs text-muted-foreground space-y-1">
+                            <p className="text-destructive font-semibold">
+                            no mail collected, so there's no password reset. if you forget your password, synced notes cannot be recovered.
+                            </p>
                           </div>
                         </div>
                       )}

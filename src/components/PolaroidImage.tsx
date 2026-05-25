@@ -4,7 +4,9 @@ import { loadImage } from '@/lib/imageStore';
 interface Props {
   imageId: string;
   initialCaption: string;
+  initialWidth?: string;
   onCaptionChange: (caption: string) => void;
+  onWidthChange?: (width: string) => void;
   onRemove: () => void;
 }
 

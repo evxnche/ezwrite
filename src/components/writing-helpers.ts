@@ -24,6 +24,7 @@ const SLASH_COMMANDS_BASE = [
   { name: 'line', description: 'Insert a divider' },
   { name: 'timer', description: 'Start a timer' },
   { name: 'sidetab', description: 'Toggle side tab' },
+  { name: 'scratchpad', description: 'Toggle scratchpad' },
   { name: 'help', description: 'Show shortcuts & commands' },
   { name: 'settings', description: 'Open settings' },
 ] as const;
@@ -32,18 +33,38 @@ const IMAGE_SLASH_COMMAND = { name: 'image', description: 'Insert an image' } as
 
 export type SlashCommand = { name: string; description: string };
 
-export function getSlashCommands(imagesEnabled = true): SlashCommand[] {
-  if (!imagesEnabled) return [...SLASH_COMMANDS_BASE];
-  return [
-    SLASH_COMMANDS_BASE[0],
-    SLASH_COMMANDS_BASE[1],
-    IMAGE_SLASH_COMMAND,
-    ...SLASH_COMMANDS_BASE.slice(2),
-  ];
+export interface SlashCommandOptions {
+  imagesEnabled?: boolean;
+  sidetabEnabled?: boolean;
+  scratchpadEnabled?: boolean;
+  listEnabled?: boolean;
+  lineEnabled?: boolean;
+  timerEnabled?: boolean;
+  helpEnabled?: boolean;
+  settingsCommandEnabled?: boolean;
 }
 
-/** Default slash commands (images on) for modules that don't read user prefs. */
-export const SLASH_COMMANDS = getSlashCommands(true);
+export function getSlashCommands(options: SlashCommandOptions = {}): SlashCommand[] {
+  let commands: SlashCommand[] = [...SLASH_COMMANDS_BASE];
+  
+  if (options.imagesEnabled !== false) {
+    const timerIndex = commands.findIndex(c => c.name === 'timer');
+    commands.splice(timerIndex + 1, 0, IMAGE_SLASH_COMMAND);
+  }
+  
+  if (options.sidetabEnabled === false) commands = commands.filter(c => c.name !== 'sidetab');
+  if (options.scratchpadEnabled === false) commands = commands.filter(c => c.name !== 'scratchpad');
+  if (options.listEnabled === false) commands = commands.filter(c => c.name !== 'list');
+  if (options.lineEnabled === false) commands = commands.filter(c => c.name !== 'line');
+  if (options.timerEnabled === false) commands = commands.filter(c => c.name !== 'timer');
+  if (options.helpEnabled === false) commands = commands.filter(c => c.name !== 'help');
+  if (options.settingsCommandEnabled === false) commands = commands.filter(c => c.name !== 'settings');
+
+  return commands;
+}
+
+/** Default slash commands (all on) for modules that don't read user prefs. */
+export const SLASH_COMMANDS = getSlashCommands();
 
 export function stripLegacyImageLines(content: string): string {
   return content
@@ -167,10 +188,12 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
         return `<div data-type="timer" data-timer-config="${escapeHTML(getTimerArgs(line))}" data-line="${i}" contenteditable="false" class="ce-timer" data-timer-slot="${i}"></div>`;
       }
       case 'image': {
-        const m = line.match(/^polaroid::([^|]+)\|?(.*)?$/);
+        const m = line.match(/^polaroid::([^|]+)\|?([^|]*)?\|?(.*)?$/);
         const id = escapeHTML(m?.[1] ?? '');
         const caption = escapeHTML(m?.[2] ?? '');
-        return `<div data-type="image" data-image-id="${id}" data-image-caption="${caption}" data-image-slot="${i}" contenteditable="false" class="ce-image"></div>`;
+        const width = m?.[3] ? escapeHTML(m[3]) : '';
+        const widthAttr = width ? ` data-image-width="${width}"` : '';
+        return `<div data-type="image" data-image-id="${id}" data-image-caption="${caption}"${widthAttr} data-image-slot="${i}" contenteditable="false" class="ce-image"></div>`;
       }
       case 'quote': {
         const text = line.replace(/^>> ?/, '');
@@ -257,7 +280,8 @@ export function extractContent(editor: HTMLElement): string {
     if (type === 'image') {
       const id = el.dataset.imageId || '';
       const caption = el.dataset.imageCaption || '';
-      lines.push(`polaroid::${id}|${caption}`);
+      const width = el.dataset.imageWidth || '';
+      lines.push(width ? `polaroid::${id}|${caption}|${width}` : `polaroid::${id}|${caption}`);
       return;
     }
     if (type === 'heading1' || type === 'heading2') {

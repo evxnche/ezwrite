@@ -161,7 +161,10 @@ const NotesPanel: React.FC<Props> = ({
         </div>
 
         <div className="py-3">
-          <button onClick={onOpenScratchpad} className={baseRowClass}>
+          <button 
+            onClick={onOpenScratchpad} 
+            className={baseRowClass}
+          >
             <NotebookPen size={15} />
             <span>scratchpad</span>
           </button>

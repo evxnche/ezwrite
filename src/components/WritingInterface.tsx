@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, Trash2 } from 'lucide-react';
+import { ChevronLeft, Trash2, NotebookPen } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import SlashCommandPopup from './SlashCommandPopup';
 import TimerWidget from './TimerWidget';
 import PolaroidImage from './PolaroidImage';
+import NormalImage from './NormalImage';
 import { useImagePicker } from './useImagePicker';
 import { saveImage, loadImage, processImageForStorage, gcOrphanImages } from '@/lib/imageStore';
 import ImageDropDialog from './ImageDropDialog';
@@ -13,6 +14,8 @@ import {
   getInitialColorTheme,
   getNextColorTheme,
   pickColorTheme,
+  getInitialNotesTransferMode,
+  type NotesTransferMode,
   type ColorTheme,
 } from './preferences';
 import { buildTimerSlots } from './timer-identity';
@@ -89,11 +92,11 @@ const SYNC_DEBOUNCE_MS = 1800;
 // before we treat it as a genuine local change (covers clock + write jitter).
 const SYNC_FUDGE_MS = 500;
 
-function buildImageSlots(lines: string[]): Array<{ id: string; caption: string; lineIndex: number }> {
+function buildImageSlots(lines: string[]): Array<{ id: string; caption: string; width: string; lineIndex: number }> {
   return lines.flatMap((line, i) => {
-    const m = line.match(/^polaroid::([^|]+)\|?(.*)?$/);
+    const m = line.match(/^polaroid::([^|]+)\|?([^|]*)?\|?(.*)?$/);
     if (!m) return [];
-    return [{ id: m[1], caption: m[2] ?? '', lineIndex: i }];
+    return [{ id: m[1], caption: m[2] ?? '', width: m[3] ?? '', lineIndex: i }];
   });
 }
 
@@ -313,6 +316,8 @@ const WritingInterface = () => {
     return Number.isFinite(width) ? Math.max(260, Math.min(720, width)) : 340;
   });
   const [scratchpad, setScratchpad] = useState(() => activeProjectId ? getProjectScratchpad(activeProjectId) : '');
+  const [selectionRect, setSelectionRect] = useState<DOMRect | null>(null);
+  const [selectionText, setSelectionText] = useState<string>('');
   const [timestamps, setTimestamps] = useState<number[]>(() => {
     if (activeProjectId) return getProjectTimestamps(activeProjectId);
     return [];
@@ -344,7 +349,7 @@ const WritingInterface = () => {
   const [syncUsername, setSyncUsername] = useState('');
   const [syncPassword, setSyncPassword] = useState('');
   const [syncSession, setSyncSession] = useState<SyncSession | null>(null);
-  const [syncStatus, setSyncStatus] = useState('free: local only');
+  const [syncStatus, setSyncStatus] = useState('local only');
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncError, setSyncError] = useState('');
   const savedFlashTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
@@ -402,6 +407,14 @@ const WritingInterface = () => {
 
   // Color theme toggle — cycles: '' → 'blue' → 'green' → 'red' → ''
   const [colorTheme, setColorTheme] = useState<ColorTheme>(() => getInitialColorTheme());
+  const [notesTransferMode, setNotesTransferMode] = useState<NotesTransferMode>(() => getInitialNotesTransferMode());
+  const handleToggleNotesTransferMode = () => {
+    setNotesTransferMode(v => {
+      const next: NotesTransferMode = v === 'move' ? 'copy' : 'move';
+      localStorage.setItem('ezwrite-notes-transfer-mode', next);
+      return next;
+    });
+  };
   useEffect(() => {
     if (colorTheme) {
       document.documentElement.setAttribute('data-color-theme', colorTheme);
@@ -502,7 +515,66 @@ const WritingInterface = () => {
       return next;
     });
   };
-  const slashCommands = useMemo(() => getSlashCommands(imagesEnabled), [imagesEnabled]);
+
+  const [scratchpadEnabled, setScratchpadEnabled] = useState(() =>
+    localStorage.getItem('ezwrite-scratchpad-enabled') !== 'false'
+  );
+  const handleToggleScratchpad = () => {
+    setScratchpadEnabled(v => {
+      const next = !v;
+      localStorage.setItem('ezwrite-scratchpad-enabled', String(next));
+      return next;
+    });
+  };
+
+  const [sidetabEnabled, setSidetabEnabled] = useState(() =>
+    localStorage.getItem('ezwrite-sidetab-enabled') !== 'false'
+  );
+  const handleToggleSidetab = () => {
+    setSidetabEnabled(v => {
+      const next = !v;
+      localStorage.setItem('ezwrite-sidetab-enabled', String(next));
+      return next;
+    });
+  };
+
+  const [listEnabled, setListEnabled] = useState(() => localStorage.getItem('ezwrite-list-enabled') !== 'false');
+  const handleToggleList = () => setListEnabled(v => { const next = !v; localStorage.setItem('ezwrite-list-enabled', String(next)); return next; });
+
+  const [lineEnabled, setLineEnabled] = useState(() => localStorage.getItem('ezwrite-line-enabled') !== 'false');
+  const handleToggleLine = () => setLineEnabled(v => { const next = !v; localStorage.setItem('ezwrite-line-enabled', String(next)); return next; });
+
+  const [timerEnabled, setTimerEnabled] = useState(() => localStorage.getItem('ezwrite-timer-enabled') !== 'false');
+  const handleToggleTimer = () => setTimerEnabled(v => { const next = !v; localStorage.setItem('ezwrite-timer-enabled', String(next)); return next; });
+
+  const [helpEnabled, setHelpEnabled] = useState(() => localStorage.getItem('ezwrite-help-enabled') !== 'false');
+  const handleToggleHelp = () => setHelpEnabled(v => { const next = !v; localStorage.setItem('ezwrite-help-enabled', String(next)); return next; });
+
+  const [settingsCommandEnabled, setSettingsCommandEnabled] = useState(() => localStorage.getItem('ezwrite-settings-command-enabled') !== 'false');
+  const handleToggleSettingsCommand = () => setSettingsCommandEnabled(v => { const next = !v; localStorage.setItem('ezwrite-settings-command-enabled', String(next)); return next; });
+
+  const [polaroidFramesEnabled, setPolaroidFramesEnabled] = useState(() => localStorage.getItem('ezwrite-polaroid-frames-enabled') !== 'false');
+  const handleTogglePolaroidFrames = () => setPolaroidFramesEnabled(v => { const next = !v; localStorage.setItem('ezwrite-polaroid-frames-enabled', String(next)); return next; });
+
+  const slashCommands = useMemo(() => getSlashCommands({
+    imagesEnabled,
+    sidetabEnabled,
+    scratchpadEnabled,
+    listEnabled,
+    lineEnabled,
+    timerEnabled,
+    helpEnabled,
+    settingsCommandEnabled,
+  }), [
+    imagesEnabled,
+    sidetabEnabled,
+    scratchpadEnabled,
+    listEnabled,
+    lineEnabled,
+    timerEnabled,
+    helpEnabled,
+    settingsCommandEnabled,
+  ]);
 
   // Timer alert mode (persisted)
   const [timerAlertMode, setTimerAlertMode] = useState<'visual' | 'audio' | 'both' | 'silent'>(() =>
@@ -584,7 +656,7 @@ const WritingInterface = () => {
   // Persistent portal containers keyed by stableId — survive innerHTML resets
   const timerContainers = useRef<Map<string, HTMLElement>>(new Map());
   // Track image (polaroid) slots for portal rendering
-  const [imageSlots, setImageSlots] = useState<Array<{ id: string; caption: string; lineIndex: number }>>([]);
+  const [imageSlots, setImageSlots] = useState<Array<{ id: string; caption: string; width: string; lineIndex: number }>>([]);
   const imageContainers = useRef<Map<string, HTMLElement>>(new Map());
   const { pickImage } = useImagePicker();
   const pickImageRef = useRef(pickImage);
@@ -972,6 +1044,87 @@ const WritingInterface = () => {
     }
   }, [saveContent]);
 
+  const handleInsertFromScratchpad = useCallback((text: string) => {
+    if (!text) return;
+    
+    // Attempt native insert first if editor is focused
+    if (document.activeElement === editorRef.current) {
+      if (document.execCommand('insertText', false, text)) {
+        if (editorRef.current) {
+          const textContent = extractContent(editorRef.current);
+          contentRef.current = textContent;
+          saveContent(textContent);
+          setIsPageEmpty(textContent.trim() === '');
+        }
+        return;
+      }
+    }
+
+    // Fallback: append or insert based on cursor
+    pushUndo(true);
+    let newContent = contentRef.current;
+    let newLineIndex = 0;
+    let newOffset = 0;
+
+    const currentCursor = pendingCursor.current ?? trackedCursor.current;
+    if (currentCursor) {
+      const { lineIndex, offset } = currentCursor;
+      const lines = newContent.split('\n');
+      if (lineIndex >= 0 && lineIndex < lines.length) {
+        const line = lines[lineIndex];
+        lines[lineIndex] = line.substring(0, offset) + text + line.substring(offset);
+        newLineIndex = lineIndex;
+        newOffset = offset + text.length;
+      } else {
+        lines.push(text);
+        newLineIndex = lines.length - 1;
+        newOffset = text.length;
+      }
+      newContent = lines.join('\n');
+    } else {
+      newContent = newContent + (newContent.endsWith('\n') ? '' : '\n') + text;
+      newLineIndex = newContent.split('\n').length - 1;
+      newOffset = text.length;
+    }
+
+    structuralUpdate(newContent, newLineIndex, newOffset);
+  }, [pushUndo, structuralUpdate, saveContent]);
+
+  const moveToNotes = useCallback(() => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !selectionText) return;
+
+    const newScratchpad = scratchpad.trim() 
+      ? scratchpad + '\n\n' + selectionText 
+      : selectionText;
+    
+    setScratchpad(newScratchpad);
+    if (activeProjectId) {
+      saveProjectScratchpad(activeProjectId, newScratchpad);
+    }
+
+    if (notesTransferMode === 'move') {
+      // Attempt native deletion first to preserve undo history if possible.
+      // document.execCommand('delete') might not work in all modern setups but is the standard way.
+      if (!document.execCommand('delete', false)) {
+        // Fallback: manually delete from range
+        const range = sel.getRangeAt(0);
+        range.deleteContents();
+        
+        // Update our internal state manually since we bypassed execCommand
+        if (editorRef.current) {
+          const textContent = extractContent(editorRef.current);
+          contentRef.current = textContent;
+          saveContent(textContent);
+          setIsPageEmpty(textContent.trim() === '');
+        }
+      }
+    }
+
+    setSelectionRect(null);
+    setSelectionText('');
+  }, [scratchpad, selectionText, activeProjectId, saveContent, notesTransferMode]);
+
   // --- Cursor normalizer ---
   // When structuralUpdate resets innerHTML, the browser can leave the cursor at the
   // editor container level (not inside a line div). Typing then inserts a raw text node
@@ -1039,8 +1192,44 @@ const WritingInterface = () => {
   useEffect(() => {
     const handler = () => {
       if (isResettingDOM.current) return; // ignore events fired during innerHTML reset
+      
       const info = getCursorInfo();
       if (info) trackedCursor.current = { lineIndex: info.lineIndex, offset: info.offset };
+
+      const sel = window.getSelection();
+      if (!sel) return;
+
+      if (!sel.isCollapsed && sel.rangeCount > 0 && editorRef.current?.contains(sel.anchorNode)) {
+        const text = sel.toString();
+        if (text.trim()) {
+          setSelectionText(text);
+          // Wait a frame so the browser can calculate the rect accurately after selection
+          requestAnimationFrame(() => {
+            const currentSel = window.getSelection();
+            if (!currentSel || currentSel.rangeCount === 0 || currentSel.isCollapsed) {
+              setSelectionRect(null);
+              return;
+            }
+            try {
+              const range = currentSel.getRangeAt(0);
+              const rect = range.getBoundingClientRect();
+              if (rect.width > 0 && rect.height > 0) {
+                setSelectionRect(rect);
+              } else {
+                setSelectionRect(null);
+              }
+            } catch (err) {
+              setSelectionRect(null);
+            }
+          });
+        } else {
+          setSelectionRect(null);
+          setSelectionText('');
+        }
+      } else {
+        setSelectionRect(null);
+        setSelectionText('');
+      }
     };
     document.addEventListener('selectionchange', handler);
     return () => document.removeEventListener('selectionchange', handler);
@@ -1444,7 +1633,7 @@ const WritingInterface = () => {
     syncSessionRef.current = null;
     setSyncUsername('');
     setSyncPassword('');
-    setSyncStatus('free: local only');
+    setSyncStatus('local only');
   }, []);
 
   const handleToggleProjectSync = useCallback((projectId: string) => {
@@ -1920,6 +2109,10 @@ const WritingInterface = () => {
       lines[lineIndex] = '';
       structuralUpdate(lines.join('\n'), lineIndex, 0, false);
       handleToggleSideTab();
+    } else if (command === 'scratchpad') {
+      lines[lineIndex] = '';
+      structuralUpdate(lines.join('\n'), lineIndex, 0, false);
+      handleOpenScratchpad();
     } else if (command === 'image') {
       if (!imagesEnabled) return;
       lines[lineIndex] = '';
@@ -2004,6 +2197,17 @@ const WritingInterface = () => {
 
   // Key handler
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Clear selection rect on any key down that isn't a modifier
+    if (!e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+      setSelectionRect(null);
+    }
+
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'm') {
+      e.preventDefault();
+      moveToNotes();
+      return;
+    }
+
     // Priority: pendingCursor (set by structuralUpdate, RAF not yet fired)
     //        → trackedCursor (last known-good from selectionchange)
     //        → live getCursorInfo() (may return stale state at container level)
@@ -2542,7 +2746,21 @@ const WritingInterface = () => {
     const ls = contentRef.current.split('\n');
     const idx = ls.findIndex(l => l.startsWith(`polaroid::${id}|`));
     if (idx >= 0) {
-      ls[idx] = `polaroid::${id}|${newCaption}`;
+      const parts = ls[idx].split('|');
+      ls[idx] = `polaroid::${id}|${newCaption}` + (parts[2] ? `|${parts[2]}` : '');
+      contentRef.current = ls.join('\n');
+      saveContent(contentRef.current);
+    }
+  }, [saveContent]);
+
+  const handleImageWidthChange = useCallback((id: string, newWidth: string) => {
+    const slot = editorRef.current?.querySelector(`[data-image-id="${id}"]`) as HTMLElement | null;
+    if (slot) slot.dataset.imageWidth = newWidth;
+    const ls = contentRef.current.split('\n');
+    const idx = ls.findIndex(l => l.startsWith(`polaroid::${id}|`));
+    if (idx >= 0) {
+      const parts = ls[idx].split('|');
+      ls[idx] = `polaroid::${id}|${parts[1] || ''}|${newWidth}`;
       contentRef.current = ls.join('\n');
       saveContent(contentRef.current);
     }
@@ -2576,17 +2794,22 @@ const WritingInterface = () => {
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     if (!imagesEnabled) return;
-    e.preventDefault();
-    e.stopPropagation();
     const hasImage = Array.from(e.dataTransfer.types).includes('Files');
-    e.dataTransfer.dropEffect = hasImage ? 'copy' : 'none';
+    if (hasImage) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'copy';
+    }
   }, [imagesEnabled]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     if (!imagesEnabled) return;
-    e.preventDefault();
-    e.stopPropagation();
-    void processDroppedFiles(e.dataTransfer.files, e.clientY);
+    const hasImage = Array.from(e.dataTransfer.types).includes('Files');
+    if (hasImage) {
+      e.preventDefault();
+      e.stopPropagation();
+      void processDroppedFiles(e.dataTransfer.files, e.clientY);
+    }
   }, [imagesEnabled, processDroppedFiles]);
 
   useEffect(() => {
@@ -3215,6 +3438,28 @@ const WritingInterface = () => {
               spellCheck={spellCheckEnabled}
             />
 
+            {selectionRect && containerRef.current && (
+              createPortal(
+                <button
+                  className="absolute z-50 flex items-center justify-center bg-background border border-border shadow-lg rounded-full p-2 text-foreground/80 hover:text-foreground hover:bg-accent/50 transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                  style={{
+                    top: selectionRect.top - 48,
+                    left: selectionRect.left + (selectionRect.width / 2) - 18,
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    moveToNotes();
+                  }}
+                  aria-label="Move selection to notes (Cmd+Shift+M)"
+                  title="Move to notes (Cmd+Shift+M)"
+                >
+                  <NotebookPen size={16} />
+                </button>,
+                document.body
+              )
+            )}
+
             {isTyping && <div className="absolute bottom-4 right-4 w-2 h-2 bg-accent-foreground rounded-full animate-pulse" />}
           </div>
         </div>
@@ -3322,28 +3567,33 @@ const WritingInterface = () => {
         );
       })}
 
-      {/* Image (polaroid) portals */}
-      {imageSlots.map(({ id, caption, lineIndex }) => {
+      {/* Image portals */}
+      {imageSlots.map(({ id, caption, width, lineIndex }) => {
         const container = imageContainers.current.get(id);
         if (!container) return null;
+        
+        const handleRemove = () => {
+          pushUndo(true);
+          const ls = contentRef.current.split('\n');
+          const idx = ls.findIndex(l => l.startsWith(`polaroid::${id}`));
+          if (idx >= 0) {
+            ls.splice(idx, 1);
+            if (!ls.length) ls.push('');
+            structuralUpdate(ls.join('\n'), Math.min(idx, ls.length - 1), 0);
+          }
+        };
+
+        const Component = polaroidFramesEnabled ? PolaroidImage : NormalImage;
+        
         return createPortal(
-          <PolaroidImage
+          <Component
             key={id}
             imageId={id}
             initialCaption={caption}
+            initialWidth={width}
             onCaptionChange={(newCaption) => handleImageCaptionChange(id, newCaption)}
-            onRemove={() => {
-              pushUndo(true);
-              // Don't deleteImage(id) here — keep bytes so undo can restore the photo.
-              // Orphan images get swept by gcOrphanImages on next app load.
-              const ls = contentRef.current.split('\n');
-              const idx = ls.findIndex(l => l.startsWith(`polaroid::${id}`));
-              if (idx >= 0) {
-                ls.splice(idx, 1);
-                if (!ls.length) ls.push('');
-                structuralUpdate(ls.join('\n'), Math.min(idx, ls.length - 1), 0);
-              }
-            }}
+            onWidthChange={(newWidth) => handleImageWidthChange(id, newWidth)}
+            onRemove={handleRemove}
           />,
           container
         );
@@ -3383,9 +3633,19 @@ const WritingInterface = () => {
           value={scratchpad}
           width={scratchpadWidth}
           useSerif={useSerif}
+          notesTransferMode={notesTransferMode}
           onChange={handleScratchpadChange}
+          onMoveToEditor={handleInsertFromScratchpad}
           onResize={setScratchpadWidth}
           onClose={() => setScratchpadOpen(false)}
+          slashCommands={getSlashCommands({
+            imagesEnabled: false,
+            sidetabEnabled: false,
+            scratchpadEnabled: false,
+            listEnabled: true,
+            lineEnabled: true,
+            timerEnabled: true
+          }).filter(c => ['list', 'line', 'timer'].includes(c.name))}
         />
       </Suspense>
 
@@ -3424,6 +3684,22 @@ const WritingInterface = () => {
               onToggleCmdArrowPageNav={handleToggleCmdArrowPageNav}
               imagesEnabled={imagesEnabled}
               onToggleImages={handleToggleImages}
+              sidetabEnabled={sidetabEnabled}
+              onToggleSidetab={handleToggleSidetab}
+              scratchpadEnabled={scratchpadEnabled}
+              onToggleScratchpad={handleToggleScratchpad}
+              listEnabled={listEnabled}
+              onToggleList={handleToggleList}
+              lineEnabled={lineEnabled}
+              onToggleLine={handleToggleLine}
+              timerEnabled={timerEnabled}
+              onToggleTimer={handleToggleTimer}
+              helpEnabled={helpEnabled}
+              onToggleHelp={handleToggleHelp}
+              settingsCommandEnabled={settingsCommandEnabled}
+              onToggleSettingsCommand={handleToggleSettingsCommand}
+              polaroidFramesEnabled={polaroidFramesEnabled}
+              onTogglePolaroidFrames={handleTogglePolaroidFrames}
               dirName={getDirName(dirHandle)}
               onPickFolder={handlePickFolder}
               onClearFolder={handleClearFolder}
@@ -3452,6 +3728,8 @@ const WritingInterface = () => {
               onToggleActiveProjectSync={() => {
                 if (activeProjectIdRef.current) handleToggleProjectSync(activeProjectIdRef.current);
               }}
+              notesTransferMode={notesTransferMode}
+              onToggleNotesTransferMode={handleToggleNotesTransferMode}
             />
           </>
         )}
