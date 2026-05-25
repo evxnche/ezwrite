@@ -428,7 +428,7 @@ export const SettingsDialog: React.FC<Props> = ({
                 </p>
               </div>
               <div className="space-y-1.5">
-                <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">share w/ friends</h3>
+                <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">don't gatekeep</h3>
                 <div className="flex items-center gap-2">
                   <a
                     href={landingPageUrl}
