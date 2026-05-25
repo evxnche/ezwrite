@@ -416,20 +416,14 @@ export const SettingsDialog: React.FC<Props> = ({
               </div>
               <div className="space-y-1.5">
                 <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">share w/ friends</h3>
-                {landingPageUrl ? (
-                  <a
-                    href={landingPageUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-accent-foreground hover:underline break-all"
-                  >
-                    {landingPageUrl}
-                  </a>
-                ) : (
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    set <span className="text-foreground">VITE_LANDING_PAGE_URL</span> in env to show your waitlist link.
-                  </p>
-                )}
+                <a
+                  href={landingPageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-accent-foreground hover:underline break-all"
+                >
+                  {landingPageUrl}
+                </a>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   send friends here to join the waitlist and get access.
                 </p>
