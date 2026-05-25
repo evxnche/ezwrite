@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Cloud, FolderOpen, Lock, RefreshCw } from 'lucide-react';
+import { Cloud, Copy, FolderOpen, Lock, RefreshCw } from 'lucide-react';
 import DialogSupportFooter from './DialogSupportFooter';
 import { BUG_REPORT_EMAIL } from '@/lib/bug-report';
-import { getLandingPageUrl } from '@/lib/app-links';
+import { copyLandingPageUrl, getLandingPageDisplayLabel, getLandingPageUrl } from '@/lib/app-links';
 import type { ColorTheme } from './preferences';
 
 const THEMES = [
@@ -153,11 +153,24 @@ export const SettingsDialog: React.FC<Props> = ({
   userId,
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
+  const [landingCopied, setLandingCopied] = useState(false);
   const landingPageUrl = getLandingPageUrl();
+  const landingPageLabel = getLandingPageDisplayLabel();
 
   useEffect(() => {
     if (open) setActiveTab('appearance');
   }, [open]);
+
+  useEffect(() => {
+    if (!landingCopied) return;
+    const id = window.setTimeout(() => setLandingCopied(false), 2000);
+    return () => window.clearTimeout(id);
+  }, [landingCopied]);
+
+  const handleCopyLandingPage = async () => {
+    const ok = await copyLandingPageUrl();
+    if (ok) setLandingCopied(true);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -416,14 +429,27 @@ export const SettingsDialog: React.FC<Props> = ({
               </div>
               <div className="space-y-1.5">
                 <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">share w/ friends</h3>
-                <a
-                  href={landingPageUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-accent-foreground hover:underline break-all"
-                >
-                  {landingPageUrl}
-                </a>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={landingPageUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-accent-foreground hover:underline"
+                  >
+                    {landingPageLabel}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={handleCopyLandingPage}
+                    className="text-muted-foreground hover:text-accent-foreground transition-colors"
+                    aria-label={landingCopied ? 'copied' : 'copy link'}
+                  >
+                    <Copy size={14} />
+                  </button>
+                  {landingCopied && (
+                    <span className="text-[10px] text-accent-foreground">copied</span>
+                  )}
+                </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   send friends here to join the waitlist and get access.
                 </p>
