@@ -1,0 +1,21 @@
+---
+description: Auto-commit and push after each completed batch of changes in ezwrite
+alwaysApply: true
+---
+
+# Auto commit and push
+
+After finishing a batch of implementation work in this repo (not mid-task, not for question-only replies):
+
+1. Run `git status` and `git diff` to verify what changed.
+2. Do **not** commit secrets (`.env`, credentials).
+3. Stage only files related to the work.
+4. Commit with a concise message focused on **why** (HEREDOC format).
+5. Push to the tracked remote branch (`git push`) without waiting for the user to ask.
+
+Skip commit/push when:
+- The user explicitly says not to commit or push.
+- There are no file changes.
+- The directory is not a git repo or push would fail (report the error instead of retrying blindly).
+
+If push fails, fix auth/remote issues if obvious; otherwise report what failed and leave changes committed locally.
