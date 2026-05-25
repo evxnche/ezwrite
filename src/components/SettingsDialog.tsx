@@ -451,7 +451,7 @@ export const SettingsDialog: React.FC<Props> = ({
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  send friends here to join the waitlist and get access.
+                  share w/ friends to give them access as well.
                 </p>
               </div>
             </div>
