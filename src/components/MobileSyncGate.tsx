@@ -40,6 +40,12 @@ const MobileSyncGate: React.FC<Props> = ({
     <div className="min-h-screen bg-background flex items-center justify-center px-6">
       <div className="w-full max-w-xs space-y-5">
         <div className="space-y-2 text-center">
+          <span
+            className="brand-title block text-foreground"
+            style={{ letterSpacing: '-0.04em', fontFamily: "'Instrument Serif', serif", fontSize: '26px' }}
+          >
+            ezwrite.
+          </span>
           <p className="font-mono text-xs text-muted-foreground leading-relaxed">
             ezwrite (on mobile) saves your writing to the cloud, as the mobile browsers wipe data.
           </p>
