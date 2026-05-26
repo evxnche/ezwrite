@@ -43,8 +43,7 @@ const MobileSyncGate: React.FC<Props> = ({
           </div>
           <h1 className="font-mono text-base text-foreground">Sign in to write on mobile</h1>
           <p className="font-mono text-xs text-muted-foreground leading-relaxed">
-            On phones, ezWrite saves your writing to the cloud so it can’t be lost if the
-            browser clears its storage. Sign in once — it’ll remember you.
+            ezWrite (on mobiles) saves your writing to the cloud as mobile browsers wipe data.
           </p>
         </div>
 
@@ -86,10 +85,6 @@ const MobileSyncGate: React.FC<Props> = ({
             create account
           </button>
         </div>
-
-        <p className="font-mono text-[11px] text-muted-foreground/80 text-center leading-relaxed">
-          On a laptop? ezWrite works without signing in there.
-        </p>
       </div>
     </div>
   );
