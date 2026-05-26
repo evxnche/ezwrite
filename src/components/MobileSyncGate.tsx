@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 
 interface Props {
   username: string;
@@ -25,6 +26,8 @@ const MobileSyncGate: React.FC<Props> = ({
   onSignIn,
   onCreateAccount,
 }) => {
+  const [showPassword, setShowPassword] = useState(false);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -37,7 +40,6 @@ const MobileSyncGate: React.FC<Props> = ({
     <div className="min-h-screen bg-background flex items-center justify-center px-6">
       <div className="w-full max-w-xs space-y-5">
         <div className="space-y-2 text-center">
-          <h1 className="font-mono text-base text-foreground">sign in</h1>
           <p className="font-mono text-xs text-muted-foreground leading-relaxed">
             ezwrite (on mobile) saves your writing to the cloud, as the mobile browsers wipe data.
           </p>
@@ -56,16 +58,28 @@ const MobileSyncGate: React.FC<Props> = ({
             disabled={busy}
             className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-base outline-none focus:border-accent-foreground/50 disabled:opacity-50"
           />
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => onPasswordChange(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') onSignIn(); }}
-            placeholder="password"
-            disabled={busy}
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-base outline-none focus:border-accent-foreground/50 disabled:opacity-50"
-            style={{ fontSize: '16px' }}
-          />
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => onPasswordChange(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') onSignIn(); }}
+              placeholder="password"
+              disabled={busy}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 pr-10 text-base outline-none focus:border-accent-foreground/50 disabled:opacity-50"
+              style={{ fontSize: '16px' }}
+            />
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={() => setShowPassword((v) => !v)}
+              disabled={busy}
+              aria-label={showPassword ? 'hide password' : 'show password'}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground disabled:opacity-40"
+            >
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
           {error && (
             <p className="font-mono text-xs text-destructive break-words whitespace-pre-wrap">{error}</p>
           )}
