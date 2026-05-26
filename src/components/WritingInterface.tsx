@@ -1094,6 +1094,8 @@ const WritingInterface = () => {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !selectionText) return;
 
+    if (!scratchpadOpen) setScratchpadOpen(true);
+
     const newScratchpad = scratchpad.trim() 
       ? scratchpad + '\n\n' + selectionText 
       : selectionText;
@@ -1123,7 +1125,7 @@ const WritingInterface = () => {
 
     setSelectionRect(null);
     setSelectionText('');
-  }, [scratchpad, selectionText, activeProjectId, saveContent, notesTransferMode]);
+  }, [scratchpad, selectionText, activeProjectId, saveContent, notesTransferMode, scratchpadOpen]);
 
   // --- Cursor normalizer ---
   // When structuralUpdate resets innerHTML, the browser can leave the cursor at the
