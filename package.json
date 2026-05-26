@@ -7,7 +7,8 @@
     "dev": "./node_modules/.bin/vite",
     "build": "./node_modules/.bin/vite build",
     "lint": "./node_modules/.bin/eslint .",
-    "preview": "./node_modules/.bin/vite preview"
+    "preview": "./node_modules/.bin/vite preview",
+    "test:e2e": "./node_modules/.bin/playwright test"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.2",
@@ -27,6 +28,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.9.0",
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/typography": "^0.5.15",
     "@types/node": "^22.5.5",
     "@types/react": "^18.3.3",

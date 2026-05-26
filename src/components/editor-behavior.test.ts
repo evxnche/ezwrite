@@ -311,6 +311,17 @@ test('OPFS backup writes coalesce to the latest pending Markdown payload', () =>
   assert.equal(storageSource.includes('opfsLastProjectId'), false);
 });
 
+test('WritingInterface routes sync entry points through retry-safe helpers instead of direct fire-and-forget pushes', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+
+  assert.match(source, /const runProjectSync = useCallback\(/);
+  assert.equal(source.includes('pushProjectToSync(projectId).catch((error) => {'), false);
+  assert.equal(source.includes("void pushProjectToSync(projectId, session, { keepalive: true }).catch(() => {});"), false);
+  assert.equal(source.includes('if (needsPush) await pushProjectToSync(project.id, session);'), false);
+  assert.match(source, /runProjectSync\(projectId, \{ keepalive: true \}\)/);
+  assert.match(source, /runSequentialSyncBatch\(/);
+});
+
 test('WritingInterface container taps focus without scrolling the page to the top', () => {
   const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   assert.match(

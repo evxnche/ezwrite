@@ -115,6 +115,7 @@ interface Props {
   syncPlan?: 'free' | 'paid';
   syncCanUse?: boolean;
   activeProjectSynced?: boolean;
+  forceSyncAll?: boolean;
   onSyncUsernameChange?: (value: string) => void;
   onSyncPasswordChange?: (value: string) => void;
   onUnlockSync?: () => void;
@@ -178,6 +179,7 @@ export const SettingsDialog: React.FC<Props> = ({
   syncPlan = 'free',
   syncCanUse,
   activeProjectSynced,
+  forceSyncAll,
   onSyncUsernameChange,
   onSyncPasswordChange,
   onUnlockSync,
@@ -490,6 +492,12 @@ export const SettingsDialog: React.FC<Props> = ({
                       )}
 
                       <div className="flex items-center justify-between">
+                        {forceSyncAll ? (
+                          <span className="flex items-center gap-1.5 text-xs text-accent-foreground">
+                            <Cloud size={13} />
+                            all docs sync on mobile
+                          </span>
+                        ) : (
                         <button
                           onClick={onToggleActiveProjectSync}
                           disabled={syncBusy || !syncCanUse}
@@ -500,6 +508,7 @@ export const SettingsDialog: React.FC<Props> = ({
                           <Cloud size={13} />
                           {activeProjectSynced ? 'current doc synced' : 'sync current doc'}
                         </button>
+                        )}
                         <button
                           onClick={onSyncNow}
                           disabled={syncBusy || !syncCanUse}

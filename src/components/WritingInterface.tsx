@@ -79,7 +79,10 @@ import {
   type SyncSession,
 } from '@/lib/sync-client';
 import { buildSyncProjectSnapshot, hashSnapshot } from '@/lib/sync-crypto';
+import { runSequentialSyncBatch, toSyncError } from '@/lib/sync-retry';
 import { recordBugReportBreadcrumb, setBugReportRuntimeContext } from '@/lib/bug-report';
+import { loadSyncSession, saveSyncSession, clearSyncSession } from '@/lib/sync-session-store';
+import MobileSyncGate from './MobileSyncGate';
 
 
 const InfoDialog = lazy(() => import('./InfoDialog'));
@@ -347,10 +350,12 @@ const WritingInterface = () => {
   const [syncUsername, setSyncUsername] = useState('');
   const [syncPassword, setSyncPassword] = useState('');
   const [syncSession, setSyncSession] = useState<SyncSession | null>(null);
+  const [sessionRestored, setSessionRestored] = useState(false);
   const [syncStatus, setSyncStatus] = useState('local only');
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncError, setSyncError] = useState('');
   const syncPushTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const syncQueueRef = useRef<Set<string>>(new Set());
   const syncSessionRef = useRef<SyncSession | null>(null);
   const [timerAlert, setTimerAlert] = useState(false);
   const [pageTransition, setPageTransition] = useState<'none' | 'slide-left' | 'slide-right'>('none');
@@ -384,9 +389,12 @@ const WritingInterface = () => {
   const dotsTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
   // Touch device + keyboard height (for floating / button)
-  const isTouchDevice = useState(() =>
-    typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
-  )[0];
+  const isTouchDevice = useState(() => {
+    if (typeof window === 'undefined') return false;
+    // ?mobile=1 forces the mobile experience (incl. the sign-in gate) on desktop for demos.
+    const forcedMobile = new URLSearchParams(window.location.search).get('mobile') === '1';
+    return forcedMobile || window.matchMedia('(pointer: coarse)').matches;
+  })[0];
   const [kbHeight, setKbHeight] = useState(0);
   const kbHeightRef = useRef(0);
   useEffect(() => {
@@ -846,8 +854,60 @@ const WritingInterface = () => {
     }, opts);
     markProjectSynced(projectId, row.updated_at, meta.updatedAt, hash);
     setProjects(listProjects());
-    setSyncStatus('synced');
   }, []);
+
+  const runProjectSync = useCallback(async (
+    projectId: string,
+    options: {
+      session?: SyncSession | null;
+      keepalive?: boolean;
+      queueOnError?: boolean;
+      suppressSuccessStatus?: boolean;
+      suppressFailureStatus?: boolean;
+    } = {},
+  ) => {
+    try {
+      await pushProjectToSync(projectId, options.session ?? syncSessionRef.current, {
+        keepalive: options.keepalive,
+      });
+      syncQueueRef.current.delete(projectId);
+      if (!options.suppressSuccessStatus && syncQueueRef.current.size === 0) {
+        setSyncError('');
+        setSyncStatus('synced');
+      }
+      return { ok: true as const };
+    } catch (error) {
+      const syncError = toSyncError(error);
+      if (options.queueOnError !== false) syncQueueRef.current.add(projectId);
+      if (!options.suppressFailureStatus) {
+        setSyncError(syncError.message);
+        setSyncStatus('sync failed');
+      }
+      return { ok: false as const, error: syncError };
+    }
+  }, [pushProjectToSync]);
+
+  const flushSyncQueue = useCallback(async () => {
+    const queuedProjectIds = [...syncQueueRef.current];
+    if (queuedProjectIds.length === 0) return;
+    syncQueueRef.current.clear();
+    setSyncError('');
+    setSyncStatus('syncing...');
+    const { failed: failedProjects } = await runSequentialSyncBatch(queuedProjectIds, async (projectId) => {
+      const result = await runProjectSync(projectId, {
+        suppressSuccessStatus: true,
+        suppressFailureStatus: true,
+      });
+      if (!result.ok) throw result.error;
+    });
+    if (failedProjects.length === 0) {
+      setSyncError('');
+      setSyncStatus('synced');
+    } else {
+      setSyncError(failedProjects[0]?.error.message ?? 'Sync failed');
+      setSyncStatus('sync failed');
+    }
+  }, [runProjectSync]);
 
   const scheduleSyncPush = useCallback((projectId = activeProjectIdRef.current) => {
     if (!projectId || !syncSessionRef.current) return;
@@ -857,12 +917,9 @@ const WritingInterface = () => {
     if (existing) clearTimeout(existing);
     timers.set(projectId, setTimeout(() => {
       timers.delete(projectId);
-      pushProjectToSync(projectId).catch((error) => {
-        setSyncError(error instanceof Error ? error.message : 'Sync failed');
-        setSyncStatus('sync failed');
-      });
+      void runProjectSync(projectId);
     }, SYNC_DEBOUNCE_MS));
-  }, [pushProjectToSync]);
+  }, [runProjectSync]);
 
   const persistScratchpad = useCallback((value: string, projectId = activeProjectIdRef.current) => {
     if (!projectId) return;
@@ -929,7 +986,7 @@ const WritingInterface = () => {
         const pending = timers.get(projectId);
         if (pending) { clearTimeout(pending); timers.delete(projectId); }
         // Best-effort immediate push so the last edit isn't lost on tab close.
-        void pushProjectToSync(projectId, session, { keepalive: true }).catch(() => {});
+        void runProjectSync(projectId, { keepalive: true });
       }
     };
     const flushWhenHidden = () => {
@@ -948,7 +1005,17 @@ const WritingInterface = () => {
       for (const timer of timers.values()) clearTimeout(timer);
       timers.clear();
     };
-  }, [flushCurrentProject, pushProjectToSync]);
+  }, [flushCurrentProject, runProjectSync]);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      if (syncQueueRef.current.size > 0 && syncSessionRef.current) {
+        void flushSyncQueue();
+      }
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [flushSyncQueue]);
 
   // --- Save helper ---
   const saveContent = useCallback((content: string) => {
@@ -1571,28 +1638,63 @@ const WritingInterface = () => {
     setSyncBusy(true);
     setSyncError('');
     setSyncStatus('syncing...');
+    const cursorKey = `ezwrite-sync-cursor-${session.userId}`;
+    const since = Number(localStorage.getItem(cursorKey) ?? '0') || 0;
+    let maxUpdatedAt = since;
+    let pullError: Error | null = null;
     try {
-      const cursorKey = `ezwrite-sync-cursor-${session.userId}`;
-      const since = Number(localStorage.getItem(cursorKey) ?? '0') || 0;
       const rows = await listRemoteSyncNotes(session, since);
-      const maxUpdatedAt = await applyRemoteSyncRows(rows, session);
+      maxUpdatedAt = await applyRemoteSyncRows(rows, session);
+    } catch (error) {
+      pullError = toSyncError(error);
+    }
+    try {
       const syncedProjects = listProjects().filter((project) => project.syncEnabled);
+      const projectIdsToPush: string[] = [];
       for (const project of syncedProjects) {
         const latest = getProjectMeta(project.id);
         if (!latest) continue;
         const needsPush = !latest.syncLastPushedAt || latest.updatedAt > latest.syncLastPushedAt + SYNC_FUDGE_MS;
-        if (needsPush) await pushProjectToSync(project.id, session);
+        if (needsPush) projectIdsToPush.push(project.id);
       }
-      if (maxUpdatedAt > since) localStorage.setItem(cursorKey, String(maxUpdatedAt));
+      const { failed: failedProjects } = await runSequentialSyncBatch(projectIdsToPush, async (projectId) => {
+        const result = await runProjectSync(projectId, {
+          session,
+          suppressSuccessStatus: true,
+          suppressFailureStatus: true,
+        });
+        if (!result.ok) throw result.error;
+      });
+      if (!pullError && maxUpdatedAt > since) {
+        localStorage.setItem(cursorKey, String(maxUpdatedAt));
+      }
       setProjects(listProjects());
-      setSyncStatus('synced');
+      if (pullError) {
+        setSyncError(pullError.message);
+        setSyncStatus('sync failed');
+      } else if (failedProjects.length > 0) {
+        setSyncError(failedProjects[0]?.error.message ?? 'Sync failed');
+        setSyncStatus('sync failed');
+      } else {
+        setSyncError('');
+        setSyncStatus('synced');
+      }
     } catch (error) {
-      setSyncError(error instanceof Error ? error.message : 'Sync failed');
+      setSyncError(toSyncError(error).message);
       setSyncStatus('sync failed');
     } finally {
+      void saveSyncSession(session);
       setSyncBusy(false);
     }
-  }, [applyRemoteSyncRows, pushProjectToSync]);
+  }, [applyRemoteSyncRows, runProjectSync]);
+
+  const enableSyncForAllLocalProjects = useCallback(() => {
+    let changed = false;
+    for (const p of listProjects()) {
+      if (!p.syncEnabled) { setProjectSyncEnabled(p.id, true); changed = true; }
+    }
+    if (changed) setProjects(listProjects());
+  }, []);
 
   const handleUnlockSync = useCallback(async (createAccount = false) => {
     const username = syncUsername.trim().toLowerCase();
@@ -1616,6 +1718,7 @@ const WritingInterface = () => {
       setSyncSession(session);
       syncSessionRef.current = session;
       setSyncStatus('sync unlocked');
+      if (isTouchDevice) enableSyncForAllLocalProjects();
       await syncAllProjects(session);
     } catch (error) {
       setSyncError(error instanceof Error ? error.message : 'Could not unlock sync');
@@ -1623,17 +1726,52 @@ const WritingInterface = () => {
     } finally {
       setSyncBusy(false);
     }
-  }, [syncUsername, syncPassword, syncAllProjects]);
+  }, [syncUsername, syncPassword, syncAllProjects, isTouchDevice, enableSyncForAllLocalProjects]);
 
   const handleLockSync = useCallback(() => {
     const session = syncSessionRef.current;
     if (session) localStorage.removeItem(`ezwrite-sync-cursor-${session.userId}`);
+    syncQueueRef.current.clear();
     setSyncSession(null);
     syncSessionRef.current = null;
+    void clearSyncSession();
     setSyncUsername('');
     setSyncPassword('');
+    setSyncError('');
     setSyncStatus('local only');
   }, []);
+
+  // Restore a persisted sign-in on mount so login survives reloads (and the mobile
+  // gate doesn't re-prompt every visit). Runs once.
+  const sessionRestoreStartedRef = useRef(false);
+  useEffect(() => {
+    if (sessionRestoreStartedRef.current) return;
+    sessionRestoreStartedRef.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const restored = await loadSyncSession();
+        if (cancelled || !restored) return;
+        setSyncSession(restored);
+        syncSessionRef.current = restored;
+        setSyncStatus('sync unlocked');
+        if (isTouchDevice) enableSyncForAllLocalProjects();
+        await syncAllProjects(restored);
+      } catch {
+        // ignore — fall through to gate / local-only
+      } finally {
+        if (!cancelled) setSessionRestored(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isTouchDevice, enableSyncForAllLocalProjects, syncAllProjects]);
+
+  // On mobile, every doc must sync (no device-only writing). Keep the flag set on any
+  // newly created project while signed in.
+  useEffect(() => {
+    if (!isTouchDevice || !syncSession) return;
+    enableSyncForAllLocalProjects();
+  }, [projects, isTouchDevice, syncSession, enableSyncForAllLocalProjects]);
 
   const handleToggleProjectSync = useCallback((projectId: string) => {
     flushCurrentProject();
@@ -1646,15 +1784,18 @@ const WritingInterface = () => {
     setProjectSyncEnabled(projectId, next);
     setProjects(listProjects());
     if (!next) {
-      setSyncStatus('local only');
+      syncQueueRef.current.delete(projectId);
+      if (syncQueueRef.current.size > 0) {
+        setSyncStatus('sync failed');
+      } else {
+        setSyncError('');
+        setSyncStatus(syncSessionRef.current ? 'sync unlocked' : 'local only');
+      }
       return;
     }
     setSyncStatus('syncing...');
-    pushProjectToSync(projectId).catch((error) => {
-      setSyncError(error instanceof Error ? error.message : 'Sync failed');
-      setSyncStatus('sync failed');
-    });
-  }, [flushCurrentProject, pushProjectToSync]);
+    void runProjectSync(projectId);
+  }, [flushCurrentProject, runProjectSync]);
 
   // --- Touch swipe ---
   const touchStartX = useRef(0);
@@ -3333,6 +3474,23 @@ const WritingInterface = () => {
       : isDark ? { textShadow: visualMetrics.warmEditorGlow } : {}),
   };
 
+  const syncConfigured = getSyncConfigStatus() === 'ready';
+  if (isTouchDevice && syncConfigured && !syncSession) {
+    return (
+      <MobileSyncGate
+        loading={!sessionRestored}
+        username={syncUsername}
+        password={syncPassword}
+        busy={syncBusy}
+        error={syncError}
+        onUsernameChange={setSyncUsername}
+        onPasswordChange={setSyncPassword}
+        onSignIn={() => handleUnlockSync(false)}
+        onCreateAccount={() => handleUnlockSync(true)}
+      />
+    );
+  }
+
   return (
     <div
       className="min-h-screen bg-background flex flex-col"
@@ -3688,6 +3846,7 @@ const WritingInterface = () => {
               syncPassword={syncPassword}
               syncCanUse={Boolean(syncSession)}
               activeProjectSynced={Boolean(activeProjectId && getProjectMeta(activeProjectId)?.syncEnabled)}
+              forceSyncAll={isTouchDevice}
               onSyncUsernameChange={setSyncUsername}
               onSyncPasswordChange={setSyncPassword}
               onUnlockSync={() => handleUnlockSync(false)}
