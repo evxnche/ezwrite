@@ -39,7 +39,7 @@ const MobileSyncGate: React.FC<Props> = ({
         <div className="space-y-2 text-center">
           <h1 className="font-mono text-base text-foreground">sign in</h1>
           <p className="font-mono text-xs text-muted-foreground leading-relaxed">
-            ezwrite (on mobiles) saves your writing to the cloud, as the mobile browsers wipe data.
+            ezwrite (on mobile) saves your writing to the cloud, as the mobile browsers wipe data.
           </p>
         </div>
 
