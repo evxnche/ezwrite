@@ -179,7 +179,6 @@ const MOBILE_EDITOR_BOTTOM_PADDING = 'calc(env(safe-area-inset-bottom, 0px) + 13
 const MOBILE_SLASH_BUTTON_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 1rem)';
 const MOBILE_FOOTER_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 0.5rem)';
 const MOBILE_PAGE_DOTS_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 2.75rem)';
-const MOBILE_SAVE_INDICATOR_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 1.25rem)';
 
 function drawRoundedRect(
   ctx: CanvasRenderingContext2D,
@@ -339,7 +338,6 @@ const WritingInterface = () => {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isExportingShareCard, setIsExportingShareCard] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
-  const [savedFlash, setSavedFlash] = useState(false);
   const [imageDropDialog, setImageDropDialog] = useState<{
     open: boolean;
     dataUrl: string | null;
@@ -352,7 +350,6 @@ const WritingInterface = () => {
   const [syncStatus, setSyncStatus] = useState('local only');
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncError, setSyncError] = useState('');
-  const savedFlashTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const syncPushTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const syncSessionRef = useRef<SyncSession | null>(null);
   const [timerAlert, setTimerAlert] = useState(false);
@@ -2274,25 +2271,6 @@ const WritingInterface = () => {
       return;
     }
 
-    // Cmd+S / Ctrl+S — explicit save
-    if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-      e.preventDefault();
-      if (editorRef.current) {
-        const content = extractContent(editorRef.current);
-        pagesRef.current[currentPageRef.current] = content;
-        contentRef.current = content;
-        const projectId = activeProjectIdRef.current;
-        if (projectId) saveProjectPages(projectId, pagesRef.current);
-      }
-      if (dirHandleRef.current) {
-        void writeProjectFiles(dirHandleRef.current, activeProjectIdRef.current ?? 'default', pagesRef.current.map(p => contentToMarkdown(p)), scratchpad);
-      }
-      void writeToOPFS(pagesRef.current, activeProjectIdRef.current ?? undefined, scratchpad);
-      clearTimeout(savedFlashTimeoutRef.current);
-      setSavedFlash(true);
-      savedFlashTimeoutRef.current = setTimeout(() => setSavedFlash(false), 1500);
-      return;
-    }
 
     // Tab - 8 space indent
     if (e.key === 'Tab' && !e.shiftKey) {
@@ -3495,15 +3473,6 @@ const WritingInterface = () => {
         )}
       </div>
 
-      {/* Save indicator */}
-      {savedFlash && (
-        <div
-          className="fixed bottom-5 left-1/2 -translate-x-1/2 font-mono text-[10px] text-foreground/40 pointer-events-none select-none"
-          style={isTouchDevice ? { bottom: MOBILE_SAVE_INDICATOR_BOTTOM } : undefined}
-        >
-          saved
-        </div>
-      )}
 
       {/* Floating / button — mobile only, inserts / to trigger command popup */}
       {isTouchDevice && !slashPopup && (
