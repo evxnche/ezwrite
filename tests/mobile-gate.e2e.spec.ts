@@ -7,7 +7,7 @@ import { deriveAuthSecret, normalizeUsername } from '../src/lib/sync-crypto';
 
 const ENV_PATH = path.join(process.cwd(), '.env.local');
 const TIMEOUT = 30_000;
-const GATE_TEXT = 'saves your writing to the cloud';
+const GATE_TEXT = 'mobile browsers wipe data';
 
 function readEnv(): { url: string; anonKey: string } {
   const text = fs.readFileSync(ENV_PATH, 'utf8');
