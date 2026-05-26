@@ -1721,7 +1721,17 @@ const WritingInterface = () => {
       if (isTouchDevice) enableSyncForAllLocalProjects();
       await syncAllProjects(session);
     } catch (error) {
-      setSyncError(error instanceof Error ? error.message : 'Could not unlock sync');
+      const raw = error instanceof Error ? error.message : '';
+      const friendly = /invalid_credentials|invalid login/i.test(raw)
+        ? 'wrong username or password.'
+        : /user_already_exists|already registered/i.test(raw)
+          ? 'that username is taken. try signing in instead.'
+          : /failed to fetch|networkerror|err_internet|load failed/i.test(raw)
+            ? "couldn't reach the server. check your connection."
+            : /supabase env missing/i.test(raw)
+              ? 'sync is not configured.'
+              : "couldn't sign in. please try again.";
+      setSyncError(friendly);
       setSyncStatus('sync failed');
     } finally {
       setSyncBusy(false);

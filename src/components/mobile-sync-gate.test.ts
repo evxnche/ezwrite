@@ -43,7 +43,7 @@ test('sync-session-store persists the session in IndexedDB', () => {
 
 test('MobileSyncGate offers sign in + create account and a restore loading state', () => {
   const source = read('src/components/MobileSyncGate.tsx');
-  assert.match(source, /Sign in to write on mobile/);
+  assert.match(source, /saves your writing to the cloud/);
   assert.match(source, /onSignIn/);
   assert.match(source, /onCreateAccount/);
   assert.match(source, /loading/);

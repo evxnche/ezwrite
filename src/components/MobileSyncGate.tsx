@@ -1,5 +1,4 @@
 import React from 'react';
-import { Cloud } from 'lucide-react';
 
 interface Props {
   username: string;
@@ -38,12 +37,9 @@ const MobileSyncGate: React.FC<Props> = ({
     <div className="min-h-screen bg-background flex items-center justify-center px-6">
       <div className="w-full max-w-xs space-y-5">
         <div className="space-y-2 text-center">
-          <div className="flex items-center justify-center text-accent-foreground">
-            <Cloud size={22} />
-          </div>
-          <h1 className="font-mono text-base text-foreground">Sign in to write on mobile</h1>
+          <h1 className="font-mono text-base text-foreground">sign in</h1>
           <p className="font-mono text-xs text-muted-foreground leading-relaxed">
-            ezWrite (on mobiles) saves your writing to the cloud as mobile browsers wipe data.
+            ezwrite (on mobiles) saves your writing to the cloud, as the mobile browsers wipe data.
           </p>
         </div>
 
@@ -58,7 +54,7 @@ const MobileSyncGate: React.FC<Props> = ({
             onChange={(e) => onUsernameChange(e.target.value)}
             placeholder="username"
             disabled={busy}
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:border-accent-foreground/50 disabled:opacity-50"
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-base outline-none focus:border-accent-foreground/50 disabled:opacity-50"
           />
           <input
             type="password"
@@ -67,9 +63,12 @@ const MobileSyncGate: React.FC<Props> = ({
             onKeyDown={(e) => { if (e.key === 'Enter') onSignIn(); }}
             placeholder="password"
             disabled={busy}
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:border-accent-foreground/50 disabled:opacity-50"
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-base outline-none focus:border-accent-foreground/50 disabled:opacity-50"
+            style={{ fontSize: '16px' }}
           />
-          {error && <p className="font-mono text-xs text-destructive">{error}</p>}
+          {error && (
+            <p className="font-mono text-xs text-destructive break-words whitespace-pre-wrap">{error}</p>
+          )}
           <button
             onClick={onSignIn}
             disabled={busy}
