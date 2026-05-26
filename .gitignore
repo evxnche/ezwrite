@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Large source assets
+public/ascii-art.png
+
 # Worktrees
 .worktrees
 
