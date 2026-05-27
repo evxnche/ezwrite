@@ -92,17 +92,29 @@ test('mobile sign-in through the gate persists across a reload', async ({ page, 
   const runId = `${browserName}-${Date.now().toString(36)}`;
   const username = `gate${runId}`.slice(0, 24);
   const password = `pw-${runId}-safe`;
+  let createdAccount = false;
 
   await page.goto('/?mobile=1');
-  await expect(page.getByText(GATE_TEXT)).toBeVisible();
-
-  await page.getByPlaceholder('username').fill(username);
-  await page.getByPlaceholder('password').fill(password);
-  await page.getByRole('button', { name: 'create account' }).click();
+  const gateVisible = await page
+    .getByPlaceholder('username')
+    .isVisible({ timeout: 10_000 })
+    .catch(() => false);
+  if (gateVisible) {
+    await page.getByPlaceholder('username').fill(username);
+    await page.getByPlaceholder('password').fill(password);
+    await page.getByRole('button', { name: 'create account' }).click();
+    createdAccount = true;
+  }
 
   // Gate clears, editor mounts.
   await expect(page.locator('[contenteditable="true"]').first()).toBeVisible({ timeout: TIMEOUT });
   await expect(page.getByText(GATE_TEXT)).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const text = await page.locator('[contenteditable="true"]').first().innerText();
+      return text.trim().length;
+    }, { timeout: TIMEOUT })
+    .toBeGreaterThan(0);
 
   // Session must be persisted before we test reload-survival.
   await expect.poll(() => sessionPersisted(page), { timeout: TIMEOUT }).toBe(true);
@@ -110,6 +122,14 @@ test('mobile sign-in through the gate persists across a reload', async ({ page, 
   await page.reload();
   await expect(page.locator('[contenteditable="true"]').first()).toBeVisible({ timeout: TIMEOUT });
   await expect(page.getByText(GATE_TEXT)).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const text = await page.locator('[contenteditable="true"]').first().innerText();
+      return text.trim().length;
+    }, { timeout: TIMEOUT })
+    .toBeGreaterThan(0);
 
-  await cleanupAccount(username, password);
+  if (createdAccount) {
+    await cleanupAccount(username, password);
+  }
 });

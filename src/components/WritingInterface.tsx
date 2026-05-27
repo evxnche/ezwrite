@@ -1305,22 +1305,21 @@ const WritingInterface = () => {
   useEffect(() => { void import('jspdf'); }, []);
 
   // --- Mount ---
-  const hasInitialMounted = useRef(false);
+  // Mobile can render the sign-in gate first, so wait to hydrate until the editor exists.
+  const hasHydratedInitialEditor = useRef(false);
   useEffect(() => {
-    if (hasInitialMounted.current) return;
-    hasInitialMounted.current = true;
     setMounted(true);
-    if (editorRef.current) {
-      structuralUpdate(contentRef.current, 0, 0, true, false);
-      setTimeout(() => {
-        editorRef.current?.focus();
-        const lines = contentRef.current.split('\n');
-        const lastLine = lines.length - 1;
-        const lastLen = lines[lastLine]?.length || 0;
-        if (editorRef.current) setCursorPosition(editorRef.current, lastLine, lastLen);
-      }, 100);
-    }
-  }, [structuralUpdate]);
+    if (hasHydratedInitialEditor.current || !editorRef.current) return;
+    hasHydratedInitialEditor.current = true;
+    structuralUpdate(contentRef.current, 0, 0, true, false);
+    setTimeout(() => {
+      editorRef.current?.focus();
+      const lines = contentRef.current.split('\n');
+      const lastLine = lines.length - 1;
+      const lastLen = lines[lastLine]?.length || 0;
+      if (editorRef.current) setCursorPosition(editorRef.current, lastLine, lastLen);
+    }, 100);
+  }, [structuralUpdate, syncSession]);
 
   // --- Page switching ---
   const switchToPage = useCallback((newPage: number) => {
@@ -1343,7 +1342,7 @@ const WritingInterface = () => {
     // Clear undo/redo for new page
     undoStack.current = [];
     redoStack.current = [];
-    // Show dots briefly
+    // Show dots briefly while switching pages.
     setShowDots(true);
     clearTimeout(dotsTimeoutRef.current);
     dotsTimeoutRef.current = setTimeout(() => setShowDots(false), 500);
@@ -3528,15 +3527,17 @@ const WritingInterface = () => {
           ezwrite.
         </span>
         <div className="flex items-center gap-3 opacity-60 hover:opacity-100 transition-opacity duration-300">
-          {isPageEmpty && pageCount > 1 && (
-            <button
-              onClick={() => deletePage(currentPage)}
-              className="text-muted-foreground hover:text-destructive transition-colors"
-              aria-label="Delete current page"
-            >
-              <Trash2 size={16} />
-            </button>
-          )}
+          <div className="w-4 h-4 flex items-center justify-center">
+            {isPageEmpty && pageCount > 1 && (
+              <button
+                onClick={() => deletePage(currentPage)}
+                className="text-muted-foreground hover:text-destructive transition-colors"
+                aria-label="Delete current page"
+              >
+                <Trash2 size={16} />
+              </button>
+            )}
+          </div>
           <button
             onClick={handleOpenDocs}
             className="text-muted-foreground hover:text-foreground transition-colors"

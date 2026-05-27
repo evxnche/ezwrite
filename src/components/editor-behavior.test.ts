@@ -142,6 +142,19 @@ test('getTouchGestureIntent keeps horizontal page swipes when the keyboard is cl
   );
 });
 
+test('getTouchGestureIntent ignores short horizontal drags', () => {
+  assert.equal(
+    getTouchGestureIntent({
+      dx: -70,
+      dy: 10,
+      hasSelection: false,
+      isKeyboardOpen: false,
+      isEditorFocused: true,
+    }),
+    null,
+  );
+});
+
 test('normalizePastedPlainText preserves line breaks from plain-text paste', () => {
   assert.equal(
     normalizePastedPlainText('first line\nsecond line\n\nthird line'),

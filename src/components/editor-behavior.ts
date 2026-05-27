@@ -330,7 +330,7 @@ export function getTouchGestureIntent({
     return 'dismiss-keyboard';
   }
 
-  if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 60) {
+  if (Math.abs(dx) > Math.abs(dy) * 1.2 && Math.abs(dx) > 84) {
     return dx < 0 ? 'page-next' : 'page-prev';
   }
 
