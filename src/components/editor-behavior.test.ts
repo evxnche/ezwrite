@@ -75,6 +75,16 @@ test('renumberFollowingPlainNumberedListItems shifts dot-numbered items after an
   );
 });
 
+test('renumberFollowingPlainNumberedListItems preserves an intentional non-one list start', () => {
+  assert.deepEqual(
+    renumberFollowingPlainNumberedListItems(
+      ['4/ first', '5/ ', '5/ second'],
+      1,
+    ),
+    ['4/ first', '5/ ', '6/ second'],
+  );
+});
+
 test('renumberFollowingPlainNumberedListItems stops at a non-list line', () => {
   assert.deepEqual(
     renumberFollowingPlainNumberedListItems(
@@ -82,6 +92,26 @@ test('renumberFollowingPlainNumberedListItems stops at a non-list line', () => {
       1,
     ),
     ['1. first', '2. ', '3. second', '', '3. third'],
+  );
+});
+
+test('renumberFollowingPlainNumberedListItems keeps nested lists from advancing parent numbering', () => {
+  assert.deepEqual(
+    renumberFollowingPlainNumberedListItems(
+      ['1/ first', '2/ second', `${INDENT}1/ nested`, `${INDENT}2/ nested`, `${INDENT}3/ nested`, '4/ third', '5/ fourth'],
+      4,
+    ),
+    ['1/ first', '2/ second', `${INDENT}1/ nested`, `${INDENT}2/ nested`, `${INDENT}3/ nested`, '3/ third', '4/ fourth'],
+  );
+});
+
+test('renumberFollowingPlainNumberedListItems renumbers after exiting a nested numbered list', () => {
+  assert.deepEqual(
+    renumberFollowingPlainNumberedListItems(
+      ['1/ first', '2/ second', `${INDENT}1/ nested`, `${INDENT}2/ nested`, `${INDENT}3/ nested`, '4/ ', '4/ third', '5/ fourth'],
+      5,
+    ),
+    ['1/ first', '2/ second', `${INDENT}1/ nested`, `${INDENT}2/ nested`, `${INDENT}3/ nested`, '3/ ', '4/ third', '5/ fourth'],
   );
 });
 
@@ -111,6 +141,16 @@ test('indentPlainListLineForTab renumbers following parent list items after inde
     {
       lines: ['1. first', `${INDENT}1. `, '2. second', '3. third'],
       offset: `${INDENT}1. `.length,
+    },
+  );
+});
+
+test('indentPlainListLineForTab continues an existing nested numbered list', () => {
+  assert.deepEqual(
+    indentPlainListLineForTab(['1/ first', '2/ second', `${INDENT}1/ nested`, `${INDENT}2/ nested`, '3/ third', '4/ fourth'], 4, 3),
+    {
+      lines: ['1/ first', '2/ second', `${INDENT}1/ nested`, `${INDENT}2/ nested`, `${INDENT}3/ third`, '3/ fourth'],
+      offset: `${INDENT}3/ `.length,
     },
   );
 });

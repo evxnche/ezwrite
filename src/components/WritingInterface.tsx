@@ -2745,7 +2745,8 @@ const WritingInterface = () => {
             if (indent.length >= INDENT.length) {
               const newIndent = indent.slice(0, indent.length - INDENT.length);
               freshLines[li] = newIndent + bullet + ' ';
-              structuralUpdate(freshLines.join('\n'), li, freshLines[li].length);
+              const updatedLines = renumberFollowingPlainNumberedListItems(freshLines, li);
+              structuralUpdate(updatedLines.join('\n'), li, updatedLines[li]?.length ?? freshLines[li].length);
             } else {
               freshLines[li] = indent;
               structuralUpdate(freshLines.join('\n'), li, indent.length);
@@ -2765,7 +2766,8 @@ const WritingInterface = () => {
           freshLines[li] = fullPrefix + text.slice(0, splitAt);
           freshLines.splice(li + 1, 0, nextPrefix + text.slice(splitAt));
           const updatedLines = renumberFollowingPlainNumberedListItems(freshLines, li + 1);
-          structuralUpdate(updatedLines.join('\n'), li + 1, nextPrefix.length);
+          const updatedPrefix = updatedLines[li + 1]?.match(/^(\s*)([-*>]|\d+[./])\s/)?.[0] ?? nextPrefix;
+          structuralUpdate(updatedLines.join('\n'), li + 1, updatedPrefix.length);
           scrollToLine(li + 1);
           return;
         }

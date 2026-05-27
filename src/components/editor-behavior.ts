@@ -54,19 +54,38 @@ export function splitExitedListLine(line: string, offset: number): { current: st
 }
 
 export function renumberFollowingPlainNumberedListItems(lines: string[], insertedLineIndex: number): string[] {
-  const inserted = lines[insertedLineIndex]?.match(PLAIN_NUMBERED_LIST_LINE);
-  if (!inserted) return lines;
+  if (!lines[insertedLineIndex]?.match(PLAIN_NUMBERED_LIST_LINE)) return lines;
 
-  const [, baseIndent, baseNumber, baseMarker] = inserted;
+  let start = insertedLineIndex;
+  while (start > 0 && lines[start - 1].match(PLAIN_NUMBERED_LIST_LINE)) start--;
+
+  let end = insertedLineIndex;
+  while (end < lines.length - 1 && lines[end + 1].match(PLAIN_NUMBERED_LIST_LINE)) end++;
+
   const nextLines = [...lines];
-  let nextNumber = Number.parseInt(baseNumber, 10) + 1;
+  const activeIndents: string[] = [];
+  const counters = new Map<string, number>();
 
-  for (let i = insertedLineIndex + 1; i < nextLines.length; i++) {
+  for (let i = start; i <= end; i++) {
     const match = nextLines[i].match(PLAIN_NUMBERED_LIST_LINE);
-    if (!match || match[1] !== baseIndent || match[3] !== baseMarker) break;
+    if (!match) continue;
 
-    nextLines[i] = `${match[1]}${nextNumber}${match[3]} ${match[4]}`;
-    nextNumber++;
+    const [, indent, originalNumber, marker, itemText] = match;
+    for (let j = activeIndents.length - 1; j >= 0; j--) {
+      if (activeIndents[j].length > indent.length) {
+        counters.delete(activeIndents[j]);
+        activeIndents.splice(j, 1);
+      }
+    }
+
+    if (!counters.has(indent)) {
+      activeIndents.push(indent);
+      counters.set(indent, Number.parseInt(originalNumber, 10) - 1);
+    }
+
+    const nextNumber = (counters.get(indent) ?? 0) + 1;
+    counters.set(indent, nextNumber);
+    nextLines[i] = `${indent}${nextNumber}${marker} ${itemText}`;
   }
 
   return nextLines;
@@ -88,28 +107,12 @@ export function indentPlainListLineForTab(
     return { lines: nextLines, offset: offset + INDENT.length };
   }
 
-  const [, baseIndent, baseNumber, baseMarker, text] = numberedMatch;
+  const [, baseIndent, , baseMarker, text] = numberedMatch;
   const nextLines = [...lines];
   const nestedPrefix = `${baseIndent}${INDENT}1${baseMarker} `;
   nextLines[lineIndex] = `${nestedPrefix}${text}`;
-
-  let nextNumber = Number.parseInt(baseNumber, 10);
-  for (let i = lineIndex + 1; i < nextLines.length; i++) {
-    const match = nextLines[i].match(PLAIN_NUMBERED_LIST_LINE);
-    if (!match) break;
-
-    const [, indent, , marker, itemText] = match;
-    if (indent === baseIndent && marker === baseMarker) {
-      nextLines[i] = `${indent}${nextNumber}${marker} ${itemText}`;
-      nextNumber++;
-      continue;
-    }
-
-    if (indent.startsWith(`${baseIndent}${INDENT}`)) continue;
-    break;
-  }
-
-  return { lines: nextLines, offset: nestedPrefix.length };
+  const renumberedLines = renumberFollowingPlainNumberedListItems(nextLines, lineIndex);
+  return { lines: renumberedLines, offset: (renumberedLines[lineIndex] || '').length - text.length };
 }
 
 export function deletePageFromList(
