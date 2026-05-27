@@ -14,6 +14,8 @@ import {
   normalizePastedPlainText,
   normalizeClipboardPasteText,
   normalizeEditorContent,
+  indentPlainListLineForTab,
+  renumberFollowingPlainNumberedListItems,
   shouldAutoFocusAfterPageSwitch,
   splitExitedListLine,
   getMarkdownRangeForSelection,
@@ -48,6 +50,76 @@ test('splitExitedListLine splits the visible text without counting the hidden li
   assert.deepEqual(
     splitExitedListLine(`${LIST_EXIT}hello`, 2),
     { current: `${LIST_EXIT}he`, next: 'llo' },
+  );
+});
+
+test('renumberFollowingPlainNumberedListItems shifts slash-numbered items after an insert', () => {
+  assert.deepEqual(
+    renumberFollowingPlainNumberedListItems(
+      ['1/ first', '2/ ', '2/ second', '3/ third', '4/ fourth', '5/ fifth'],
+      1,
+    ),
+    ['1/ first', '2/ ', '3/ second', '4/ third', '5/ fourth', '6/ fifth'],
+  );
+});
+
+test('renumberFollowingPlainNumberedListItems shifts dot-numbered items after an insert', () => {
+  assert.deepEqual(
+    renumberFollowingPlainNumberedListItems(
+      ['1. first', '2. ', '2. second', '3. third'],
+      1,
+    ),
+    ['1. first', '2. ', '3. second', '4. third'],
+  );
+});
+
+test('renumberFollowingPlainNumberedListItems stops at a non-list line', () => {
+  assert.deepEqual(
+    renumberFollowingPlainNumberedListItems(
+      ['1. first', '2. ', '2. second', '', '3. third'],
+      1,
+    ),
+    ['1. first', '2. ', '3. second', '', '3. third'],
+  );
+});
+
+test('indentPlainListLineForTab resets dot-numbered sublists to one', () => {
+  assert.deepEqual(
+    indentPlainListLineForTab(['1. first', '2. '], 1, 3),
+    {
+      lines: ['1. first', `${INDENT}1. `],
+      offset: `${INDENT}1. `.length,
+    },
+  );
+});
+
+test('indentPlainListLineForTab resets slash-numbered sublists to one', () => {
+  assert.deepEqual(
+    indentPlainListLineForTab(['1/ first', '2/ '], 1, 3),
+    {
+      lines: ['1/ first', `${INDENT}1/ `],
+      offset: `${INDENT}1/ `.length,
+    },
+  );
+});
+
+test('indentPlainListLineForTab renumbers following parent list items after indenting a numbered item', () => {
+  assert.deepEqual(
+    indentPlainListLineForTab(['1. first', '2. ', '3. second', '4. third'], 1, 3),
+    {
+      lines: ['1. first', `${INDENT}1. `, '2. second', '3. third'],
+      offset: `${INDENT}1. `.length,
+    },
+  );
+});
+
+test('indentPlainListLineForTab keeps regular bullet indentation behavior', () => {
+  assert.deepEqual(
+    indentPlainListLineForTab(['- first'], 0, 2),
+    {
+      lines: [`${INDENT}- first`],
+      offset: INDENT.length + 2,
+    },
   );
 });
 

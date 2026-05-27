@@ -3,6 +3,7 @@ import { getLineType, INDENT, LIST_EXIT, SLASH_COMMANDS, STRUCK_MARKER, isLineSt
 export type ShareCardTheme = '' | 'blue' | 'green' | 'red';
 
 const LEADING_EDITOR_WHITESPACE = /^[ \u00a0]+/;
+const PLAIN_NUMBERED_LIST_LINE = /^(\s*)(\d+)([./])\s(.*)$/;
 
 function trimAccidentalLeadingWhitespace(text: string): string {
   return text.replace(LEADING_EDITOR_WHITESPACE, '');
@@ -45,6 +46,65 @@ export function splitExitedListLine(line: string, offset: number): { current: st
     current: `${LIST_EXIT}${visible.slice(0, splitOffset)}`,
     next: visible.slice(splitOffset),
   };
+}
+
+export function renumberFollowingPlainNumberedListItems(lines: string[], insertedLineIndex: number): string[] {
+  const inserted = lines[insertedLineIndex]?.match(PLAIN_NUMBERED_LIST_LINE);
+  if (!inserted) return lines;
+
+  const [, baseIndent, baseNumber, baseMarker] = inserted;
+  const nextLines = [...lines];
+  let nextNumber = Number.parseInt(baseNumber, 10) + 1;
+
+  for (let i = insertedLineIndex + 1; i < nextLines.length; i++) {
+    const match = nextLines[i].match(PLAIN_NUMBERED_LIST_LINE);
+    if (!match || match[1] !== baseIndent || match[3] !== baseMarker) break;
+
+    nextLines[i] = `${match[1]}${nextNumber}${match[3]} ${match[4]}`;
+    nextNumber++;
+  }
+
+  return nextLines;
+}
+
+export function indentPlainListLineForTab(
+  lines: string[],
+  lineIndex: number,
+  offset: number,
+): { lines: string[]; offset: number } | null {
+  const lineText = lines[lineIndex] || '';
+  const listMatch = lineText.match(/^(\s*)([-*>]|\d+[./])\s/);
+  if (!listMatch || offset > listMatch[0].length) return null;
+
+  const numberedMatch = lineText.match(PLAIN_NUMBERED_LIST_LINE);
+  if (!numberedMatch) {
+    const nextLines = [...lines];
+    nextLines[lineIndex] = INDENT + lineText;
+    return { lines: nextLines, offset: offset + INDENT.length };
+  }
+
+  const [, baseIndent, baseNumber, baseMarker, text] = numberedMatch;
+  const nextLines = [...lines];
+  const nestedPrefix = `${baseIndent}${INDENT}1${baseMarker} `;
+  nextLines[lineIndex] = `${nestedPrefix}${text}`;
+
+  let nextNumber = Number.parseInt(baseNumber, 10);
+  for (let i = lineIndex + 1; i < nextLines.length; i++) {
+    const match = nextLines[i].match(PLAIN_NUMBERED_LIST_LINE);
+    if (!match) break;
+
+    const [, indent, , marker, itemText] = match;
+    if (indent === baseIndent && marker === baseMarker) {
+      nextLines[i] = `${indent}${nextNumber}${marker} ${itemText}`;
+      nextNumber++;
+      continue;
+    }
+
+    if (indent.startsWith(`${baseIndent}${INDENT}`)) continue;
+    break;
+  }
+
+  return { lines: nextLines, offset: nestedPrefix.length };
 }
 
 export function getPageEndCursor(content: string): { lineIndex: number; offset: number } {

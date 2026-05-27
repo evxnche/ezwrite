@@ -27,6 +27,8 @@ import {
   getShareCardPalette,
   normalizeClipboardPasteText,
   normalizeEditorContent,
+  indentPlainListLineForTab,
+  renumberFollowingPlainNumberedListItems,
   shouldAutoFocusAfterPageSwitch,
   splitExitedListLine,
   getMarkdownRangeForSelection,
@@ -2427,12 +2429,9 @@ const WritingInterface = () => {
       e.preventDefault();
       pushUndo(true);
 
-      const lineText = lines[lineIndex] || '';
-      const listMatch = lineText.match(/^(\s*)([-*>]|\d+[./])\s/);
-      
-      if (listMatch && offset <= listMatch[0].length) {
-        lines[lineIndex] = INDENT + lineText;
-        structuralUpdate(lines.join('\n'), lineIndex, offset + INDENT.length);
+      const indentedList = indentPlainListLineForTab(lines, lineIndex, offset);
+      if (indentedList) {
+        structuralUpdate(indentedList.lines.join('\n'), lineIndex, indentedList.offset);
         return;
       }
 
@@ -2671,7 +2670,8 @@ const WritingInterface = () => {
           
           freshLines[li] = fullPrefix + text.slice(0, splitAt);
           freshLines.splice(li + 1, 0, nextPrefix + text.slice(splitAt));
-          structuralUpdate(freshLines.join('\n'), li + 1, nextPrefix.length);
+          const updatedLines = renumberFollowingPlainNumberedListItems(freshLines, li + 1);
+          structuralUpdate(updatedLines.join('\n'), li + 1, nextPrefix.length);
           scrollToLine(li + 1);
           return;
         }
