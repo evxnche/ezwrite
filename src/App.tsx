@@ -3,12 +3,15 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "next-themes";
 import WritingInterface from "./components/WritingInterface";
 import UpdateBanner from "./components/UpdateBanner";
+import BetaAccessGate from "./components/BetaAccessGate";
+import { hasBetaAccess } from "./lib/beta-access";
 
 const Analytics = lazy(() =>
   import("@vercel/analytics/react").then((module) => ({ default: module.Analytics })),
 );
 
 const App = () => {
+  const [unlocked, setUnlocked] = useState(() => hasBetaAccess());
   const [showDeferredUi, setShowDeferredUi] = useState(false);
 
   useEffect(() => {
@@ -34,8 +37,14 @@ const App = () => {
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
       <TooltipProvider>
-        <UpdateBanner />
-        <WritingInterface />
+        {unlocked ? (
+          <>
+            <UpdateBanner />
+            <WritingInterface />
+          </>
+        ) : (
+          <BetaAccessGate onUnlock={() => setUnlocked(true)} />
+        )}
         {showDeferredUi && (
           <Suspense fallback={null}>
             <Analytics />
