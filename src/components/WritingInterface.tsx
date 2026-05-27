@@ -187,7 +187,7 @@ const MOBILE_EDITOR_BOTTOM_PADDING = 'calc(env(safe-area-inset-bottom, 0px) + 13
 const MOBILE_SLASH_BUTTON_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 1rem)';
 const MOBILE_FOOTER_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 0.5rem)';
 const MOBILE_PAGE_DOTS_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 2.75rem)';
-const PAGE_DELETE_NOTICE_MS = 8000;
+const PAGE_DELETE_NOTICE_MS = 3000;
 
 function drawRoundedRect(
   ctx: CanvasRenderingContext2D,
