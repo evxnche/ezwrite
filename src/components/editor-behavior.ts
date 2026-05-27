@@ -2,6 +2,11 @@ import { getLineType, INDENT, LIST_EXIT, SLASH_COMMANDS, STRUCK_MARKER, isLineSt
 
 export type ShareCardTheme = '' | 'blue' | 'green' | 'red';
 
+export interface DeletedPageSnapshot {
+  index: number;
+  content: string;
+}
+
 const LEADING_EDITOR_WHITESPACE = /^[ \u00a0]+/;
 const PLAIN_NUMBERED_LIST_LINE = /^(\s*)(\d+)([./])\s(.*)$/;
 
@@ -105,6 +110,49 @@ export function indentPlainListLineForTab(
   }
 
   return { lines: nextLines, offset: nestedPrefix.length };
+}
+
+export function deletePageFromList(
+  pages: string[],
+  pageIndex: number,
+  currentPage: number,
+): { pages: string[]; nextPage: number; deleted: DeletedPageSnapshot } | null {
+  if (pages.length <= 1 || pageIndex < 0 || pageIndex >= pages.length) return null;
+
+  const nextPages = [...pages];
+  const [deletedContent] = nextPages.splice(pageIndex, 1);
+  let nextPage: number;
+
+  if (pageIndex < currentPage) {
+    nextPage = currentPage - 1;
+  } else if (pageIndex === currentPage) {
+    nextPage = Math.min(currentPage, nextPages.length - 1);
+  } else {
+    nextPage = currentPage;
+  }
+
+  return {
+    pages: nextPages,
+    nextPage: Math.max(0, Math.min(nextPage, nextPages.length - 1)),
+    deleted: {
+      index: pageIndex,
+      content: deletedContent ?? '',
+    },
+  };
+}
+
+export function restoreDeletedPageToList(
+  pages: string[],
+  deleted: DeletedPageSnapshot,
+): { pages: string[]; restoredPage: number } {
+  const restoredPage = Math.max(0, Math.min(deleted.index, pages.length));
+  const nextPages = [...pages];
+  nextPages.splice(restoredPage, 0, deleted.content);
+
+  return {
+    pages: nextPages,
+    restoredPage,
+  };
 }
 
 export function getPageEndCursor(content: string): { lineIndex: number; offset: number } {

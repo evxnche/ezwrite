@@ -27,8 +27,11 @@ import {
   getShareCardPalette,
   normalizeClipboardPasteText,
   normalizeEditorContent,
+  deletePageFromList,
+  type DeletedPageSnapshot,
   indentPlainListLineForTab,
   renumberFollowingPlainNumberedListItems,
+  restoreDeletedPageToList,
   shouldAutoFocusAfterPageSwitch,
   splitExitedListLine,
   getMarkdownRangeForSelection,
@@ -184,6 +187,7 @@ const MOBILE_EDITOR_BOTTOM_PADDING = 'calc(env(safe-area-inset-bottom, 0px) + 13
 const MOBILE_SLASH_BUTTON_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 1rem)';
 const MOBILE_FOOTER_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 0.5rem)';
 const MOBILE_PAGE_DOTS_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 2.75rem)';
+const PAGE_DELETE_NOTICE_MS = 8000;
 
 function drawRoundedRect(
   ctx: CanvasRenderingContext2D,
@@ -679,9 +683,13 @@ const WritingInterface = () => {
   // Undo / Redo
   const undoStack = useRef<string[]>([]);
   const redoStack = useRef<string[]>([]);
+  const deletedPageUndoStack = useRef<DeletedPageSnapshot[]>([]);
   const lastUndoTime = useRef(0);
   const deferredPersistTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const scratchpadPersistTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const pageDeleteNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const [deletedPageUndoCount, setDeletedPageUndoCount] = useState(0);
+  const [pageDeleteNoticeVisible, setPageDeleteNoticeVisible] = useState(false);
   const scratchpadRef = useRef(scratchpad);
   useEffect(() => { scratchpadRef.current = scratchpad; }, [scratchpad]);
   const pushUndo = useCallback((force = false) => {
@@ -690,6 +698,22 @@ const WritingInterface = () => {
     undoStack.current.push(contentRef.current);
     redoStack.current = [];
     lastUndoTime.current = now;
+  }, []);
+
+  const clearDeletedPageUndo = useCallback(() => {
+    deletedPageUndoStack.current = [];
+    setDeletedPageUndoCount(0);
+    setPageDeleteNoticeVisible(false);
+    clearTimeout(pageDeleteNoticeTimeoutRef.current);
+  }, []);
+
+  const showDeletedPageUndoNotice = useCallback(() => {
+    setDeletedPageUndoCount(deletedPageUndoStack.current.length);
+    setPageDeleteNoticeVisible(true);
+    clearTimeout(pageDeleteNoticeTimeoutRef.current);
+    pageDeleteNoticeTimeoutRef.current = setTimeout(() => {
+      setPageDeleteNoticeVisible(false);
+    }, PAGE_DELETE_NOTICE_MS);
   }, []);
 
   // Slash popup
@@ -957,6 +981,24 @@ const WritingInterface = () => {
     }, 250);
   }, [scheduleSyncPush]);
 
+  const persistPageStructure = useCallback((pages: string[], selectedPage: number) => {
+    const projectId = activeProjectIdRef.current;
+    const pagesSnapshot = [...pages];
+    const scratchpadSnapshot = scratchpadRef.current;
+    clearTimeout(deferredPersistTimeoutRef.current);
+
+    if (projectId) {
+      saveProjectPages(projectId, pagesSnapshot);
+      saveProjectLastPage(projectId, selectedPage);
+    }
+    if (dirHandleRef.current) {
+      const markdowns = pagesSnapshot.map((page) => contentToMarkdown(page));
+      void writeProjectFiles(dirHandleRef.current, projectId ?? 'default', markdowns, scratchpadSnapshot);
+    }
+    void writeToOPFS(pagesSnapshot, projectId ?? undefined, scratchpadSnapshot);
+    if (projectId) scheduleSyncPush(projectId);
+  }, [scheduleSyncPush]);
+
   const flushCurrentProject = useCallback((scratchpadValue = scratchpadRef.current) => {
     const projectId = activeProjectIdRef.current;
     if (!projectId) return;
@@ -1004,6 +1046,7 @@ const WritingInterface = () => {
       window.removeEventListener('beforeunload', flushForLifecycle);
       clearTimeout(deferredPersistTimeoutRef.current);
       clearTimeout(scratchpadPersistTimeoutRef.current);
+      clearTimeout(pageDeleteNoticeTimeoutRef.current);
       for (const timer of timers.values()) clearTimeout(timer);
       timers.clear();
     };
@@ -1383,31 +1426,22 @@ const WritingInterface = () => {
 
   // --- Delete page ---
   const deletePage = useCallback((pageIndex: number) => {
-    if (pagesRef.current.length <= 1) return;
     if (editorRef.current) {
       pagesRef.current[currentPageRef.current] = extractContent(editorRef.current);
     }
     const current = currentPageRef.current;
-    pagesRef.current.splice(pageIndex, 1);
-    let newPage: number;
-    if (pageIndex < current) {
-      newPage = current - 1;
-    } else if (pageIndex === current) {
-      newPage = Math.min(current, pagesRef.current.length - 1);
-    } else {
-      newPage = current;
-    }
-    const newContent = pagesRef.current[newPage] ?? '';
-    setPageCount(pagesRef.current.length);
-    const projectId = activeProjectIdRef.current;
-    if (projectId) {
-      saveProjectPages(projectId, pagesRef.current);
-      saveProjectLastPage(projectId, newPage);
-    }
-    if (dirHandleRef.current) {
-      void writeProjectFiles(dirHandleRef.current, projectId ?? 'default', pagesRef.current.map(p => contentToMarkdown(p)), scratchpad);
-    }
-    void writeToOPFS(pagesRef.current, projectId ?? undefined, scratchpad);
+    const result = deletePageFromList(pagesRef.current, pageIndex, current);
+    if (!result) return;
+
+    pagesRef.current = result.pages;
+    deletedPageUndoStack.current.push(result.deleted);
+    setDeletedPageUndoCount(deletedPageUndoStack.current.length);
+    showDeletedPageUndoNotice();
+
+    const newPage = result.nextPage;
+    const newContent = result.pages[newPage] ?? '';
+    setPageCount(result.pages.length);
+    persistPageStructure(result.pages, newPage);
     editingTimerLineRef.current = null;
     undoStack.current = [];
     redoStack.current = [];
@@ -1422,7 +1456,64 @@ const WritingInterface = () => {
       const { lineIndex, offset } = getPageEndCursor(newContent);
       structuralUpdate(newContent, lineIndex, offset, !isTouchDevice);
     }
-  }, [scratchpad, structuralUpdate, isTouchDevice]);
+  }, [persistPageStructure, showDeletedPageUndoNotice, structuralUpdate, isTouchDevice]);
+
+  const restoreLastDeletedPage = useCallback(() => {
+    const deletedPage = deletedPageUndoStack.current.pop();
+    if (!deletedPage) return false;
+
+    if (editorRef.current) {
+      pagesRef.current[currentPageRef.current] = extractContent(editorRef.current);
+    }
+
+    const restored = restoreDeletedPageToList(pagesRef.current, deletedPage);
+    pagesRef.current = restored.pages;
+    const restoredContent = restored.pages[restored.restoredPage] ?? '';
+
+    setDeletedPageUndoCount(deletedPageUndoStack.current.length);
+    if (deletedPageUndoStack.current.length === 0) {
+      setPageDeleteNoticeVisible(false);
+      clearTimeout(pageDeleteNoticeTimeoutRef.current);
+    } else {
+      showDeletedPageUndoNotice();
+    }
+
+    setPageCount(restored.pages.length);
+    persistPageStructure(restored.pages, restored.restoredPage);
+    editingTimerLineRef.current = null;
+    undoStack.current = [];
+    redoStack.current = [];
+    setShowDots(true);
+    clearTimeout(dotsTimeoutRef.current);
+    dotsTimeoutRef.current = setTimeout(() => setShowDots(false), 500);
+    contentRef.current = restoredContent;
+    currentPageRef.current = restored.restoredPage;
+    setIsPageEmpty(restoredContent.trim() === '');
+    setCurrentPage(restored.restoredPage);
+    const { lineIndex, offset } = getPageEndCursor(restoredContent);
+    structuralUpdate(restoredContent, lineIndex, offset, !isTouchDevice, false);
+    return true;
+  }, [persistPageStructure, showDeletedPageUndoNotice, structuralUpdate, isTouchDevice]);
+
+  useEffect(() => {
+    const handleGlobalPageDeleteUndo = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.key.toLowerCase() !== 'z') return;
+      if (deletedPageUndoStack.current.length === 0) return;
+
+      const target = event.target as HTMLElement | null;
+      const outsideEditorTextField = target?.closest('input, textarea, [contenteditable="true"]') &&
+        !editorRef.current?.contains(target);
+      if (outsideEditorTextField) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      restoreLastDeletedPage();
+    };
+
+    window.addEventListener('keydown', handleGlobalPageDeleteUndo, true);
+    return () => window.removeEventListener('keydown', handleGlobalPageDeleteUndo, true);
+  }, [restoreLastDeletedPage]);
 
   // --- Project switching ---
   const switchToProject = useCallback((projectId: string) => {
@@ -1433,6 +1524,7 @@ const WritingInterface = () => {
       if (currentProjectId) saveProjectPages(currentProjectId, pagesRef.current);
       if (currentProjectId) persistScratchpad(scratchpad, currentProjectId);
     }
+    clearDeletedPageUndo();
     const newPages = getProjectPages(projectId);
     const newCurrentPage = getProjectLastPage(projectId);
     pagesRef.current = newPages;
@@ -1456,7 +1548,7 @@ const WritingInterface = () => {
       if (!isTouchDevice) editorRef.current?.focus();
       setPageTransition('none');
     }, 250);
-  }, [persistScratchpad, scratchpad, structuralUpdate, isTouchDevice]);
+  }, [clearDeletedPageUndo, persistScratchpad, scratchpad, structuralUpdate, isTouchDevice]);
 
   const handleNewProject = useCallback(() => {
     if (editorRef.current) {
@@ -1543,6 +1635,7 @@ const WritingInterface = () => {
     if (!projectId) return;
     const nextPages = getProjectPages(projectId);
     const nextPage = Math.min(getProjectLastPage(projectId), nextPages.length - 1);
+    clearDeletedPageUndo();
     pagesRef.current = nextPages;
     contentRef.current = nextPages[nextPage] ?? nextPages[0] ?? '';
     currentPageRef.current = nextPage;
@@ -1553,7 +1646,7 @@ const WritingInterface = () => {
     setIsPageEmpty(contentRef.current.trim() === '');
     const { lineIndex, offset } = getPageEndCursor(contentRef.current);
     structuralUpdate(contentRef.current, lineIndex, offset, !isTouchDevice, false);
-  }, [isTouchDevice, structuralUpdate]);
+  }, [clearDeletedPageUndo, isTouchDevice, structuralUpdate]);
 
   const applyRemoteSyncRows = useCallback(async (rows: RemoteSyncNote[], session: SyncSession): Promise<number> => {
     const touchedIds = new Set<string>();
@@ -2398,8 +2491,9 @@ const WritingInterface = () => {
     const lines = contentRef.current.split('\n');
 
     // Ctrl+Z
-    if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
       e.preventDefault();
+      if (restoreLastDeletedPage()) return;
       if (undoStack.current.length) {
         redoStack.current.push(contentRef.current);
         structuralUpdate(undoStack.current.pop()!, lineIndex, offset);
@@ -2407,7 +2501,7 @@ const WritingInterface = () => {
       return;
     }
     // Ctrl+Shift+Z / Ctrl+Y
-    if ((e.ctrlKey || e.metaKey) && ((e.key === 'z' && e.shiftKey) || e.key === 'y')) {
+    if ((e.ctrlKey || e.metaKey) && ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y')) {
       e.preventDefault();
       if (redoStack.current.length) {
         undoStack.current.push(contentRef.current);
@@ -3613,6 +3707,25 @@ const WritingInterface = () => {
           </div>
         </div>
       </div>
+
+      {pageDeleteNoticeVisible && deletedPageUndoCount > 0 && (
+        <div
+          className="fixed left-0 right-0 z-50 flex justify-center pointer-events-none"
+          style={{ bottom: isTouchDevice ? 'calc(env(safe-area-inset-bottom, 0px) + 5.25rem)' : '5.5rem' }}
+          aria-live="polite"
+        >
+          <div className="pointer-events-auto flex items-center gap-2 rounded-md border border-border bg-popover px-3 py-2 text-xs font-mono text-foreground shadow-lg">
+            <span>page deleted.</span>
+            <button
+              type="button"
+              onClick={restoreLastDeletedPage}
+              className="text-accent-foreground underline underline-offset-4 hover:text-foreground transition-colors"
+            >
+              undo.
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Pages */}
       <div

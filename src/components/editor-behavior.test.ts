@@ -14,8 +14,10 @@ import {
   normalizePastedPlainText,
   normalizeClipboardPasteText,
   normalizeEditorContent,
+  deletePageFromList,
   indentPlainListLineForTab,
   renumberFollowingPlainNumberedListItems,
+  restoreDeletedPageToList,
   shouldAutoFocusAfterPageSwitch,
   splitExitedListLine,
   getMarkdownRangeForSelection,
@@ -121,6 +123,50 @@ test('indentPlainListLineForTab keeps regular bullet indentation behavior', () =
       offset: INDENT.length + 2,
     },
   );
+});
+
+test('deletePageFromList removes the current page and selects the next available page', () => {
+  assert.deepEqual(
+    deletePageFromList(['one', 'two', 'three'], 1, 1),
+    {
+      pages: ['one', 'three'],
+      nextPage: 1,
+      deleted: { index: 1, content: 'two' },
+    },
+  );
+});
+
+test('deletePageFromList refuses to delete the final page', () => {
+  assert.equal(deletePageFromList(['only'], 0, 0), null);
+});
+
+test('restoreDeletedPageToList restores deleted pages at their original index', () => {
+  assert.deepEqual(
+    restoreDeletedPageToList(['one', 'three'], { index: 1, content: 'two' }),
+    {
+      pages: ['one', 'two', 'three'],
+      restoredPage: 1,
+    },
+  );
+});
+
+test('deleted pages restore cleanly after repeated trigger-happy deletes', () => {
+  const firstDelete = deletePageFromList(['one', 'two', 'three', 'four'], 3, 3);
+  assert.ok(firstDelete);
+  const secondDelete = deletePageFromList(firstDelete.pages, 2, firstDelete.nextPage);
+  assert.ok(secondDelete);
+
+  const firstRestore = restoreDeletedPageToList(secondDelete.pages, secondDelete.deleted);
+  const secondRestore = restoreDeletedPageToList(firstRestore.pages, firstDelete.deleted);
+
+  assert.deepEqual(firstRestore, {
+    pages: ['one', 'two', 'three'],
+    restoredPage: 2,
+  });
+  assert.deepEqual(secondRestore, {
+    pages: ['one', 'two', 'three', 'four'],
+    restoredPage: 3,
+  });
 });
 
 test('getPageEndCursor places the cursor at the end of the final line', () => {
@@ -356,6 +402,15 @@ test('WritingInterface hydrates the saved current page instead of overwriting it
   assert.equal(source.includes('structuralUpdate(contentRef.current, 0, 0, true, false);'), true);
   assert.equal(source.includes('const currentPageRef = useRef(0);'), false);
   assert.equal(source.includes('const contentRef = useRef(getPageContent(0));'), false);
+});
+
+test('WritingInterface makes page deletion undoable from Cmd+Z and the notice action', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  assert.equal(source.includes('deletePageFromList'), true);
+  assert.equal(source.includes('restoreDeletedPageToList'), true);
+  assert.equal(source.includes('restoreLastDeletedPage()'), true);
+  assert.equal(source.includes('page deleted.'), true);
+  assert.equal(source.includes('undo.'), true);
 });
 
 test('WritingInterface renders page switches without resaving target page content', () => {
