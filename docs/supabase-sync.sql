@@ -41,6 +41,13 @@ create trigger ezwrite_set_sync_note_updated_at
 alter table public.ezwrite_profiles enable row level security;
 alter table public.ezwrite_user_sync_notes enable row level security;
 
+-- Be explicit about Data API exposure for newer Supabase projects.
+-- RLS below still owner-scopes rows; these grants only make the tables reachable.
+revoke all on table public.ezwrite_profiles from anon, authenticated;
+revoke all on table public.ezwrite_user_sync_notes from anon, authenticated;
+grant select on table public.ezwrite_profiles to authenticated;
+grant select, insert, update on table public.ezwrite_user_sync_notes to authenticated;
+
 create or replace function public.ezwrite_create_profile()
 returns trigger
 language plpgsql
