@@ -74,7 +74,10 @@ async function requestCompletion(
   const payload = await res.json().catch(() => ({})) as OpenRouterChatResponse;
 
   if (!res.ok) {
-    const message = payload.error?.message ?? `OpenRouter request failed (${res.status})`;
+    let message = payload.error?.message ?? `OpenRouter request failed (${res.status})`;
+    if (res.status === 404) {
+      message = 'Scratchpad AI endpoint missing on this host (deploy api/openrouter and set OPENROUTER_API_KEY).';
+    }
     const status = typeof payload.error?.code === 'number' ? payload.error.code : res.status;
     return { ok: false, status, message };
   }

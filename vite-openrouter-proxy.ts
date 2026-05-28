@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Connect } from 'vite';
 import { loadEnv } from 'vite';
+import { proxyOpenRouterChatCompletion } from './lib/openrouter-upstream';
 
 function readRequestBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -35,17 +36,7 @@ export function createOpenRouterProxyMiddleware(mode: string, root: string): Con
 
     try {
       const body = await readRequestBody(req);
-      const upstream = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-          'HTTP-Referer': 'http://localhost:8080',
-          'X-Title': 'ezwrite',
-        },
-        body,
-      });
-
+      const upstream = await proxyOpenRouterChatCompletion(body, apiKey, 'http://localhost:8080');
       const text = await upstream.text();
       res.statusCode = upstream.status;
       res.setHeader('Content-Type', upstream.headers.get('content-type') ?? 'application/json');
