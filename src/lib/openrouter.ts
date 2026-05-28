@@ -82,8 +82,11 @@ async function requestCompletion(
     let message = payload.error?.message ?? `OpenRouter request failed (${res.status})`;
     if (res.status === 404) {
       message = 'Scratchpad AI endpoint missing on this host (deploy api/openrouter and set OPENROUTER_API_KEY).';
+    } else if (res.status === 502 && !payload.error?.message) {
+      message = 'Scratchpad proxy failed — redeploy with api/openrouter.ts';
     }
-    const status = typeof payload.error?.code === 'number' ? payload.error.code : res.status;
+    const code = payload.error?.code;
+    const status = typeof code === 'number' ? code : res.status;
     return { ok: false, status, message };
   }
 
