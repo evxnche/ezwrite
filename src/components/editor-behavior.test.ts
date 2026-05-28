@@ -354,14 +354,14 @@ test('WritingInterface exposes a current-page PNG share card export', () => {
   assert.equal(notesSource.includes("'img'"), true);
   assert.equal(notesSource.includes('onExportPng'), true);
   assert.equal(notesSource.includes('page as md'), true);
-  assert.equal(notesSource.includes('doc as md'), true);
+  assert.equal(notesSource.includes('notebook as md'), true);
   assert.equal(notesSource.includes('page as pdf'), true);
-  assert.equal(notesSource.includes('doc as pdf'), true);
+  assert.equal(notesSource.includes('notebook as pdf'), true);
   assert.equal(writingSource.includes('saveAsShareCard'), true);
   assert.equal(writingSource.includes('saveDocAsMd'), true);
   assert.equal(writingSource.includes('canvas.toBlob'), true);
-  assert.equal(notesSource.includes('<span>docs</span>'), true);
-  assert.equal(notesSource.includes('<span>new doc</span>'), true);
+  assert.equal(notesSource.includes('<span>notebooks</span>'), true);
+  assert.equal(notesSource.includes('<span>new notebook</span>'), true);
   assert.equal(writingSource.includes('aria-label="Pages in this doc"'), true);
   assert.equal(writingSource.includes('title={`page ${i + 1} of ${pageCount}`}'), true);
   assert.equal(writingSource.includes('e.preventDefault();'), true);
@@ -416,6 +416,8 @@ test('Scratchpad stays isolated and follows editor font choice', () => {
   assert.equal(scratchpadSource.includes('onKeyDown={(e) => e.stopPropagation()}'), true);
   assert.equal(scratchpadSource.includes('onPointerDown={(e) => e.stopPropagation()}'), true);
   assert.equal(scratchpadSource.includes('>{title}</div>'), false);
+  assert.equal(scratchpadSource.includes('if (!open) return null;'), false);
+  assert.equal(scratchpadSource.includes('aria-hidden={!open}'), true);
 });
 
 test('WritingInterface keeps dark and light mode inside settings', () => {

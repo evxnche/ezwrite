@@ -213,7 +213,7 @@ const NotesPanel: React.FC<Props> = ({
                     disabled={!canExportDoc}
                     className="w-full px-3 py-1.5 rounded-md text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
                   >
-                    doc as md
+                    notebook as md
                   </button>
                 </div>
               )}
@@ -240,7 +240,7 @@ const NotesPanel: React.FC<Props> = ({
                     disabled={!canExportDoc || isExportingPdf}
                     className="w-full px-3 py-1.5 rounded-md text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
                   >
-                    doc as pdf
+                    notebook as pdf
                   </button>
                 </div>
               )}
@@ -249,7 +249,7 @@ const NotesPanel: React.FC<Props> = ({
 
           <button onClick={() => toggleSection('notes')} className={`${baseRowClass} mt-1`}>
             <FolderOpen size={15} />
-            <span>docs</span>
+            <span>notebooks</span>
             <span className="ml-auto text-muted-foreground/50">{expanded === 'notes' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
           </button>
         </div>
@@ -259,10 +259,10 @@ const NotesPanel: React.FC<Props> = ({
             <button
               onClick={onNewProject}
               className="w-full flex items-center gap-2 px-4 py-3 text-left font-mono text-xs text-muted-foreground hover:text-foreground hover:bg-muted/20 transition-colors"
-              aria-label="New doc"
+              aria-label="New notebook"
             >
               <Plus size={13} />
-              <span>new doc</span>
+              <span>new notebook</span>
             </button>
             {projects.map((project) => {
               const title = getProjectTitle(project.id);

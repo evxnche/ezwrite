@@ -1,8 +1,31 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { GripVertical, X, NotebookPen } from 'lucide-react';
 import type { NotesTransferMode } from './preferences';
-import { getCaretCoordinates } from './caret-pos';
 import SlashCommandPopup from './SlashCommandPopup';
+import TimerWidget from './TimerWidget';
+import { buildTimerSlots } from './timer-identity';
+import {
+  contentToHTML,
+  contentToScratchpadText,
+  extractContent,
+  getCleanLine,
+  getLineType,
+  getRawOffsetUpTo,
+  INDENT,
+  isLineStruck,
+  LIST_EXIT,
+  scratchpadTextToContent,
+  setCursorPosition,
+  STRUCK_MARKER,
+} from './writing-helpers';
+import {
+  getExactSlashCommand,
+  getMarkdownRangeForSelection,
+  normalizeEditorContent,
+  renumberFollowingPlainNumberedListItems,
+  splitExitedListLine,
+} from './editor-behavior';
 
 interface Props {
   open: boolean;
@@ -17,144 +40,134 @@ interface Props {
   slashCommands: { name: string; description: string }[];
 }
 
+interface CursorInfo {
+  lineIndex: number;
+  offset: number;
+  lineDiv: HTMLElement | null;
+}
+
 const MIN_WIDTH = 260;
 const MAX_WIDTH = 720;
 
-const ScratchpadPanel: React.FC<Props> = ({ open, value, width, useSerif, notesTransferMode, onChange, onMoveToEditor, onClose, onResize, slashCommands }) => {
+const ScratchpadPanel: React.FC<Props> = ({
+  open,
+  value,
+  width,
+  useSerif,
+  notesTransferMode,
+  onChange,
+  onMoveToEditor,
+  onClose,
+  onResize,
+  slashCommands,
+}) => {
   const isResizingRef = useRef(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [selectionText, setSelectionText] = useState('');
-  const [selectionRect, setSelectionRect] = useState<{ top: number, left: number, width: number } | null>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef(scratchpadTextToContent(value));
+  const lastEmittedTextRef = useRef(value);
+  const timerContainers = useRef<Map<string, HTMLElement>>(new Map());
+  const editingTimerLineRef = useRef<number | null>(null);
+  const trackedCursor = useRef<{ lineIndex: number; offset: number } | null>(null);
+  const pendingCursor = useRef<{ lineIndex: number; offset: number } | null>(null);
 
-  const [slashPopup, setSlashPopup] = useState<{ startOffset: number, filter: string, rect: DOMRect } | null>(null);
+  const [selectionText, setSelectionText] = useState('');
+  const [selectionRect, setSelectionRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [timerSlots, setTimerSlots] = useState<Array<{ stableId: string; config: string; lineIndex: number }>>([]);
+  const [slashPopup, setSlashPopup] = useState<{ filter: string; lineIndex: number; rect: DOMRect } | null>(null);
   const [popupHighlight, setPopupHighlight] = useState(0);
 
-  const filteredCommands = slashPopup
-    ? slashCommands.filter(c => c.name.startsWith(slashPopup.filter.toLowerCase()))
-    : [];
+  const filteredCommands = useMemo(
+    () => (slashPopup ? slashCommands.filter((command) => command.name.startsWith(slashPopup.filter.toLowerCase())) : []),
+    [slashCommands, slashPopup],
+  );
 
   useEffect(() => {
     if (slashPopup && filteredCommands.length === 0) setSlashPopup(null);
-  }, [slashPopup, filteredCommands.length]);
+  }, [filteredCommands.length, slashPopup]);
 
-  const applySlashCommand = (command: string) => {
-    if (!slashPopup || !textareaRef.current) return;
-    const { startOffset } = slashPopup;
-    let insertText = '';
-    let newCursorOffset = 0;
-    
-    if (command === 'list') { insertText = '- [ ] '; newCursorOffset = 6; }
-    else if (command === 'line') { insertText = '---\n'; newCursorOffset = 4; }
-    else if (command === 'timer') { insertText = 'timer::15:00\n'; newCursorOffset = 13; }
-    
-    const before = value.substring(0, startOffset);
-    const after = value.substring(textareaRef.current.selectionStart);
-    
-    onChange(before + insertText + after);
-    setSlashPopup(null);
-    
-    requestAnimationFrame(() => {
-      if (textareaRef.current) {
-        textareaRef.current.selectionStart = textareaRef.current.selectionEnd = startOffset + newCursorOffset;
-      }
+  const emitContent = useCallback((nextContent: string) => {
+    contentRef.current = nextContent;
+    const nextText = contentToScratchpadText(nextContent);
+    lastEmittedTextRef.current = nextText;
+    onChange(nextText);
+  }, [onChange]);
+
+  const structuralUpdate = useCallback((
+    nextContent: string,
+    cursorLine?: number,
+    cursorOffset?: number,
+    shouldFocus = true,
+    emit = true,
+  ) => {
+    if (emit) emitContent(nextContent);
+    else contentRef.current = nextContent;
+
+    if (!editorRef.current) return;
+
+    editorRef.current.innerHTML = contentToHTML(nextContent, {
+      editingTimerLine: editingTimerLineRef.current ?? undefined,
+      hideUnnamedListHeaders: true,
     });
-  };
 
-  const handleTextChange = (newValue: string) => {
-    onChange(newValue);
-    
-    if (textareaRef.current) {
-      const cursor = textareaRef.current.selectionStart;
-      const textBeforeCursor = newValue.substring(0, cursor);
-      const currentLine = textBeforeCursor.split('\n').pop() || '';
-      
-      if (currentLine.startsWith('/') && !currentLine.includes(' ')) {
-        const startOffset = cursor - currentLine.length;
-        const rect = getCaretCoordinates(textareaRef.current, cursor);
-        const textareaRect = textareaRef.current.getBoundingClientRect();
-        
-        const top = textareaRect.top + rect.top - textareaRef.current.scrollTop;
-        const left = textareaRect.left + rect.left - textareaRef.current.scrollLeft;
-        
-        setSlashPopup({
-          startOffset,
-          filter: currentLine.slice(1),
-          rect: new DOMRect(left, top, 0, rect.height)
-        });
-      } else {
-        setSlashPopup(null);
+    const lines = nextContent.split('\n');
+    const timers = buildTimerSlots(lines, editingTimerLineRef.current);
+    const activeIds = new Set<string>();
+
+    timers.forEach(({ stableId, lineIndex }) => {
+      activeIds.add(stableId);
+      if (!timerContainers.current.has(stableId)) {
+        timerContainers.current.set(stableId, document.createElement('div'));
       }
-    }
-  };
+      const slot = editorRef.current?.querySelector(`[data-timer-slot="${lineIndex}"]`) as HTMLElement | null;
+      if (slot) slot.appendChild(timerContainers.current.get(stableId)!);
+    });
 
-  const updateSelection = () => {
-    if (!textareaRef.current) return;
-    const start = textareaRef.current.selectionStart;
-    const end = textareaRef.current.selectionEnd;
-    
-    if (start !== end && value) {
-      setSelectionText(value.substring(start, end));
-      
-      const startPos = getCaretCoordinates(textareaRef.current, start);
-      const endPos = getCaretCoordinates(textareaRef.current, end);
-      const rect = textareaRef.current.getBoundingClientRect();
-      
-      // Calculate coordinates relative to the viewport
-      const top = rect.top + startPos.top - textareaRef.current.scrollTop;
-      
-      let left = rect.left + startPos.left - textareaRef.current.scrollLeft;
-      let width = endPos.left - startPos.left;
-      
-      // If selection spans multiple lines, just center it on the start line approx
-      if (startPos.top !== endPos.top) {
-        width = 100; // arbitrary width for multi-line
+    Array.from(timerContainers.current.keys()).forEach((stableId) => {
+      if (!activeIds.has(stableId)) timerContainers.current.delete(stableId);
+    });
+    setTimerSlots(timers);
+
+    if (cursorLine !== undefined) {
+      trackedCursor.current = { lineIndex: cursorLine, offset: cursorOffset ?? 0 };
+      pendingCursor.current = { lineIndex: cursorLine, offset: cursorOffset ?? 0 };
+
+      if (shouldFocus && document.activeElement === editorRef.current) {
+        setCursorPosition(editorRef.current, cursorLine, cursorOffset ?? 0);
       }
-      
-      setSelectionRect({ top, left, width });
-    } else {
-      setSelectionText('');
-      setSelectionRect(null);
-    }
-  };
 
-  const handleMoveToEditor = () => {
-    if (!textareaRef.current || !selectionText) return;
-    onMoveToEditor(selectionText);
-    
-    if (notesTransferMode === 'move') {
-      const start = textareaRef.current.selectionStart;
-      const end = textareaRef.current.selectionEnd;
-      const newValue = value.substring(0, start) + value.substring(end);
-      onChange(newValue);
-      
       requestAnimationFrame(() => {
-        if (textareaRef.current) {
-          textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start;
-          updateSelection();
+        if (shouldFocus && editorRef.current) {
+          editorRef.current.focus({ preventScroll: true });
+          setCursorPosition(editorRef.current, cursorLine, cursorOffset ?? 0);
         }
+        pendingCursor.current = null;
       });
     }
-    setSelectionText('');
-    setSelectionRect(null);
-  };
+  }, [emitContent]);
 
   useEffect(() => {
-    const handleSelectionChange = () => {
-      if (!textareaRef.current) return;
-      if (document.activeElement === textareaRef.current) {
-        updateSelection();
-      }
-    };
-    document.addEventListener('selectionchange', handleSelectionChange);
-    return () => document.removeEventListener('selectionchange', handleSelectionChange);
-  }, [value]);
+    if (value === lastEmittedTextRef.current) return;
+    const nextContent = scratchpadTextToContent(value);
+    contentRef.current = nextContent;
+    editingTimerLineRef.current = null;
+    if (open && editorRef.current) {
+      structuralUpdate(nextContent, undefined, undefined, false, false);
+    }
+  }, [open, structuralUpdate, value]);
 
   useEffect(() => {
     if (!open) return;
     requestAnimationFrame(() => {
-      textareaRef.current?.focus();
+      structuralUpdate(contentRef.current, undefined, undefined, false, false);
+      if (!editorRef.current) return;
+      editorRef.current.focus({ preventScroll: true });
+      const lines = contentRef.current.split('\n');
+      const lineIndex = Math.max(0, lines.length - 1);
+      const offset = lines[lineIndex]?.length ?? 0;
+      trackedCursor.current = { lineIndex, offset };
+      setCursorPosition(editorRef.current, lineIndex, offset);
     });
-  }, [open]);
+  }, [open, structuralUpdate]);
 
   useEffect(() => {
     const handleMove = (e: MouseEvent) => {
@@ -176,17 +189,252 @@ const ScratchpadPanel: React.FC<Props> = ({ open, value, width, useSerif, notesT
     };
   }, [onResize]);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const getLineOffsetFromDOMPoint = useCallback((container: Node, domOffset: number): { lineIndex: number; offset: number } | null => {
+    if (!editorRef.current) return null;
+
+    const children = Array.from(editorRef.current.childNodes) as HTMLElement[];
+    let foundIdx = -1;
+    let foundEl: HTMLElement | null = null;
+
+    if (container === editorRef.current) {
+      foundIdx = Math.max(0, Math.min(domOffset > 0 ? domOffset - 1 : 0, children.length - 1));
+      foundEl = children[foundIdx] || null;
+    } else {
+      for (let i = 0; i < children.length; i++) {
+        if (children[i].contains(container)) {
+          foundIdx = i;
+          foundEl = children[i];
+          break;
+        }
+      }
+    }
+
+    if (foundIdx < 0 || !foundEl) return null;
+
+    let textContainer: Node = foundEl;
+    if (foundEl.dataset?.type === 'list-item') {
+      const textSpan = foundEl.querySelector('.ce-li-text');
+      if (textSpan) textContainer = textSpan;
+    }
+
+    let offset = 0;
+    try {
+      if (container === editorRef.current) {
+        offset = domOffset > foundIdx ? (foundEl.textContent?.length ?? 0) : 0;
+      } else {
+        const result = getRawOffsetUpTo(textContainer, container, domOffset);
+        offset = result.offset;
+      }
+    } catch {
+      offset = 0;
+    }
+
+    if (foundEl.dataset?.indent) offset += parseInt(foundEl.dataset.indent, 10) * INDENT.length;
+    if (foundEl.dataset?.quotePrefix) offset += 3;
+    if (foundEl.dataset?.headingPrefix) offset += parseInt(foundEl.dataset.headingPrefix, 10);
+
+    return { lineIndex: foundIdx, offset };
+  }, []);
+
+  const getCursorInfo = useCallback((): CursorInfo | null => {
+    if (!editorRef.current) return null;
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return null;
+    const range = sel.getRangeAt(0);
+    const point = getLineOffsetFromDOMPoint(range.startContainer, range.startOffset);
+    if (!point) return null;
+    return {
+      ...point,
+      lineDiv: editorRef.current.children[point.lineIndex] as HTMLElement | null,
+    };
+  }, [getLineOffsetFromDOMPoint]);
+
+  const updateSelection = useCallback(() => {
+    if (!editorRef.current) return;
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || sel.isCollapsed) {
+      setSelectionText('');
+      setSelectionRect(null);
+      return;
+    }
+
+    const range = sel.getRangeAt(0);
+    if (!editorRef.current.contains(range.commonAncestorContainer)) {
+      setSelectionText('');
+      setSelectionRect(null);
+      return;
+    }
+
+    const startPoint = getLineOffsetFromDOMPoint(range.startContainer, range.startOffset);
+    const endPoint = getLineOffsetFromDOMPoint(range.endContainer, range.endOffset);
+
+    let nextSelection = sel.toString();
+    if (startPoint && endPoint) {
+      const textRange = getMarkdownRangeForSelection(startPoint, endPoint, contentRef.current.split('\n'));
+      if (textRange) {
+        nextSelection = contentToScratchpadText(contentRef.current, textRange);
+      }
+    }
+
+    if (!nextSelection) {
+      setSelectionText('');
+      setSelectionRect(null);
+      return;
+    }
+
+    const rect = range.getBoundingClientRect();
+    setSelectionText(nextSelection);
+    setSelectionRect({
+      top: rect.top,
+      left: rect.left,
+      width: rect.width || 100,
+    });
+  }, [getLineOffsetFromDOMPoint]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handleSelectionChange = () => {
+      const sel = window.getSelection();
+      if (!sel || !editorRef.current) return;
+      if (sel.isCollapsed) {
+        const point = getLineOffsetFromDOMPoint(sel.anchorNode ?? editorRef.current, sel.anchorOffset);
+        if (point) trackedCursor.current = point;
+      }
+      if (editorRef.current.contains(sel.anchorNode) || editorRef.current.contains(sel.focusNode)) {
+        updateSelection();
+      } else {
+        setSelectionText('');
+        setSelectionRect(null);
+      }
+    };
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => document.removeEventListener('selectionchange', handleSelectionChange);
+  }, [open, updateSelection]);
+
+  const handleMoveToEditor = useCallback(() => {
+    if (!editorRef.current || !selectionText) return;
+
+    const sel = window.getSelection();
+    const range = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+    const startPoint = range ? getLineOffsetFromDOMPoint(range.startContainer, range.startOffset) : null;
+
+    onMoveToEditor(selectionText);
+
+    if (notesTransferMode === 'move' && range && editorRef.current.contains(range.commonAncestorContainer)) {
+      range.deleteContents();
+      const rawContent = extractContent(editorRef.current);
+      const nextContent = normalizeEditorContent(rawContent);
+      structuralUpdate(nextContent, startPoint?.lineIndex ?? 0, startPoint?.offset ?? 0);
+    }
+
+    setSelectionText('');
+    setSelectionRect(null);
+  }, [getLineOffsetFromDOMPoint, notesTransferMode, onMoveToEditor, selectionText, structuralUpdate]);
+
+  const applySlashCommand = useCallback((command: string, lineIndex: number) => {
+    const lines = contentRef.current.split('\n');
+    if (lineIndex < 0 || lineIndex >= lines.length) return;
+
+    if (command === 'timer') {
+      lines[lineIndex] = 'timer';
+      if (lineIndex >= lines.length - 1) lines.push('');
+      structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
+    } else if (command === 'line') {
+      lines[lineIndex] = 'line';
+      if (lineIndex >= lines.length - 1) lines.push('');
+      structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
+    } else if (command === 'list') {
+      lines[lineIndex] = 'list';
+      if (lineIndex >= lines.length - 1 || lines[lineIndex + 1] !== '') {
+        lines.splice(lineIndex + 1, 0, '');
+      }
+      structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
+    }
+
+    setSlashPopup(null);
+  }, [structuralUpdate]);
+
+  const handleInput = useCallback(() => {
+    if (!editorRef.current) return;
+
+    let hasRawTextNode = false;
+    for (const node of editorRef.current.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE && node.textContent) {
+        hasRawTextNode = true;
+        break;
+      }
+    }
+
+    const rawContent = extractContent(editorRef.current);
+    const nextContent = normalizeEditorContent(rawContent);
+    const info = getCursorInfo();
+
+    if (info) trackedCursor.current = { lineIndex: info.lineIndex, offset: info.offset };
+
+    if (hasRawTextNode || nextContent !== rawContent) {
+      structuralUpdate(nextContent, info?.lineIndex ?? 0, info?.offset ?? 0);
+      return;
+    }
+
+    emitContent(nextContent);
+
+    if (info) {
+      const lines = nextContent.split('\n');
+      const lineText = lines[info.lineIndex] || '';
+      const visibleText = lineText.startsWith(LIST_EXIT) ? lineText.slice(LIST_EXIT.length) : lineText;
+      const trimmed = visibleText.trim();
+
+      if (/^\/\w{0,10}$/.test(trimmed)) {
+        const filter = trimmed.slice(1);
+        const matches = slashCommands.filter((command) => command.name.startsWith(filter.toLowerCase()));
+        if (matches.length > 0) {
+          const sel = window.getSelection();
+          if (sel && sel.rangeCount) {
+            const rect = sel.getRangeAt(0).getBoundingClientRect();
+            if (!slashPopup) setPopupHighlight(0);
+            setSlashPopup({ rect, filter, lineIndex: info.lineIndex });
+          }
+          return;
+        }
+      }
+
+      const domType = info.lineDiv?.dataset?.type;
+      const computedType = getLineType(lines, info.lineIndex);
+      if (domType && domType !== computedType) {
+        structuralUpdate(nextContent, info.lineIndex, info.offset);
+        return;
+      }
+    }
+
+    if (slashPopup) setSlashPopup(null);
+  }, [emitContent, getCursorInfo, slashCommands, slashPopup, structuralUpdate]);
+
+  const handleEditorClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    const toggle = target.closest('[data-action="toggle"]') as HTMLElement | null;
+    if (!toggle) return;
+
+    e.preventDefault();
+    const lineIndex = parseInt(toggle.dataset.line || '-1', 10);
+    const lines = contentRef.current.split('\n');
+    if (lineIndex < 0 || lineIndex >= lines.length) return;
+
+    const clean = getCleanLine(lines[lineIndex]);
+    lines[lineIndex] = isLineStruck(lines[lineIndex]) ? clean : STRUCK_MARKER + clean;
+    structuralUpdate(lines.join('\n'), lineIndex, clean.length);
+  }, [structuralUpdate]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (slashPopup && filteredCommands.length > 0) {
-      if (e.key === 'ArrowDown') { e.preventDefault(); setPopupHighlight(h => Math.min(h + 1, filteredCommands.length - 1)); return; }
-      if (e.key === 'ArrowUp') { e.preventDefault(); setPopupHighlight(h => Math.max(h - 1, 0)); return; }
-      if (e.key === 'Enter') { e.preventDefault(); if (filteredCommands[popupHighlight]) applySlashCommand(filteredCommands[popupHighlight].name); return; }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setPopupHighlight((index) => Math.min(index + 1, filteredCommands.length - 1)); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setPopupHighlight((index) => Math.max(index - 1, 0)); return; }
+      if (e.key === 'Enter') { e.preventDefault(); if (filteredCommands[popupHighlight]) applySlashCommand(filteredCommands[popupHighlight].name, slashPopup.lineIndex); return; }
       if (e.key === 'Escape') { e.preventDefault(); setSlashPopup(null); return; }
-      
-      const num = parseInt(e.key);
-      if (!isNaN(num) && num >= 1 && num <= filteredCommands.length) {
+
+      const num = parseInt(e.key, 10);
+      if (!Number.isNaN(num) && num >= 1 && num <= filteredCommands.length) {
         e.preventDefault();
-        applySlashCommand(filteredCommands[num - 1].name);
+        applySlashCommand(filteredCommands[num - 1].name, slashPopup.lineIndex);
         return;
       }
     }
@@ -197,149 +445,221 @@ const ScratchpadPanel: React.FC<Props> = ({ open, value, width, useSerif, notesT
       return;
     }
 
-    if (e.key === 'Backspace') {
-      const start = e.currentTarget.selectionStart;
-      if (start === e.currentTarget.selectionEnd && start >= 8) {
-        const textBeforeCursor = value.substring(0, start);
-        if (textBeforeCursor.endsWith('        ')) {
-          e.preventDefault();
-          const newValue = value.substring(0, start - 8) + value.substring(start);
-          onChange(newValue);
-          requestAnimationFrame(() => {
-            if (textareaRef.current) {
-              textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start - 8;
-            }
-          });
-          return;
+    const liveInfo = getCursorInfo();
+    const tracked = pendingCursor.current ?? trackedCursor.current;
+    const info = liveInfo ?? (tracked
+      ? {
+          lineIndex: tracked.lineIndex,
+          offset: tracked.offset,
+          lineDiv: editorRef.current?.children[tracked.lineIndex] as HTMLElement ?? null,
         }
+      : null);
+
+    if (!info) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const lines = contentRef.current.split('\n');
+        lines.push('');
+        structuralUpdate(lines.join('\n'), lines.length - 1, 0);
       }
+      if (e.key === 'Tab') e.preventDefault();
+      return;
+    }
+
+    const { lineIndex, offset } = info;
+    const lines = contentRef.current.split('\n');
+    const currentLine = lines[lineIndex] || '';
+    const lineType = getLineType(lines, lineIndex);
+
+    if (e.key === 'Tab' && !e.shiftKey) {
+      e.preventDefault();
+      if (lineType === 'list-item') {
+        const clean = getCleanLine(currentLine);
+        lines[lineIndex] = (isLineStruck(currentLine) ? STRUCK_MARKER : '') + INDENT + clean;
+        structuralUpdate(lines.join('\n'), lineIndex, offset + INDENT.length);
+        return;
+      }
+
+      lines[lineIndex] = currentLine.slice(0, offset) + INDENT + currentLine.slice(offset);
+      structuralUpdate(lines.join('\n'), lineIndex, offset + INDENT.length);
+      return;
     }
 
     if (e.key === 'Tab' && e.shiftKey) {
       e.preventDefault();
-      const start = e.currentTarget.selectionStart;
-      const textBeforeCursor = value.substring(0, start);
-      const currentLineStart = textBeforeCursor.lastIndexOf('\n') + 1;
-      const currentLineToCursor = value.substring(currentLineStart, start);
-      
-      if (currentLineToCursor.startsWith('        ')) {
-        const newValue = value.substring(0, currentLineStart) + value.substring(currentLineStart + 8);
-        onChange(newValue);
-        requestAnimationFrame(() => {
-          if (textareaRef.current) {
-            const newPos = Math.max(currentLineStart, start - 8);
-            textareaRef.current.selectionStart = textareaRef.current.selectionEnd = newPos;
-          }
-        });
+      if (lineType === 'list-item') {
+        const clean = getCleanLine(currentLine);
+        if (!clean.startsWith(INDENT)) return;
+        lines[lineIndex] = (isLineStruck(currentLine) ? STRUCK_MARKER : '') + clean.slice(INDENT.length);
+        structuralUpdate(lines.join('\n'), lineIndex, Math.max(0, offset - INDENT.length));
+        return;
+      }
+
+      if (!currentLine.startsWith(INDENT)) return;
+      lines[lineIndex] = currentLine.slice(INDENT.length);
+      structuralUpdate(lines.join('\n'), lineIndex, Math.max(0, offset - INDENT.length));
+      return;
+    }
+
+    if (e.key === 'Backspace' && lineType === 'list-item' && offset === 0) {
+      e.preventDefault();
+      const clean = getCleanLine(currentLine);
+      let indentLevel = 0;
+      let visibleText = clean;
+      while (visibleText.startsWith(INDENT)) {
+        indentLevel++;
+        visibleText = visibleText.slice(INDENT.length);
+      }
+
+      if (!visibleText.trim()) {
+        if (indentLevel > 0) {
+          lines[lineIndex] = INDENT.repeat(indentLevel - 1);
+          structuralUpdate(lines.join('\n'), lineIndex, 0);
+        } else {
+          lines.splice(lineIndex, 1, LIST_EXIT);
+          structuralUpdate(lines.join('\n'), lineIndex, 0);
+        }
+        return;
+      }
+
+      if (clean.startsWith(INDENT)) {
+        lines[lineIndex] = (isLineStruck(currentLine) ? STRUCK_MARKER : '') + clean.slice(INDENT.length);
+        structuralUpdate(lines.join('\n'), lineIndex, 0);
       }
       return;
     }
 
-    if (e.key === 'Tab' && !e.shiftKey) {
-      e.preventDefault();
-      const start = e.currentTarget.selectionStart;
-      const end = e.currentTarget.selectionEnd;
-      
-      const textBeforeCursor = value.substring(0, start);
-      const currentLineStart = textBeforeCursor.lastIndexOf('\n') + 1;
-      const currentLineToCursor = value.substring(currentLineStart, start);
-      const fullLine = value.substring(currentLineStart).split('\n')[0];
-      
-      const listMatch = fullLine.match(/^(\s*)([-*>]|\d+[./])\s/);
-      
-      if (listMatch && currentLineToCursor.length <= listMatch[0].length) {
-        const newValue = value.substring(0, currentLineStart) + '        ' + value.substring(currentLineStart);
-        onChange(newValue);
-        requestAnimationFrame(() => {
-          if (textareaRef.current) {
-            textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 8;
-          }
-        });
+    if (e.key === 'Backspace' && offset >= INDENT.length && lineType !== 'list-item') {
+      if (currentLine.substring(offset - INDENT.length, offset) === INDENT) {
+        e.preventDefault();
+        lines[lineIndex] = currentLine.substring(0, offset - INDENT.length) + currentLine.substring(offset);
+        structuralUpdate(lines.join('\n'), lineIndex, offset - INDENT.length);
         return;
       }
-
-      const newValue = value.substring(0, start) + '        ' + value.substring(end);
-      onChange(newValue);
-      
-      requestAnimationFrame(() => {
-        if (textareaRef.current) {
-          textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 8;
-        }
-      });
-      return;
     }
 
     if (e.key === 'Enter') {
-      const start = e.currentTarget.selectionStart;
-      const textBeforeCursor = value.substring(0, start);
-      const currentLine = textBeforeCursor.split('\n').pop() || '';
-      
-      const indentMatch = currentLine.match(/^\s*/);
-      const indent = indentMatch ? indentMatch[0] : '';
-      const listMatch = currentLine.match(/^(\s*)([-*>]|\d+[./])\s/);
-      
-      if (listMatch) {
-        e.preventDefault();
-        const fullPrefix = listMatch[0];
-        const matchIndent = listMatch[1];
-        const bullet = listMatch[2];
-        
-        if (currentLine === fullPrefix) {
-          if (matchIndent.length >= 8) {
-            const newIndent = matchIndent.slice(0, matchIndent.length - 8);
-            const newValue = value.substring(0, start - fullPrefix.length) + newIndent + bullet + ' ' + value.substring(e.currentTarget.selectionEnd);
-            onChange(newValue);
-            requestAnimationFrame(() => {
-              if (textareaRef.current) {
-                textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start - fullPrefix.length + newIndent.length + bullet.length + 1;
-              }
-            });
+      e.preventDefault();
+
+      const exactSlashCommand = getExactSlashCommand(currentLine, slashCommands);
+      if (exactSlashCommand) {
+        applySlashCommand(exactSlashCommand, lineIndex);
+        return;
+      }
+
+      if (editingTimerLineRef.current === lineIndex) {
+        editingTimerLineRef.current = null;
+        if (lineIndex >= lines.length - 1) lines.push('');
+        structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
+        return;
+      }
+
+      if (lineType !== 'list-item') {
+        const listMatch = currentLine.match(/^(\s*)([-*>]|\d+[./])\s(.*)/);
+        if (listMatch) {
+          const indent = listMatch[1];
+          const bullet = listMatch[2];
+          const text = listMatch[3];
+          const fullPrefix = `${indent}${bullet} `;
+
+          if (!text.trim()) {
+            if (indent.length >= INDENT.length) {
+              const newIndent = indent.slice(0, indent.length - INDENT.length);
+              lines[lineIndex] = newIndent + bullet + ' ';
+              const updatedLines = renumberFollowingPlainNumberedListItems(lines, lineIndex);
+              structuralUpdate(updatedLines.join('\n'), lineIndex, updatedLines[lineIndex]?.length ?? lines[lineIndex].length);
+            } else {
+              lines[lineIndex] = indent;
+              structuralUpdate(lines.join('\n'), lineIndex, indent.length);
+            }
+            return;
+          }
+
+          const splitAt = Math.max(0, Math.min(offset, currentLine.length) - fullPrefix.length);
+          let nextPrefix = fullPrefix;
+          const numMatch = bullet.match(/\d+/);
+          if (numMatch) {
+            const nextNum = parseInt(numMatch[0], 10) + 1;
+            nextPrefix = `${indent}${bullet.replace(/\d+/, nextNum.toString())} `;
+          }
+
+          lines[lineIndex] = fullPrefix + text.slice(0, splitAt);
+          lines.splice(lineIndex + 1, 0, nextPrefix + text.slice(splitAt));
+          const updatedLines = renumberFollowingPlainNumberedListItems(lines, lineIndex + 1);
+          const updatedPrefix = updatedLines[lineIndex + 1]?.match(/^(\s*)([-*>]|\d+[./])\s/)?.[0] ?? nextPrefix;
+          structuralUpdate(updatedLines.join('\n'), lineIndex + 1, updatedPrefix.length);
+          return;
+        }
+      }
+
+      if (lineType === 'list-item') {
+        const clean = getCleanLine(currentLine);
+        let indentLevel = 0;
+        let cleanNoIndent = clean;
+        while (cleanNoIndent.startsWith(INDENT)) {
+          indentLevel++;
+          cleanNoIndent = cleanNoIndent.slice(INDENT.length);
+        }
+
+        if (!cleanNoIndent.trim()) {
+          if (indentLevel > 0) {
+            lines[lineIndex] = INDENT.repeat(indentLevel - 1);
+            structuralUpdate(lines.join('\n'), lineIndex, 0);
           } else {
-            const newValue = value.substring(0, start - fullPrefix.length) + matchIndent + value.substring(e.currentTarget.selectionEnd);
-            onChange(newValue);
-            requestAnimationFrame(() => {
-              if (textareaRef.current) {
-                textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start - fullPrefix.length + matchIndent.length;
-              }
-            });
+            lines.splice(lineIndex, 1, LIST_EXIT);
+            structuralUpdate(lines.join('\n'), lineIndex, 0);
           }
           return;
         }
-        
-        let nextPrefix = fullPrefix;
-        const numMatch = bullet.match(/\d+/);
-        if (numMatch) {
-          const nextNum = parseInt(numMatch[0], 10) + 1;
-          nextPrefix = `${matchIndent}${bullet.replace(/\d+/, nextNum.toString())} `;
-        }
-        
-        const newValue = value.substring(0, start) + '\n' + nextPrefix + value.substring(e.currentTarget.selectionEnd);
-        onChange(newValue);
-        requestAnimationFrame(() => {
-          if (textareaRef.current) {
-            textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 1 + nextPrefix.length;
-          }
-        });
-        return;
-      } else if (indent) {
-        e.preventDefault();
-        const newValue = value.substring(0, start) + '\n' + indent + value.substring(e.currentTarget.selectionEnd);
-        onChange(newValue);
-        requestAnimationFrame(() => {
-          if (textareaRef.current) {
-            textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 1 + indent.length;
-          }
-        });
+
+        const struck = isLineStruck(currentLine);
+        const splitOffset = Math.min(offset, clean.length);
+        const indentPrefix = INDENT.repeat(indentLevel);
+        lines[lineIndex] = struck ? STRUCK_MARKER + clean.slice(0, splitOffset) : clean.slice(0, splitOffset);
+        lines.splice(lineIndex + 1, 0, indentPrefix + clean.slice(splitOffset));
+        structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
         return;
       }
+
+      if (currentLine.startsWith(LIST_EXIT)) {
+        const { current, next } = splitExitedListLine(currentLine, offset);
+        lines[lineIndex] = current;
+        lines.splice(lineIndex + 1, 0, next);
+        structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
+        return;
+      }
+
+      let indentPrefix = '';
+      let visibleLine = currentLine;
+      while (visibleLine.startsWith(INDENT)) {
+        indentPrefix += INDENT;
+        visibleLine = visibleLine.slice(INDENT.length);
+      }
+
+      const clampedOffset = Math.min(offset, currentLine.length);
+      lines[lineIndex] = currentLine.slice(0, clampedOffset);
+      const afterCursor = currentLine.slice(clampedOffset);
+      const nextLine = indentPrefix && clampedOffset >= indentPrefix.length
+        ? indentPrefix + afterCursor.trimStart()
+        : afterCursor;
+      lines.splice(lineIndex + 1, 0, nextLine);
+      structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
+      return;
+    }
+
+    if (e.key === 'Escape' && editingTimerLineRef.current === lineIndex) {
+      e.preventDefault();
+      lines.splice(lineIndex, 1);
+      if (!lines.length) lines.push('');
+      editingTimerLineRef.current = null;
+      structuralUpdate(lines.join('\n'), Math.max(0, lineIndex - 1), 0);
     }
   };
 
-  if (!open) return null;
-
   return (
     <div
-      className="fixed top-0 right-0 bottom-0 z-50 bg-popover border-l border-border shadow-2xl flex flex-col"
+      aria-hidden={!open}
+      className={`fixed top-0 right-0 bottom-0 z-50 bg-popover border-l border-border shadow-2xl flex flex-col ${open ? '' : 'hidden'}`}
       style={{ width }}
       onKeyDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
@@ -372,17 +692,17 @@ const ScratchpadPanel: React.FC<Props> = ({ open, value, width, useSerif, notesT
         </button>
       </div>
 
-      <textarea
-        ref={textareaRef}
-        value={value}
-        onChange={(e) => handleTextChange(e.target.value)}
+      <div
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
+        spellCheck={false}
+        onInput={handleInput}
         onKeyDown={handleKeyDown}
-        onSelect={updateSelection}
-        placeholder="rough notes, fragments, scraps..."
-        className={`flex-1 w-full resize-none bg-transparent px-4 py-4 outline-none border-0 text-sm sm:text-[15px] font-light tracking-wide leading-relaxed text-foreground placeholder:text-muted-foreground/40 ${
+        onClick={handleEditorClick}
+        className={`flex-1 overflow-y-auto px-4 py-4 outline-none border-0 text-sm sm:text-[15px] font-light tracking-wide leading-relaxed text-foreground placeholder:text-muted-foreground/40 ce-editor scratchpad-editor ${
           useSerif ? 'font-playfair' : 'font-mono'
         }`}
-        spellCheck={false}
       />
 
       {selectionText && selectionRect && (
@@ -393,7 +713,7 @@ const ScratchpadPanel: React.FC<Props> = ({ open, value, width, useSerif, notesT
             left: selectionRect.left + (selectionRect.width / 2) - 18,
           }}
           onPointerDown={(e) => {
-            e.preventDefault(); // Prevent textarea from losing focus
+            e.preventDefault();
             e.stopPropagation();
             handleMoveToEditor();
           }}
@@ -408,11 +728,29 @@ const ScratchpadPanel: React.FC<Props> = ({ open, value, width, useSerif, notesT
         <SlashCommandPopup
           commands={filteredCommands}
           highlightIndex={popupHighlight}
-          onSelect={applySlashCommand}
+          onSelect={(name) => applySlashCommand(name, slashPopup.lineIndex)}
           onClose={() => setSlashPopup(null)}
           rect={slashPopup.rect}
         />
       )}
+
+      {timerSlots.map(({ stableId, config, lineIndex }) => {
+        const container = timerContainers.current.get(stableId);
+        if (!container) return null;
+        return createPortal(
+          <TimerWidget
+            key={stableId}
+            config={config}
+            onRemove={() => {
+              const lines = contentRef.current.split('\n');
+              lines.splice(lineIndex, 1);
+              if (!lines.length) lines.push('');
+              structuralUpdate(lines.join('\n'), Math.max(0, Math.min(lineIndex, lines.length - 1)), 0);
+            }}
+          />,
+          container,
+        );
+      })}
     </div>
   );
 };

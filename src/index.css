@@ -350,6 +350,10 @@
   letter-spacing: -0.025em;
 }
 
+.scratchpad-editor .ce-list-header[data-list-unnamed="1"] {
+  display: none;
+}
+
 .ce-lh-text {
   cursor: pointer;
 }

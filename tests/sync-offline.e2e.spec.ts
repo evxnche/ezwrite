@@ -138,7 +138,7 @@ async function deleteRemoteProject(session: SyncApiSession, projectId: string): 
 }
 
 async function openSettingsStorage(page: Page): Promise<void> {
-  await page.getByLabel('Open docs').click();
+  await page.getByLabel('Open notebooks').click();
   await expect(page.getByRole('button', { name: 'settings' })).toBeVisible();
   await page.getByRole('button', { name: 'settings' }).click();
   await expect(page.getByText('settings', { exact: true })).toBeVisible();
@@ -184,9 +184,9 @@ async function ensureDocSynced(page: Page): Promise<void> {
 }
 
 async function createUniqueDoc(page: Page, docTitle: string, seedText: string): Promise<void> {
-  await page.getByLabel('Open docs').click();
-  await page.getByRole('button', { name: 'docs', exact: true }).click();
-  await page.getByLabel('New doc').click();
+  await page.getByLabel('Open notebooks').click();
+  await page.getByRole('button', { name: 'notebooks', exact: true }).click();
+  await page.getByLabel('New notebook').click();
   await page.getByLabel('Close drawer').click();
 
   const editor = page.locator('[contenteditable="true"]').first();
@@ -217,8 +217,8 @@ async function appendEditorText(page: Page, value: string): Promise<void> {
 }
 
 async function selectDocByTitle(page: Page, docTitle: string): Promise<void> {
-  await page.getByLabel('Open docs').click();
-  await page.getByRole('button', { name: 'docs', exact: true }).click();
+  await page.getByLabel('Open notebooks').click();
+  await page.getByRole('button', { name: 'notebooks', exact: true }).click();
   await expect(page.getByText(docTitle, { exact: true })).toBeVisible({
     timeout: SYNC_STATUS_TIMEOUT_MS,
   });

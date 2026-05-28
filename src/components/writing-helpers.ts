@@ -158,6 +158,7 @@ function applyLinkHighlight(text: string): string {
 
 interface ContentToHTMLOptions {
   editingTimerLine?: number;
+  hideUnnamedListHeaders?: boolean;
 }
 
 export function contentToHTML(content: string, options?: ContentToHTMLOptions): string {
@@ -177,7 +178,9 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
       case 'list-header': {
         const listName = getListName(line);
         const escapedName = escapeHTML(listName);
-        return `<div data-type="list-header" contenteditable="false" class="ce-list-header"><span class="ce-lh-text" data-action="rename-list" data-line="${i}">${escapedName}</span><button class="ce-delete-btn" data-action="delete" data-line="${i}">✕</button></div>`;
+        const unnamed = getCleanLine(line).trim().toLowerCase() === 'list';
+        const hiddenAttr = unnamed && options?.hideUnnamedListHeaders ? ' data-list-unnamed="1"' : '';
+        return `<div data-type="list-header"${hiddenAttr} contenteditable="false" class="ce-list-header"><span class="ce-lh-text" data-action="rename-list" data-line="${i}">${escapedName}</span><button class="ce-delete-btn" data-action="delete" data-line="${i}">✕</button></div>`;
       }
       case 'divider':
         return `<div data-type="divider" contenteditable="false" class="ce-divider"><hr class="ce-hr"/><button class="ce-delete-btn" data-action="delete" data-line="${i}">✕</button></div>`;
@@ -505,6 +508,58 @@ export function contentToMarkdown(
   const out = slice.filter((line, i, arr) => !(line === '' && arr[i - 1] === ''))
     .join('\n');
   return range ? out : out + '\n';
+}
+
+export function contentToScratchpadText(
+  content: string,
+  range?: { start: number; end: number },
+): string {
+  if (!content.trim()) return '';
+
+  const lines = content.split('\n');
+  const rendered = lines.map((line, i) => {
+    const type = getLineType(lines, i);
+    if (type === 'divider') return '---';
+    if (type === 'timer') {
+      const config = getTimerArgs(line);
+      return config ? `timer ${config}` : 'timer';
+    }
+    if (type === 'list-header') {
+      const rawName = getCleanLine(line).trim();
+      return rawName.toLowerCase() === 'list' ? null : getListName(line);
+    }
+    if (type === 'image') return '';
+    if (type === 'list-item') {
+      const struck = isLineStruck(line);
+      let clean = getCleanLine(line);
+      let indent = 0;
+      while (clean.startsWith(INDENT)) { indent++; clean = clean.slice(INDENT.length); }
+      const pad = '  '.repeat(indent);
+      return struck ? `${pad}- [x] ${clean}` : `${pad}- [ ] ${clean}`;
+    }
+    if (type === 'quote') return '> ' + line.replace(/^>> ?/, '');
+    return line.startsWith(LIST_EXIT) ? line.slice(LIST_EXIT.length) : line;
+  });
+
+  const start = range ? Math.max(0, range.start) : 0;
+  const end = range ? Math.min(lines.length - 1, range.end) : lines.length - 1;
+  const slice = rendered.slice(start, end + 1).filter((line): line is string => line !== null);
+
+  while (slice.length && slice[0] === '') slice.shift();
+  while (slice.length && slice[slice.length - 1] === '') slice.pop();
+
+  return slice
+    .filter((line, index, arr) => !(line === '' && arr[index - 1] === ''))
+    .join('\n');
+}
+
+export function scratchpadTextToContent(text: string): string {
+  const normalized = text
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/^timer::\s*/gim, 'timer ');
+
+  return markdownToContent(normalized);
 }
 
 // Parse markdown back into ezWrite's internal line representation.

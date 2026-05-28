@@ -255,7 +255,7 @@ export const SettingsDialog: React.FC<Props> = ({
                 <SettingsToggle label="cmd+←/→ pages" checked={cmdArrowPageNav} onToggle={onToggleCmdArrowPageNav} />
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-muted-foreground text-xs uppercase tracking-wider">notes transfer</span>
+                    <span className="text-muted-foreground text-xs uppercase tracking-wider">transfer to scratchpad</span>
                     <div className={`${SEGMENT_TRACK} w-32`}>
                       <button
                         type="button"

@@ -4,10 +4,12 @@ import assert from 'node:assert/strict';
 import {
   contentToHTML,
   contentToMarkdown,
+  contentToScratchpadText,
   extractContent,
   getSlashCommands,
   markdownToContent,
   hasRenderableInlineMarkdown,
+  scratchpadTextToContent,
   stripLegacyImageLines,
   STRUCK_MARKER,
   INDENT,
@@ -137,6 +139,22 @@ test('copy-then-paste round-trip preserves checklist state', () => {
   const exported = contentToMarkdown(original).trimEnd();
   const roundTripped = markdownToContent(exported);
   assert.equal(roundTripped, original);
+});
+
+test('scratchpad text round-trip preserves dividers, checklist state, and timers', () => {
+  const raw = ['intro', '---', '- [ ] first', '- [x] done', 'timer 15', 'timer 15:30'].join('\n');
+
+  assert.equal(
+    contentToScratchpadText(scratchpadTextToContent(raw)),
+    raw,
+  );
+});
+
+test('scratchpad legacy timer markers normalize into working timer lines', () => {
+  assert.equal(
+    scratchpadTextToContent('timer::15:00'),
+    'timer 15:00',
+  );
 });
 
 test('markdownToContent preserves uppercase checked markers and mixed checklist blocks', () => {

@@ -3637,7 +3637,7 @@ const WritingInterface = () => {
           <button
             onClick={handleOpenDocs}
             className="text-muted-foreground hover:text-foreground transition-colors"
-            aria-label="Open docs"
+            aria-label="Open notebooks"
           >
             <ChevronLeft size={16} />
           </button>
