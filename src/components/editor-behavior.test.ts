@@ -6,6 +6,8 @@ import path from 'node:path';
 import { INDENT, LIST_EXIT } from './writing-helpers.ts';
 import {
   getFloatingSlashButtonCursor,
+  getMobileFloatingSlashButtonTop,
+  MOBILE_FLOATING_SLASH_BUTTON_SIZE_PX,
   getTouchGestureIntent,
   getPageEndCursor,
   prepareFloatingSlashButtonCommand,
@@ -214,6 +216,31 @@ test('getPageEndCursor places the cursor at the end of the final line', () => {
     getPageEndCursor('first line\nsecond line'),
     { lineIndex: 1, offset: 11 },
   );
+});
+
+test('getMobileFloatingSlashButtonTop centers on the caret line when there is room', () => {
+  assert.equal(
+    getMobileFloatingSlashButtonTop({
+      caretTop: 200,
+      caretBottom: 228,
+      caretHeight: 28,
+      viewportHeight: 800,
+      keyboardHeight: 0,
+    }),
+    200 + 28 / 2 - MOBILE_FLOATING_SLASH_BUTTON_SIZE_PX / 2,
+  );
+});
+
+test('getMobileFloatingSlashButtonTop clamps above an open keyboard', () => {
+  const top = getMobileFloatingSlashButtonTop({
+    caretTop: 700,
+    caretBottom: 728,
+    caretHeight: 28,
+    viewportHeight: 800,
+    keyboardHeight: 320,
+  });
+  const maxTop = 800 - 320 - MOBILE_FLOATING_SLASH_BUTTON_SIZE_PX - 8;
+  assert.equal(top, maxTop);
 });
 
 test('getFloatingSlashButtonCursor appends slash commands on a fresh bottom line', () => {

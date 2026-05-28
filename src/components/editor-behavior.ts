@@ -167,6 +167,35 @@ export function getPageEndCursor(content: string): { lineIndex: number; offset: 
   };
 }
 
+export const MOBILE_FLOATING_SLASH_BUTTON_SIZE_PX = 44;
+export const MOBILE_FLOATING_SLASH_BUTTON_MARGIN_PX = 8;
+
+/** Vertical `top` (viewport px) for the mobile floating / button beside the caret line. */
+export function getMobileFloatingSlashButtonTop(params: {
+  caretTop: number;
+  caretBottom: number;
+  caretHeight: number;
+  viewportHeight: number;
+  keyboardHeight: number;
+  safeAreaTop?: number;
+  buttonSize?: number;
+  margin?: number;
+}): number {
+  const buttonSize = params.buttonSize ?? MOBILE_FLOATING_SLASH_BUTTON_SIZE_PX;
+  const margin = params.margin ?? MOBILE_FLOATING_SLASH_BUTTON_MARGIN_PX;
+  const safeTop = params.safeAreaTop ?? 0;
+  const lineHeight = Math.max(params.caretHeight, 20);
+  const preferredTop = params.caretTop + lineHeight / 2 - buttonSize / 2;
+  const minTop = safeTop + margin;
+  const maxTop = params.viewportHeight - params.keyboardHeight - buttonSize - margin;
+
+  if (maxTop < minTop) {
+    return Math.max(safeTop + margin, maxTop);
+  }
+
+  return Math.min(Math.max(preferredTop, minTop), maxTop);
+}
+
 export function getFloatingSlashButtonCursor(content: string): {
   content: string;
   lineIndex: number;
