@@ -4,6 +4,7 @@ import path from "path";
 import { VitePWA } from "vite-plugin-pwa";
 import fs from "node:fs";
 import { execSync } from "node:child_process";
+import { createOpenRouterProxyMiddleware } from "./vite-openrouter-proxy";
 
 const packageJson = JSON.parse(fs.readFileSync(new URL("./package.json", import.meta.url), "utf8")) as {
   version?: string;
@@ -22,7 +23,16 @@ function getGitCommitSha(): string {
   }
 }
 
-export default defineConfig({
+function openRouterProxyPlugin(mode: string): import("vite").Plugin {
+  return {
+    name: "openrouter-proxy",
+    configureServer(server) {
+      server.middlewares.use(createOpenRouterProxyMiddleware(mode, server.config.root));
+    },
+  };
+}
+
+export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
@@ -32,6 +42,7 @@ export default defineConfig({
     __APP_COMMIT_SHA__: JSON.stringify(getGitCommitSha()),
   },
   plugins: [
+    openRouterProxyPlugin(mode),
     react(),
     VitePWA({
       registerType: "prompt",
@@ -93,4 +104,4 @@ export default defineConfig({
       "get-nonce": path.resolve(__dirname, "./src/shims/get-nonce.ts"),
     },
   },
-});
+}));

@@ -447,6 +447,19 @@ test('Scratchpad stays isolated and follows editor font choice', () => {
   assert.equal(scratchpadSource.includes('aria-hidden={!open}'), true);
 });
 
+test('scratchpad // LLM prompts are handled only in ScratchpadPanel', () => {
+  const writingSource = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  const scratchpadSource = fs.readFileSync(path.join(process.cwd(), 'src/components/ScratchpadPanel.tsx'), 'utf8');
+  assert.equal(scratchpadSource.includes('parseScratchpadLlmPrompt'), true);
+  assert.equal(scratchpadSource.includes('runScratchpadLlmQuery'), true);
+  assert.equal(scratchpadSource.includes('classifyScratchpadPrompt'), false);
+  assert.equal(writingSource.includes('parseScratchpadLlmPrompt'), false);
+  assert.equal(writingSource.includes('completeScratchpadPrompt'), false);
+  assert.match(fs.readFileSync(path.join(process.cwd(), 'src/lib/scratchpad-llm.ts'), 'utf8'), /deepseek\/deepseek-v4-flash:free/);
+  assert.match(fs.readFileSync(path.join(process.cwd(), 'src/lib/openrouter.ts'), 'utf8'), /for \(const model of SCRATCHPAD_LLM_MODELS\)/);
+  assert.match(fs.readFileSync(path.join(process.cwd(), 'src/lib/openrouter.ts'), 'utf8'), /status >= 500/);
+});
+
 test('WritingInterface keeps dark and light mode inside settings', () => {
   const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   assert.equal(source.includes('Sun, Moon,'), false);

@@ -26,6 +26,12 @@ import {
   renumberFollowingPlainNumberedListItems,
   splitExitedListLine,
 } from './editor-behavior';
+import { completeScratchpadPrompt } from '@/lib/openrouter';
+import {
+  parseScratchpadLlmPrompt,
+  SCRATCHPAD_LLM_LOADING_LINE,
+  splitScratchpadLlmResponse,
+} from '@/lib/scratchpad-llm';
 
 interface Props {
   open: boolean;
@@ -69,6 +75,7 @@ const ScratchpadPanel: React.FC<Props> = ({
   const editingTimerLineRef = useRef<number | null>(null);
   const trackedCursor = useRef<{ lineIndex: number; offset: number } | null>(null);
   const pendingCursor = useRef<{ lineIndex: number; offset: number } | null>(null);
+  const llmAbortRef = useRef<AbortController | null>(null);
 
   const [selectionText, setSelectionText] = useState('');
   const [selectionRect, setSelectionRect] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -331,6 +338,46 @@ const ScratchpadPanel: React.FC<Props> = ({
     setSelectionRect(null);
   }, [getLineOffsetFromDOMPoint, notesTransferMode, onMoveToEditor, selectionText, structuralUpdate]);
 
+  const runScratchpadLlmQuery = useCallback(async (lineIndex: number, prompt: string) => {
+    llmAbortRef.current?.abort();
+    const controller = new AbortController();
+    llmAbortRef.current = controller;
+
+    const lines = contentRef.current.split('\n');
+    const loadingIndex = lineIndex + 1;
+    lines.splice(loadingIndex, 0, SCRATCHPAD_LLM_LOADING_LINE);
+    structuralUpdate(lines.join('\n'), loadingIndex, SCRATCHPAD_LLM_LOADING_LINE.length);
+
+    try {
+      const { text: answer } = await completeScratchpadPrompt(prompt, controller.signal);
+      if (controller.signal.aborted) return;
+
+      const fresh = contentRef.current.split('\n');
+      const loadingLineIndex = fresh.findIndex(
+        (line, index) => index > lineIndex && line === SCRATCHPAD_LLM_LOADING_LINE,
+      );
+      const insertAt = loadingLineIndex >= 0 ? loadingLineIndex : lineIndex + 1;
+      const responseLines = splitScratchpadLlmResponse(answer);
+      fresh.splice(insertAt, 1, ...responseLines, '');
+      structuralUpdate(
+        fresh.join('\n'),
+        insertAt + responseLines.length,
+        0,
+      );
+    } catch (error) {
+      if (controller.signal.aborted) return;
+
+      const fresh = contentRef.current.split('\n');
+      const loadingLineIndex = fresh.findIndex(
+        (line, index) => index > lineIndex && line === SCRATCHPAD_LLM_LOADING_LINE,
+      );
+      const insertAt = loadingLineIndex >= 0 ? loadingLineIndex : lineIndex + 1;
+      const message = error instanceof Error ? error.message : 'LLM request failed';
+      fresh.splice(insertAt, 1, `// error: ${message}`, '');
+      structuralUpdate(fresh.join('\n'), insertAt + 1, 0);
+    }
+  }, [structuralUpdate]);
+
   const applySlashCommand = useCallback((command: string, lineIndex: number) => {
     const lines = contentRef.current.split('\n');
     if (lineIndex < 0 || lineIndex >= lines.length) return;
@@ -540,6 +587,12 @@ const ScratchpadPanel: React.FC<Props> = ({
 
     if (e.key === 'Enter') {
       e.preventDefault();
+
+      const llmPrompt = parseScratchpadLlmPrompt(currentLine);
+      if (llmPrompt) {
+        void runScratchpadLlmQuery(lineIndex, llmPrompt);
+        return;
+      }
 
       const exactSlashCommand = getExactSlashCommand(currentLine, slashCommands);
       if (exactSlashCommand) {
