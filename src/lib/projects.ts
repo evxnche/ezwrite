@@ -115,6 +115,19 @@ function runMigration() {
   localStorage.removeItem('ezwrite-last-page');
 }
 
+function ensureStoredProjectTitles(): void {
+  const projects = listProjects();
+  let changed = false;
+  const nextProjects = projects.map((project) => {
+    if (project.title?.trim()) return project;
+    const title = pageToTitle(getProjectPages(project.id)[0] ?? '');
+    if (!title || title === 'untitled') return project;
+    changed = true;
+    return { ...project, title };
+  });
+  if (changed) saveProjects(nextProjects);
+}
+
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
@@ -123,6 +136,7 @@ function generateId(): string {
 
 export function initProjects(): void {
   if (needsMigration()) runMigration();
+  ensureStoredProjectTitles();
 }
 
 export function listProjects(): ProjectMeta[] {
@@ -177,10 +191,16 @@ export function setActiveProjectId(id: string): void {
   localStorage.setItem(ACTIVE_KEY, id);
 }
 
-export function createProject(firstPageContent = ''): ProjectMeta {
+export function createProject(firstPageContent = '', title?: string): ProjectMeta {
   const id = generateId();
   const now = Date.now();
-  const meta: ProjectMeta = { id, createdAt: now, updatedAt: now };
+  const cleanedTitle = title?.trim();
+  const meta: ProjectMeta = {
+    id,
+    createdAt: now,
+    updatedAt: now,
+    ...(cleanedTitle ? { title: cleanedTitle } : {}),
+  };
 
   const projects = listProjects();
   projects.unshift(meta); // newest first
@@ -285,8 +305,7 @@ export function saveProjectLastPage(id: string, page: number): void {
 export function getProjectTitle(id: string): string {
   const metaTitle = listProjects().find(p => p.id === id)?.title?.trim();
   if (metaTitle) return metaTitle;
-  const pages = getProjectPages(id);
-  return pageToTitle(pages[0] ?? '');
+  return 'untitled';
 }
 
 export function renameProjectTitle(id: string, newTitle: string): void {
