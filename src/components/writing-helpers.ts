@@ -147,12 +147,18 @@ function applyInlineFormatting(text: string): string {
 }
 
 function applyLinkHighlight(text: string): string {
-  const urlRegex = /(https?:\/\/[^\s]+)/g;
-  const parts = text.split(urlRegex);
+  const regex = /(\[[^\]]+\]\(https?:\/\/[^\s)]+\)|https?:\/\/[^\s<]+)/g;
+  const parts = text.split(regex);
   if (parts.length === 1) return applyInlineFormatting(escapeHTML(text));
+  
   return parts.map((part, i) => {
     if (i % 2 === 1) {
-      return `<span class="ce-link">${applyInlineFormatting(escapeHTML(part))}</span>`;
+      const mdMatch = part.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
+      if (mdMatch) {
+        return `<a href="${escapeHTML(mdMatch[2])}" class="ce-link" target="_blank" rel="noopener noreferrer" contenteditable="false" data-action="link">${applyInlineFormatting(escapeHTML(mdMatch[1]))}</a>`;
+      } else {
+        return `<a href="${escapeHTML(part)}" class="ce-link" target="_blank" rel="noopener noreferrer" contenteditable="false" data-action="link">${applyInlineFormatting(escapeHTML(part))}</a>`;
+      }
     }
     return applyInlineFormatting(escapeHTML(part));
   }).join('');
@@ -329,6 +335,29 @@ function extractText(el: Element): string {
       const tag = htmlEl.tagName.toUpperCase();
       if (tag === 'BR') {
         // ignore
+      } else if (htmlEl.classList.contains('ce-link')) {
+        const url = (typeof htmlEl.getAttribute === 'function' ? htmlEl.getAttribute('href') : '') || htmlEl.dataset?.url || '';
+        // If we want to get the formatted inner text:
+        // Temporarily allow extraction of inner elements without skipping
+        const innerText = Array.from(htmlEl.childNodes).map(child => {
+           if (child.nodeType === Node.TEXT_NODE) return child.textContent || '';
+           if (child.nodeType === Node.ELEMENT_NODE) {
+             const childEl = child as HTMLElement;
+             const childTag = childEl.tagName.toUpperCase();
+             const childText = extractText(childEl);
+             if (childTag === 'STRONG' || childTag === 'B') return '**' + childText + '**';
+             if (childTag === 'EM' || childTag === 'I') return '*' + childText + '*';
+             if (childTag === 'DEL' || childTag === 'S' || childTag === 'STRIKE') return '~~' + childText + '~~';
+             if (childTag === 'CODE') return '`' + childText + '`';
+             return childText;
+           }
+           return '';
+        }).join('');
+        if (innerText && innerText !== url && innerText !== escapeHTML(url)) {
+          result += `[${innerText}](${url})`;
+        } else {
+          result += url;
+        }
       } else if (htmlEl.contentEditable === 'false' || htmlEl.classList.contains('ce-checkbox')) {
         // skip
       } else if (tag !== 'BUTTON') {

@@ -90,6 +90,7 @@ import { runSequentialSyncBatch, toSyncError } from '@/lib/sync-retry';
 import { recordBugReportBreadcrumb, setBugReportRuntimeContext } from '@/lib/bug-report';
 import { loadSyncSession, saveSyncSession, clearSyncSession } from '@/lib/sync-session-store';
 import MobileSyncGate from './MobileSyncGate';
+import { startMcpSync, stopMcpSync, isMcpSyncConnected, onMcpSyncChange, pushLocalStorageToMcp, pullMcpToLocalStorage } from '@/lib/mcp-sync';
 
 
 const InfoDialog = lazy(() => import('./InfoDialog'));
@@ -356,6 +357,8 @@ const WritingInterface = () => {
   const [syncStatus, setSyncStatus] = useState('local only');
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncError, setSyncError] = useState('');
+  const [mcpSyncEnabled, setMcpSyncEnabled] = useState(() => localStorage.getItem('ezwrite-mcp-sync') === 'true');
+  const [mcpSyncConnected, setMcpSyncConnected] = useState(false);
   const syncPushTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const syncQueueRef = useRef<Set<string>>(new Set());
   const syncSessionRef = useRef<SyncSession | null>(null);
@@ -612,6 +615,14 @@ const WritingInterface = () => {
 
   const [polaroidFramesEnabled, setPolaroidFramesEnabled] = useState(() => localStorage.getItem('ezwrite-polaroid-frames-enabled') !== 'false');
   const handleTogglePolaroidFrames = () => setPolaroidFramesEnabled(v => { const next = !v; localStorage.setItem('ezwrite-polaroid-frames-enabled', String(next)); return next; });
+
+  // Text justification toggle (persisted, default off)
+  const [justifyText, setJustifyText] = useState(() => localStorage.getItem('ezwrite-justify-text') === 'true');
+  const handleToggleJustify = () => setJustifyText(v => { const next = !v; localStorage.setItem('ezwrite-justify-text', String(next)); return next; });
+
+  // Export image center-align toggle (persisted, default off — left-aligned)
+  const [exportCenterAlign, setExportCenterAlign] = useState(() => localStorage.getItem('ezwrite-export-center-align') === 'true');
+  const handleToggleExportCenterAlign = () => setExportCenterAlign(v => { const next = !v; localStorage.setItem('ezwrite-export-center-align', String(next)); return next; });
 
   const slashCommands = useMemo(() => getSlashCommands({
     imagesEnabled,
@@ -1946,6 +1957,53 @@ const WritingInterface = () => {
     void runProjectSync(projectId);
   }, [flushCurrentProject, runProjectSync]);
 
+  // --- MCP sync ---
+  useEffect(() => {
+    if (!mcpSyncEnabled) {
+      stopMcpSync();
+      setMcpSyncConnected(false);
+      return;
+    }
+    startMcpSync();
+    const checkInterval = setInterval(() => setMcpSyncConnected(isMcpSyncConnected()), 2000);
+    const unsubscribe = onMcpSyncChange(() => setMcpSyncConnected(isMcpSyncConnected()));
+    return () => {
+      clearInterval(checkInterval);
+      unsubscribe();
+      stopMcpSync();
+    };
+  }, [mcpSyncEnabled]);
+
+  const handleToggleMcpSync = useCallback(() => {
+    const next = !mcpSyncEnabled;
+    setMcpSyncEnabled(next);
+    localStorage.setItem('ezwrite-mcp-sync', String(next));
+  }, [mcpSyncEnabled]);
+
+  const handlePushToMcp = useCallback(async () => {
+    try {
+      await pushLocalStorageToMcp();
+    } catch (err) {
+      console.error('MCP push failed:', err);
+    }
+  }, []);
+
+  const handlePullFromMcp = useCallback(async () => {
+    try {
+      await pullMcpToLocalStorage();
+      setProjects(listProjects());
+      const activeId = getActiveProjectId();
+      if (activeId) {
+        setActiveProjectId(activeId);
+        const pages = getProjectPages(activeId);
+        setCurrentPageContent(pages[getProjectLastPage(activeId)] ?? '');
+        setScratchpadValue(getProjectScratchpad(activeId));
+      }
+    } catch (err) {
+      console.error('MCP pull failed:', err);
+    }
+  }, []);
+
   // --- Touch swipe ---
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
@@ -2103,9 +2161,23 @@ const WritingInterface = () => {
 
   // Handle clicks inside editor (checkboxes, delete buttons)
   const handleEditorClick = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
+    let target = e.target as HTMLElement;
+    
+    // Find the closest action target (e.g. if click was on a child of the link)
+    const actionTarget = target.closest('[data-action]');
+    if (actionTarget) {
+      target = actionTarget as HTMLElement;
+    }
+
     const action = target.dataset.action;
     if (!action) return;
+
+    if (action === 'link') {
+      e.preventDefault();
+      const url = target.getAttribute('href');
+      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+      return;
+    }
 
     const lineIndex = parseInt(target.dataset.line || '0');
     if (action === 'toggle') {
@@ -2911,8 +2983,15 @@ const WritingInterface = () => {
 
     const htmlData = e.clipboardData.getData('text/html');
     const plain = normalizeClipboardPasteText(raw, htmlData);
+
+    const urlsToFetch: string[] = [];
+    const plainWithLoading = plain.replace(/(?<!\]\()(https?:\/\/[^\s<]+)/g, (url) => {
+      urlsToFetch.push(url);
+      return `[Loading title...](${url})`;
+    });
+
     // Re-hydrate markdown checklists back into ezWrite's internal list representation.
-    const normalized = markdownToContent(plain);
+    const normalized = markdownToContent(plainWithLoading);
     const pastedLines = normalized.split('\n');
 
     // Resolve selection start/end → delete selected range before inserting
@@ -2994,21 +3073,38 @@ const WritingInterface = () => {
       const cursorLineOffset = (before !== '' ? 1 : 0) + pastedLines.length - 1;
       const cursorLine = insertLineIndex + cursorLineOffset;
       structuralUpdate(lines.join('\n'), cursorLine, pastedLines[pastedLines.length - 1].length);
-      return;
+    } else {
+      if (pastedLines.length === 1) {
+        lines[insertLineIndex] = before + pastedLines[0] + after;
+        structuralUpdate(lines.join('\n'), insertLineIndex, insertOffset + pastedLines[0].length);
+      } else {
+        const newLines = [
+          before + pastedLines[0],
+          ...pastedLines.slice(1, -1),
+          pastedLines[pastedLines.length - 1] + after,
+        ];
+        lines.splice(insertLineIndex, 1, ...newLines);
+        structuralUpdate(lines.join('\n'), insertLineIndex + pastedLines.length - 1, pastedLines[pastedLines.length - 1].length);
+      }
     }
 
-    if (pastedLines.length === 1) {
-      lines[insertLineIndex] = before + pastedLines[0] + after;
-      structuralUpdate(lines.join('\n'), insertLineIndex, insertOffset + pastedLines[0].length);
-    } else {
-      const newLines = [
-        before + pastedLines[0],
-        ...pastedLines.slice(1, -1),
-        pastedLines[pastedLines.length - 1] + after,
-      ];
-      lines.splice(insertLineIndex, 1, ...newLines);
-      structuralUpdate(lines.join('\n'), insertLineIndex + pastedLines.length - 1, pastedLines[pastedLines.length - 1].length);
-    }
+    urlsToFetch.forEach(url => {
+      fetch(`/api/link-title?url=${encodeURIComponent(url)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.title) {
+            const newContent = contentRef.current.replace(`[Loading title...](${url})`, `[${data.title}](${url})`);
+            if (newContent !== contentRef.current) structuralUpdate(newContent);
+          } else {
+            const newContent = contentRef.current.replace(`[Loading title...](${url})`, url);
+            if (newContent !== contentRef.current) structuralUpdate(newContent);
+          }
+        })
+        .catch(() => {
+          const newContent = contentRef.current.replace(`[Loading title...](${url})`, url);
+          if (newContent !== contentRef.current) structuralUpdate(newContent);
+        });
+    });
   }, [pushUndo, structuralUpdate]);
 
   const handleImageCaptionChange = useCallback((id: string, newCaption: string) => {
@@ -3336,8 +3432,11 @@ const WritingInterface = () => {
         const lineHeight = Math.round(baseFontSize * 1.5);
         const maxTextWidth = width - 200;
 
+        const exportTextAlign = exportCenterAlign ? 'center' : 'left';
+        const exportTextX = exportCenterAlign ? width / 2 : 110;
+
         if (!hasImages) {
-          // Centered text-only rendering
+          // Text-only rendering
           const wrapped = wrapShareCardLines(ctx, textOnlyLines, maxTextWidth, baseFontSize, useSerif);
           const maxLines = Math.floor((height - 240) / lineHeight);
           const visibleLines = wrapped.slice(0, maxLines);
@@ -3345,16 +3444,16 @@ const WritingInterface = () => {
           let y = Math.max(140, Math.round((height - textHeight) / 2) - 10);
           ctx.fillStyle = text;
           ctx.font = getShareCardFont(baseFontSize, useSerif);
-          ctx.textAlign = 'center';
+          ctx.textAlign = exportTextAlign;
           ctx.textBaseline = 'top';
           visibleLines.forEach((line) => {
             if (!line) { y += Math.round(lineHeight * 0.7); return; }
-            ctx.fillText(line, width / 2, y);
+            ctx.fillText(line, exportTextX, y);
             y += lineHeight;
           });
           if (wrapped.length > visibleLines.length) {
             ctx.fillStyle = muted;
-            ctx.fillText('...', width / 2, y);
+            ctx.fillText('...', exportTextX, y);
           }
         } else {
           // Document-order render: text and images interleaved
@@ -3385,12 +3484,8 @@ const WritingInterface = () => {
               const frameP = 14; const capH = 48;
               const fW = imgSz + frameP * 2; const fH = imgSz + frameP * 2 + capH;
               if (y + fH > height - 160) break;
-              let hash = 0; const id = m[1];
-              for (let ci = 0; ci < id.length; ci++) hash = (hash * 31 + id.charCodeAt(ci)) & 0xffff;
-              const rotateDeg = ((hash % 7) - 3) * 0.85;
               ctx.save();
               ctx.translate(width / 2, y + fH / 2);
-              ctx.rotate(rotateDeg * Math.PI / 180);
               ctx.shadowColor = 'rgba(0,0,0,0.22)'; ctx.shadowBlur = 20;
               ctx.fillStyle = '#F5ECDD';
               ctx.fillRect(-fW / 2, -fH / 2, fW, fH);
@@ -3424,14 +3519,14 @@ const WritingInterface = () => {
                 : trimmed;
               ctx.fillStyle = text;
               ctx.font = getShareCardFont(baseFontSize, useSerif);
-              ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+              ctx.textAlign = exportTextAlign; ctx.textBaseline = 'top';
               if (!displayLine) {
                 y += Math.round(lineHeight * 0.7);
               } else {
                 const wls = wrapShareCardLines(ctx, [displayLine], maxTextWidth, baseFontSize, useSerif);
                 for (const wl of wls) {
                   if (y > height - 180) break;
-                  ctx.fillText(wl, width / 2, y); y += lineHeight;
+                  ctx.fillText(wl, exportTextX, y); y += lineHeight;
                 }
               }
             }
@@ -3723,7 +3818,7 @@ const WritingInterface = () => {
               onClick={handleEditorClick}
               onDragOver={handleDragOver}
               onDrop={handleDrop}
-              className={`${useSerif ? 'font-playfair' : 'font-mono'} text-base sm:text-lg font-light tracking-wide text-foreground ce-editor`}
+              className={`${useSerif ? 'font-playfair' : 'font-mono'} text-base sm:text-lg font-light tracking-wide text-foreground ce-editor${justifyText ? ' ce-justify' : ''}`}
               style={editorStyle}
               spellCheck={spellCheckEnabled}
             />
@@ -4000,6 +4095,10 @@ const WritingInterface = () => {
               onToggleSettingsCommand={handleToggleSettingsCommand}
               polaroidFramesEnabled={polaroidFramesEnabled}
               onTogglePolaroidFrames={handleTogglePolaroidFrames}
+              justifyText={justifyText}
+              onToggleJustify={handleToggleJustify}
+              exportCenterAlign={exportCenterAlign}
+              onToggleExportCenterAlign={handleToggleExportCenterAlign}
               dirName={getDirName(dirHandle)}
               onPickFolder={handlePickFolder}
               onClearFolder={handleClearFolder}
@@ -4031,6 +4130,11 @@ const WritingInterface = () => {
               }}
               notesTransferMode={notesTransferMode}
               onToggleNotesTransferMode={handleToggleNotesTransferMode}
+              mcpSyncEnabled={mcpSyncEnabled}
+              onToggleMcpSync={handleToggleMcpSync}
+              mcpSyncConnected={mcpSyncConnected}
+              onPushToMcp={handlePushToMcp}
+              onPullFromMcp={handlePullFromMcp}
             />
           </>
         )}

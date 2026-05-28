@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Cloud, Copy, Eye, EyeOff, FolderOpen, Lock, RefreshCw } from 'lucide-react';
+import { Cloud, Copy, Eye, EyeOff, FolderOpen, Lock, RefreshCw, Cpu } from 'lucide-react';
 import DialogSupportFooter from './DialogSupportFooter';
 import { BUG_REPORT_EMAIL } from '@/lib/bug-report';
 import { copyLandingPageUrl, getLandingPageDisplayLabel, getLandingPageUrl } from '@/lib/app-links';
@@ -98,6 +98,10 @@ interface Props {
   onToggleSettingsCommand?: () => void;
   polaroidFramesEnabled?: boolean;
   onTogglePolaroidFrames?: () => void;
+  justifyText?: boolean;
+  onToggleJustify?: () => void;
+  exportCenterAlign?: boolean;
+  onToggleExportCenterAlign?: () => void;
   notesTransferMode?: 'move' | 'copy';
   onToggleNotesTransferMode?: () => void;
   dirName?: string;
@@ -125,6 +129,11 @@ interface Props {
   onToggleActiveProjectSync?: () => void;
   accessToken?: string;
   userId?: string;
+  mcpSyncEnabled?: boolean;
+  onToggleMcpSync?: () => void;
+  mcpSyncConnected?: boolean;
+  onPushToMcp?: () => void;
+  onPullFromMcp?: () => void;
 }
 
 export const SettingsDialog: React.FC<Props> = ({
@@ -162,6 +171,10 @@ export const SettingsDialog: React.FC<Props> = ({
   onToggleSettingsCommand,
   polaroidFramesEnabled,
   onTogglePolaroidFrames,
+  justifyText,
+  onToggleJustify,
+  exportCenterAlign,
+  onToggleExportCenterAlign,
   notesTransferMode,
   onToggleNotesTransferMode,
   dirName,
@@ -189,6 +202,11 @@ export const SettingsDialog: React.FC<Props> = ({
   onToggleActiveProjectSync,
   accessToken,
   userId,
+  mcpSyncEnabled,
+  onToggleMcpSync,
+  mcpSyncConnected,
+  onPushToMcp,
+  onPullFromMcp,
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
   const [landingCopied, setLandingCopied] = useState(false);
@@ -251,6 +269,8 @@ export const SettingsDialog: React.FC<Props> = ({
                   ) : undefined}
                 />
                 <SettingsToggle label="spellcheck" checked={spellCheckEnabled} onToggle={onToggleSpellCheck} />
+                <SettingsToggle label="justify text" checked={justifyText} onToggle={onToggleJustify} />
+                <SettingsToggle label="export img center align" checked={exportCenterAlign} onToggle={onToggleExportCenterAlign} />
                 <SettingsToggle label="polaroid frames" checked={polaroidFramesEnabled} onToggle={onTogglePolaroidFrames} />
                 <SettingsToggle label="cmd+←/→ pages" checked={cmdArrowPageNav} onToggle={onToggleCmdArrowPageNav} />
                 <div className="space-y-1.5">
@@ -524,6 +544,47 @@ export const SettingsDialog: React.FC<Props> = ({
                   {syncError && (
                     <div className="text-[10px] text-destructive lowercase">
                       {syncError}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">ai sync</h3>
+                <div className={`${PANEL_SURFACE} bg-muted/10 p-3 space-y-3`}>
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-muted-foreground text-xs uppercase tracking-wider">
+                      <Cpu size={13} />
+                      mcp server
+                    </span>
+                    <span className={`text-[10px] lowercase ${mcpSyncConnected ? 'text-accent-foreground' : 'text-muted-foreground'}`}>
+                      {mcpSyncConnected ? 'connected' : 'not connected'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    connect to a local mcp server so your ai assistants (claude, codex, chatgpt) can read and write your notebooks.
+                  </p>
+                  <SettingsToggle
+                    label="enable mcp sync"
+                    checked={mcpSyncEnabled}
+                    onToggle={onToggleMcpSync}
+                  />
+                  {mcpSyncEnabled && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={onPushToMcp}
+                        disabled={!mcpSyncConnected}
+                        className="px-2.5 py-1.5 rounded-lg text-xs font-mono bg-accent/20 text-accent-foreground disabled:opacity-40"
+                      >
+                        push → server
+                      </button>
+                      <button
+                        onClick={onPullFromMcp}
+                        disabled={!mcpSyncConnected}
+                        className="px-2.5 py-1.5 rounded-lg text-xs font-mono text-muted-foreground hover:text-foreground disabled:opacity-40"
+                      >
+                        ← pull from server
+                      </button>
                     </div>
                   )}
                 </div>

@@ -523,6 +523,12 @@
 
 
 
+/* Text justification */
+.ce-justify > div {
+  text-align: justify;
+  text-justify: inter-word;
+}
+
 /* Mono mode — smaller, tighter */
 .ce-editor.font-mono,
 .font-mono.resize-none {

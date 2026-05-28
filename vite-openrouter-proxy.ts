@@ -21,6 +21,36 @@ function sendJson(res: ServerResponse, status: number, body: Record<string, unkn
 export function createOpenRouterProxyMiddleware(mode: string, root: string): Connect.NextHandleFunction {
   return async (req, res, next) => {
     const url = req.url ?? '';
+    
+    if (req.method === 'GET' && url.startsWith('/api/link-title')) {
+      const urlObj = new URL(url, 'http://localhost');
+      const targetUrl = urlObj.searchParams.get('url');
+      if (!targetUrl) {
+        sendJson(res, 400, { error: 'Missing url parameter' });
+        return;
+      }
+      try {
+        const upstream = await fetch(targetUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+          }
+        });
+        if (!upstream.ok) {
+          sendJson(res, upstream.status, { error: 'Failed to fetch url' });
+          return;
+        }
+        const html = await upstream.text();
+        const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+        let title = titleMatch ? titleMatch[1].trim() : targetUrl;
+        title = title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'");
+        sendJson(res, 200, { title });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Fetch failed';
+        sendJson(res, 502, { error: message });
+      }
+      return;
+    }
+
     if (req.method !== 'POST' || !url.startsWith('/api/openrouter')) {
       next();
       return;

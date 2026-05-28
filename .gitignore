@@ -21,6 +21,9 @@ public/ascii-art.png
 # Local agent/runtime state
 .omx/
 
+# MCP server data
+~/.ezwrite/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

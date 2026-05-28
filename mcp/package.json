@@ -1,0 +1,22 @@
+{
+  "name": "ezwrite-mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "ezwrite-mcp": "./index.ts"
+  },
+  "scripts": {
+    "start": "bun run index.ts",
+    "dev": "bun --watch index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "express": "^5.1.0",
+    "ws": "^8.18.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/ws": "^8.5.0"
+  }
+}

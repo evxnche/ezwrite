@@ -18,11 +18,13 @@ import {
   scratchpadTextToContent,
   setCursorPosition,
   STRUCK_MARKER,
+  markdownToContent,
 } from './writing-helpers';
 import {
   getExactSlashCommand,
   getMarkdownRangeForSelection,
   normalizeEditorContent,
+  normalizeClipboardPasteText,
   renumberFollowingPlainNumberedListItems,
   splitExitedListLine,
 } from './editor-behavior';
@@ -458,6 +460,16 @@ const ScratchpadPanel: React.FC<Props> = ({
 
   const handleEditorClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
+    const actionTarget = target.closest('[data-action]') as HTMLElement | null;
+    if (!actionTarget) return;
+
+    if (actionTarget.dataset.action === 'link') {
+      e.preventDefault();
+      const url = actionTarget.getAttribute('href');
+      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
     const toggle = target.closest('[data-action="toggle"]') as HTMLElement | null;
     if (!toggle) return;
 
@@ -470,6 +482,102 @@ const ScratchpadPanel: React.FC<Props> = ({
     lines[lineIndex] = isLineStruck(lines[lineIndex]) ? clean : STRUCK_MARKER + clean;
     structuralUpdate(lines.join('\n'), lineIndex, clean.length);
   }, [structuralUpdate]);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    e.preventDefault();
+
+    const raw = e.clipboardData.getData('text/plain');
+    if (!raw) return;
+
+    const htmlData = e.clipboardData.getData('text/html');
+    const plain = normalizeClipboardPasteText(raw, htmlData);
+
+    const urlsToFetch: string[] = [];
+    const plainWithLoading = plain.replace(/(?<!\]\()(https?:\/\/[^\s<]+)/g, (url) => {
+      urlsToFetch.push(url);
+      return `[Loading title...](${url})`;
+    });
+
+    const normalized = markdownToContent(plainWithLoading);
+    const pastedLines = normalized.split('\n');
+
+    const sel = window.getSelection();
+    const lines = contentRef.current.split('\n');
+    let insertLineIndex: number;
+    let insertOffset: number;
+
+    if (sel && sel.rangeCount && !sel.getRangeAt(0).collapsed && editorRef.current?.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+      const range = sel.getRangeAt(0);
+      const startInfo = getLineOffsetFromDOMPoint(range.startContainer, range.startOffset);
+      const endInfo = getLineOffsetFromDOMPoint(range.endContainer, range.endOffset);
+      if (startInfo && endInfo && (startInfo.lineIndex !== endInfo.lineIndex || startInfo.offset !== endInfo.offset)) {
+        const { lineIndex: sl, offset: so } = startInfo;
+        const { lineIndex: el, offset: eo } = endInfo;
+        if (sl === el) {
+          lines[sl] = lines[sl].slice(0, so) + lines[sl].slice(eo);
+        } else {
+          lines.splice(sl, el - sl + 1, lines[sl].slice(0, so) + lines[el].slice(eo));
+        }
+        insertLineIndex = sl;
+        insertOffset = so;
+      } else {
+        const info = getCursorInfo();
+        insertLineIndex = info?.lineIndex ?? lines.length - 1;
+        insertOffset = info?.offset ?? 0;
+      }
+    } else {
+      const info = getCursorInfo();
+      insertLineIndex = info?.lineIndex ?? lines.length - 1;
+      insertOffset = info?.offset ?? (lines[info?.lineIndex ?? lines.length - 1]?.length ?? 0);
+    }
+
+    const currentLine = lines[insertLineIndex] ?? '';
+    const before = currentLine.slice(0, insertOffset);
+    const after = currentLine.slice(insertOffset);
+
+    const hasListHeader = pastedLines.some(l => l === 'list');
+    if (hasListHeader && (before !== '' || after !== '')) {
+      const newLines: string[] = [];
+      if (before !== '') newLines.push(before);
+      newLines.push(...pastedLines);
+      if (after !== '') newLines.push(after);
+      lines.splice(insertLineIndex, 1, ...newLines);
+      const cursorLineOffset = (before !== '' ? 1 : 0) + pastedLines.length - 1;
+      const cursorLine = insertLineIndex + cursorLineOffset;
+      structuralUpdate(lines.join('\n'), cursorLine, pastedLines[pastedLines.length - 1].length);
+    } else {
+      if (pastedLines.length === 1) {
+        lines[insertLineIndex] = before + pastedLines[0] + after;
+        structuralUpdate(lines.join('\n'), insertLineIndex, insertOffset + pastedLines[0].length);
+      } else {
+        const newLines = [
+          before + pastedLines[0],
+          ...pastedLines.slice(1, -1),
+          pastedLines[pastedLines.length - 1] + after,
+        ];
+        lines.splice(insertLineIndex, 1, ...newLines);
+        structuralUpdate(lines.join('\n'), insertLineIndex + pastedLines.length - 1, pastedLines[pastedLines.length - 1].length);
+      }
+    }
+
+    urlsToFetch.forEach(url => {
+      fetch(`/api/link-title?url=${encodeURIComponent(url)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.title) {
+            const newContent = contentRef.current.replace(`[Loading title...](${url})`, `[${data.title}](${url})`);
+            if (newContent !== contentRef.current) structuralUpdate(newContent);
+          } else {
+            const newContent = contentRef.current.replace(`[Loading title...](${url})`, url);
+            if (newContent !== contentRef.current) structuralUpdate(newContent);
+          }
+        })
+        .catch(() => {
+          const newContent = contentRef.current.replace(`[Loading title...](${url})`, url);
+          if (newContent !== contentRef.current) structuralUpdate(newContent);
+        });
+    });
+  }, [structuralUpdate, getCursorInfo, getLineOffsetFromDOMPoint]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (slashPopup && filteredCommands.length > 0) {
@@ -753,6 +861,7 @@ const ScratchpadPanel: React.FC<Props> = ({
         onInput={handleInput}
         onKeyDown={handleKeyDown}
         onClick={handleEditorClick}
+        onPaste={handlePaste}
         className={`flex-1 overflow-y-auto px-4 py-4 outline-none border-0 text-sm sm:text-[15px] font-light tracking-wide leading-relaxed text-foreground placeholder:text-muted-foreground/40 ce-editor scratchpad-editor ${
           useSerif ? 'font-playfair' : 'font-mono'
         }`}

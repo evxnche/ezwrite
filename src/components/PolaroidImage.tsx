@@ -10,12 +10,6 @@ interface Props {
   onRemove: () => void;
 }
 
-function seedRotation(id: string): number {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) & 0xffff;
-  return ((hash % 7) - 3) * 0.85;
-}
-
 const PADDING = 12;
 const MIN_FRAME = 100;
 const MAX_FRAME = 640;
@@ -33,7 +27,6 @@ export default function PolaroidImage({ imageId, initialCaption, onCaptionChange
   const cropPosRef = useRef(cropPos);
   useEffect(() => { cropPosRef.current = cropPos; }, [cropPos]);
   const src = loadImage(imageId);
-  const rotation = seedRotation(imageId);
   const imgSize = frameWidth - PADDING * 2;
 
   // Click outside or Escape exits move mode
@@ -117,7 +110,6 @@ export default function PolaroidImage({ imageId, initialCaption, onCaptionChange
           backgroundColor: '#F5ECDD',
           padding: PADDING,
           boxShadow: '0 2px 12px rgba(0,0,0,0.20), 0 1px 4px rgba(0,0,0,0.10)',
-          transform: `rotate(${rotation}deg)`,
           margin: '20px auto',
           width: 240,
           boxSizing: 'border-box',
@@ -189,7 +181,6 @@ export default function PolaroidImage({ imageId, initialCaption, onCaptionChange
         backgroundColor: '#F5ECDD',
         padding: PADDING,
         boxShadow: '0 2px 12px rgba(0,0,0,0.20), 0 1px 4px rgba(0,0,0,0.10)',
-        transform: `rotate(${rotation}deg)`,
         margin: '20px auto',
         width: frameWidth,
         boxSizing: 'border-box',
