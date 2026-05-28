@@ -3716,12 +3716,12 @@ const WritingInterface = () => {
           style={{ bottom: isTouchDevice ? 'calc(env(safe-area-inset-bottom, 0px) + 5.25rem)' : '5.5rem' }}
           aria-live="polite"
         >
-          <div className="pointer-events-auto flex items-center gap-2 rounded-md border border-border bg-popover px-3 py-2 text-xs font-mono text-foreground shadow-lg">
+          <div className="pointer-events-auto flex items-center gap-2 text-xs font-mono text-foreground">
             <span>page deleted.</span>
             <button
               type="button"
               onClick={restoreLastDeletedPage}
-              className="text-accent-foreground underline underline-offset-4 hover:text-foreground transition-colors"
+              className="font-bold text-accent-foreground hover:text-foreground transition-colors"
             >
               undo.
             </button>
