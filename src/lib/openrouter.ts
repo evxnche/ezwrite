@@ -1,8 +1,9 @@
 import {
   buildScratchpadSystemPrompt,
   formatScratchpadLlmReply,
-  SCRATCHPAD_LLM_MODELS,
+  getScratchpadModelChain,
   SCRATCHPAD_WEB_SEARCH_TOOL,
+  type ScratchpadModelEntry,
 } from './scratchpad-llm';
 
 const OPENROUTER_CHAT_PATH = '/api/openrouter';
@@ -45,24 +46,28 @@ function extractAssistantContent(message?: OpenRouterMessage): string {
 }
 
 async function requestCompletion(
-  model: string,
+  entry: ScratchpadModelEntry,
   prompt: string,
   signal?: AbortSignal,
 ): Promise<{ ok: true; content: string } | { ok: false; status: number; message: string }> {
+  const body: Record<string, unknown> = {
+    model: entry.id,
+    messages: [
+      { role: 'system', content: buildScratchpadSystemPrompt(entry.id, entry.webSearch) },
+      { role: 'user', content: prompt },
+    ],
+    max_tokens: entry.webSearch ? 500 : 700,
+  };
+  if (entry.webSearch) {
+    body.tools = [SCRATCHPAD_WEB_SEARCH_TOOL];
+  }
+
   let res: Response;
   try {
     res = await fetch(OPENROUTER_CHAT_PATH, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: buildScratchpadSystemPrompt(model) },
-          { role: 'user', content: prompt },
-        ],
-        tools: [SCRATCHPAD_WEB_SEARCH_TOOL],
-        max_tokens: 700,
-      }),
+      body: JSON.stringify(body),
       signal,
     });
   } catch (error) {
@@ -94,26 +99,27 @@ export async function completeScratchpadPrompt(
   prompt: string,
   signal?: AbortSignal,
 ): Promise<ScratchpadLlmResult> {
+  const chain = getScratchpadModelChain(prompt);
   const errors: string[] = [];
 
-  for (const model of SCRATCHPAD_LLM_MODELS) {
-    const result = await requestCompletion(model, prompt, signal);
+  for (const entry of chain) {
+    const result = await requestCompletion(entry, prompt, signal);
 
     if (result.ok) {
       return {
         text: formatScratchpadLlmReply(result.content),
-        model,
+        model: entry.id,
       };
     }
 
     if (shouldTryNextModel(result.status)) {
-      errors.push(`${model}: ${result.message}`);
+      errors.push(`${entry.id}: ${result.message}`);
       continue;
     }
 
     throw new Error(result.message);
   }
 
-  const detail = errors.length > 0 ? errors[errors.length - 1] : 'All models failed';
+  const detail = errors.length > 0 ? errors.join(' → ') : 'All models failed';
   throw new Error(`${detail}. Wait a minute and try again.`);
 }

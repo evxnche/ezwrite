@@ -1,12 +1,27 @@
 import { getCleanLine, LIST_EXIT } from '../components/writing-helpers.ts';
 
-/** One try each, in order — no intent routing. */
-export const SCRATCHPAD_LLM_MODELS = [
-  'deepseek/deepseek-v4-flash:free',
-  'google/gemma-4-31b-it:free',
-  'z-ai/glm-4.5-air:free',
-  'openrouter/free',
-] as const;
+export interface ScratchpadModelEntry {
+  id: string;
+  webSearch: boolean;
+}
+
+/** Default order when no live web search is needed. */
+const FAST_MODEL_CHAIN: ScratchpadModelEntry[] = [
+  { id: 'deepseek/deepseek-v4-flash:free', webSearch: false },
+  { id: 'google/gemma-4-31b-it:free', webSearch: false },
+  { id: 'z-ai/glm-4.5-air:free', webSearch: false },
+  { id: 'openrouter/free', webSearch: false },
+];
+
+/** GLM + openrouter/free tolerate web search; DeepSeek/Gemma 500 with tools enabled. */
+const WEB_SEARCH_MODEL_CHAIN: ScratchpadModelEntry[] = [
+  { id: 'z-ai/glm-4.5-air:free', webSearch: true },
+  { id: 'openrouter/free', webSearch: true },
+  { id: 'google/gemma-4-31b-it:free', webSearch: false },
+  { id: 'deepseek/deepseek-v4-flash:free', webSearch: false },
+];
+
+export const SCRATCHPAD_LLM_MODELS = FAST_MODEL_CHAIN.map((entry) => entry.id);
 
 export const SCRATCHPAD_LLM_MODEL = SCRATCHPAD_LLM_MODELS[0];
 
@@ -14,20 +29,37 @@ export const SCRATCHPAD_WEB_SEARCH_TOOL = {
   type: 'openrouter:web_search',
   parameters: {
     engine: 'auto',
-    max_results: 5,
+    max_results: 3,
   },
 } as const;
 
 export const SCRATCHPAD_LLM_LOADING_LINE = '…';
 
-export function buildScratchpadSystemPrompt(model: string): string {
-  return [
+export function scratchpadNeedsWebSearch(prompt: string): boolean {
+  const lower = prompt.toLowerCase();
+  return (
+    /\b(today|yesterday|latest|current|recent|news|this week|this year|right now|202[4-9])\b/.test(lower)
+    || /\b(when did|who won|how much|price of|release date|population of)\b/.test(lower)
+    || /\b(how does|how do|what is|explain)\b/.test(lower)
+  );
+}
+
+export function getScratchpadModelChain(prompt: string): readonly ScratchpadModelEntry[] {
+  return scratchpadNeedsWebSearch(prompt) ? WEB_SEARCH_MODEL_CHAIN : FAST_MODEL_CHAIN;
+}
+
+export function buildScratchpadSystemPrompt(model: string, webSearch: boolean): string {
+  const lines = [
     `ezwrite scratchpad — margin notes beside a manuscript. Model id: ${model}.`,
     'If asked what model you are, reply with only that id. Never claim to be Claude, ChatGPT, Gemini, or any vendor/product.',
     '',
     'Output (strict):',
     '• First token is the answer. No warmup.',
-    '• Never mention searching, browsing, looking up, or tools. Search silently when needed; only output findings.',
+  ];
+  if (webSearch) {
+    lines.push('• Never mention searching, browsing, looking up, or tools. Search silently; only output findings.');
+  }
+  lines.push(
     '• No titles, headings, labels, or markdown (#, ##, **heading**).',
     '• No "I\'ll…", "Let me…", "Here\'s what I found", "Sure!", or offers to help.',
     '• No disclaimers, caveats, or "as an AI".',
@@ -35,7 +67,8 @@ export function buildScratchpadSystemPrompt(model: string): string {
     '• News/facts: lead with what happened; include dates; skip background unless essential.',
     '• Rewrites: output the revised text first, optional one-line note after.',
     '• No code unless asked.',
-  ].join('\n');
+  );
+  return lines.join('\n');
 }
 
 const LEADING_BOILERPLATE_LINE = /^(?:sure[!,.]?|okay[!,.]?|ok[!,.]?|yes[!,.]?)\s*$/i;

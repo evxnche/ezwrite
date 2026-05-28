@@ -1,5 +1,9 @@
 import { getOpenRouterReferer, proxyOpenRouterChatCompletion } from '../lib/openrouter-upstream';
 
+export const config = {
+  maxDuration: 60,
+};
+
 interface VercelRequest {
   method?: string;
   body?: unknown;
