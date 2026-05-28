@@ -13,6 +13,7 @@ import {
   stripLegacyImageLines,
   STRUCK_MARKER,
   INDENT,
+  NBSP,
 } from './writing-helpers.ts';
 
 type MockNode = MockTextNode | MockElementNode;
@@ -201,4 +202,67 @@ test('hasRenderableInlineMarkdown detects complete visible inline markers only',
   assert.equal(hasRenderableInlineMarkdown('I am **bold**'), true);
   assert.equal(hasRenderableInlineMarkdown('I am **not closed'), false);
   assert.equal(hasRenderableInlineMarkdown(String.raw`escaped \**bold**`), false);
+});
+
+
+test('contentToMarkdown wysiwyg mode adds nbsp indentation and two-space hard breaks', () => {
+  const content = [
+    'plain line',
+    `${INDENT}one deep`,
+    `${INDENT}${INDENT}two deep`,
+  ].join('\n');
+  const md = contentToMarkdown(content, undefined, { wysiwyg: true });
+  const lines = md.replace(/\n$/, '').split('\n');
+  assert.equal(lines[0], 'plain line  ');
+  assert.equal(lines[1], `${NBSP.repeat(4)}one deep  `);
+  assert.equal(lines[2], `${NBSP.repeat(8)}two deep  `);
+});
+
+test('contentToMarkdown wysiwyg mode emits named list header and skips unnamed', () => {
+  const namedMd = contentToMarkdown(['list::My Tasks', 'do thing'].join('\n'), undefined, { wysiwyg: true });
+  assert.match(namedMd, /\*\*My Tasks\*\*/);
+  assert.match(namedMd, /- \[ \] do thing/);
+
+  const unnamedMd = contentToMarkdown(['list', 'do thing'].join('\n'), undefined, { wysiwyg: true });
+  assert.equal(unnamedMd.includes('**'), false);
+  assert.match(unnamedMd, /- \[ \] do thing/);
+});
+
+test('contentToMarkdown wysiwyg mode renders images via imagePaths and drops timers', () => {
+  const content = ['photo below', 'polaroid::abc123|a caption|', 'timer 25'].join('\n');
+  const imagePaths = new Map([['abc123', 'images/abc123.jpg']]);
+  const md = contentToMarkdown(content, undefined, { wysiwyg: true, imagePaths });
+  assert.match(md, /!\[a caption\]\(images\/abc123\.jpg\)/);
+  assert.equal(md.includes('timer'), false);
+
+  const mdNoPath = contentToMarkdown(content, undefined, { wysiwyg: true });
+  assert.equal(mdNoPath.includes('abc123'), false);
+});
+
+test('contentToMarkdown wysiwyg mode separates list blocks from text with a blank line', () => {
+  const md = contentToMarkdown(['intro text', 'list::Todos', 'first', 'second'].join('\n'), undefined, { wysiwyg: true });
+  assert.match(md, /intro text {2}\n\n\*\*Todos\*\*/);
+});
+
+test('contentToMarkdown wysiwyg output round-trips indentation and checklist state', () => {
+  const content = [
+    'heading note',
+    `${INDENT}indented note`,
+    'list::My Tasks',
+    'open task',
+    `${STRUCK_MARKER}done task`,
+    `${INDENT}nested task`,
+  ].join('\n');
+  const md = contentToMarkdown(content, undefined, { wysiwyg: true });
+  const back = markdownToContent(md);
+  assert.equal(back.includes(`${INDENT}indented note`), true);
+  assert.equal(back.includes('open task'), true);
+  assert.equal(back.includes(`${STRUCK_MARKER}done task`), true);
+  assert.equal(back.includes(`${INDENT}nested task`), true);
+});
+
+test('contentToMarkdown default (plain) mode is unaffected by wysiwyg additions', () => {
+  const md = contentToMarkdown([`${INDENT}indented`, 'plain'].join('\n'));
+  assert.equal(md.includes(NBSP), false);
+  assert.equal(/ {2}$/m.test(md.replace(/\n$/, '')), false);
 });

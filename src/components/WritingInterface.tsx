@@ -694,8 +694,7 @@ const WritingInterface = () => {
       setDirHandle(h);
       dirHandleRef.current = h;
       // Write all pages immediately after picking
-      const markdowns = pagesRef.current.map(p => contentToMarkdown(p));
-      writeProjectFiles(h, activeProjectIdRef.current ?? 'default', markdowns, scratchpad);
+      writeProjectFiles(h, activeProjectIdRef.current ?? 'default', pagesRef.current, scratchpad);
     }
   };
 
@@ -1002,8 +1001,7 @@ const WritingInterface = () => {
     clearTimeout(scratchpadPersistTimeoutRef.current);
     scratchpadPersistTimeoutRef.current = setTimeout(() => {
       if (dirHandleRef.current) {
-        const markdowns = pagesSnapshot.map((page) => contentToMarkdown(page));
-        void writeProjectFiles(dirHandleRef.current, projectId, markdowns, value);
+        void writeProjectFiles(dirHandleRef.current, projectId, pagesSnapshot, value);
       }
       void writeToOPFS(pagesSnapshot, projectId, value);
       scheduleSyncPush(projectId);
@@ -1021,8 +1019,7 @@ const WritingInterface = () => {
     clearTimeout(deferredPersistTimeoutRef.current);
     deferredPersistTimeoutRef.current = setTimeout(() => {
       if (dirHandleRef.current) {
-        const markdowns = pagesSnapshot.map((page) => contentToMarkdown(page));
-        void writeProjectFiles(dirHandleRef.current, projectId, markdowns, scratchpadSnapshot);
+        void writeProjectFiles(dirHandleRef.current, projectId, pagesSnapshot, scratchpadSnapshot);
       }
       void writeToOPFS(pagesSnapshot, projectId, scratchpadSnapshot);
       scheduleSyncPush(projectId);
@@ -1040,8 +1037,7 @@ const WritingInterface = () => {
       saveProjectLastPage(projectId, selectedPage);
     }
     if (dirHandleRef.current) {
-      const markdowns = pagesSnapshot.map((page) => contentToMarkdown(page));
-      void writeProjectFiles(dirHandleRef.current, projectId ?? 'default', markdowns, scratchpadSnapshot);
+      void writeProjectFiles(dirHandleRef.current, projectId ?? 'default', pagesSnapshot, scratchpadSnapshot);
     }
     void writeToOPFS(pagesSnapshot, projectId ?? undefined, scratchpadSnapshot);
     if (projectId) scheduleSyncPush(projectId);
@@ -1061,8 +1057,7 @@ const WritingInterface = () => {
     clearTimeout(deferredPersistTimeoutRef.current);
     clearTimeout(scratchpadPersistTimeoutRef.current);
     if (dirHandleRef.current) {
-      const markdowns = latestPages.map((page) => contentToMarkdown(page));
-      void writeProjectFiles(dirHandleRef.current, projectId, markdowns, scratchpadValue);
+      void writeProjectFiles(dirHandleRef.current, projectId, latestPages, scratchpadValue);
     }
     void writeToOPFS(latestPages, projectId, scratchpadValue, { delay: 0 });
     scheduleSyncPush(projectId);

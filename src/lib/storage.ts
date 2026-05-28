@@ -1,7 +1,8 @@
 // File System Access API — persistent local file storage
 // Falls back to localStorage-only on unsupported platforms (iOS Safari, Firefox)
 
-import { contentToMarkdown } from '@/components/writing-helpers';
+import { contentToMarkdown, scratchpadTextToContent } from '@/components/writing-helpers';
+import { loadImage } from '@/lib/imageStore';
 
 const IDB_DB = 'ezwrite-storage';
 const IDB_STORE = 'handles';
@@ -30,18 +31,68 @@ function getPageFileName(index: number): string {
 function getProjectTitleFromMarkdown(markdowns: string[]): string {
   const first = markdowns[0] ?? '';
   for (const line of first.split('\n')) {
-    const clean = line.trim();
-    if (clean) return clean.replace(/^#+\s*/, '').replace(/^>\s*/, '').slice(0, 120);
+    const clean = line.replace(/\u00A0/g, ' ').trim();
+    if (clean) return clean.replace(/^#+\s*/, '').replace(/^>\s*/, '').replace(/^\*\*|\*\*$/g, '').trim().slice(0, 120);
   }
   return 'untitled';
+}
+
+function mimeToExt(mime: string): string {
+  switch (mime) {
+    case 'image/jpeg': return 'jpg';
+    case 'image/png': return 'png';
+    case 'image/webp': return 'webp';
+    case 'image/gif': return 'gif';
+    default: return 'img';
+  }
+}
+
+interface ProjectImage {
+  id: string;
+  fileName: string;
+  blob: Blob;
+}
+
+// Scan content for polaroid::<id> refs, load each image's data URL from localStorage,
+// and turn it into a writable Blob + stable file name (images/<id>.<ext>).
+async function collectImages(contents: string[]): Promise<ProjectImage[]> {
+  const ids = new Set<string>();
+  for (const c of contents) {
+    if (!c) continue;
+    for (const line of c.split('\n')) {
+      const m = line.match(/^polaroid::([^|]+)/);
+      if (m) ids.add(m[1]);
+    }
+  }
+  const result: ProjectImage[] = [];
+  for (const id of ids) {
+    const dataUrl = loadImage(id);
+    if (!dataUrl) continue;
+    try {
+      const blob = await (await fetch(dataUrl)).blob();
+      result.push({ id, fileName: `${id}.${mimeToExt(blob.type)}`, blob });
+    } catch {
+      // unreadable image — skip
+    }
+  }
+  return result;
 }
 
 async function syncProjectDirectory(
   projectDir: FileSystemDirectoryHandle,
   projectId: string,
-  markdowns: string[],
+  pages: string[],
   scratchpad = '',
 ): Promise<void> {
+  const scratchpadContent = scratchpad.trim() ? scratchpadTextToContent(scratchpad) : '';
+  const images = await collectImages([...pages, scratchpadContent]);
+  const imagePaths = new Map(images.map((im) => [im.id, `images/${im.fileName}`]));
+
+  const markdowns = pages.map((page) => contentToMarkdown(page, undefined, { wysiwyg: true, imagePaths }));
+  const scratchpadMd = scratchpadContent
+    ? contentToMarkdown(scratchpadContent, undefined, { wysiwyg: true, imagePaths })
+    : '';
+
   const expectedNames = new Set<string>(['project.json']);
 
   await Promise.all(markdowns.map(async (md, i) => {
@@ -53,12 +104,30 @@ async function syncProjectDirectory(
     await writable.close();
   }));
 
-  if (scratchpad.trim()) {
+  if (scratchpadMd.trim()) {
     expectedNames.add('scratchpad.md');
     const scratchpadHandle = await projectDir.getFileHandle('scratchpad.md', { create: true });
     const scratchpadWritable = await (scratchpadHandle as FileSystemFileHandle & WritableHandle).createWritable();
-    await scratchpadWritable.write(scratchpad);
+    await scratchpadWritable.write(scratchpadMd);
     await scratchpadWritable.close();
+  }
+
+  // Images referenced by the markdown live in an images/ subfolder.
+  if (images.length > 0) {
+    const imagesDir = await projectDir.getDirectoryHandle('images', { create: true });
+    const expectedImages = new Set<string>();
+    await Promise.all(images.map(async (im) => {
+      expectedImages.add(im.fileName);
+      const fileHandle = await imagesDir.getFileHandle(im.fileName, { create: true });
+      const writable = await (fileHandle as FileSystemFileHandle & WritableHandle).createWritable();
+      await writable.write(im.blob);
+      await writable.close();
+    }));
+    for await (const [name] of (imagesDir as IterableDirectoryHandle).entries()) {
+      if (!expectedImages.has(name)) await imagesDir.removeEntry(name);
+    }
+  } else {
+    try { await projectDir.removeEntry('images', { recursive: true }); } catch { /* no images dir to remove */ }
   }
 
   const metaHandle = await projectDir.getFileHandle('project.json', { create: true });
@@ -67,7 +136,7 @@ async function syncProjectDirectory(
     id: projectId,
     title: getProjectTitleFromMarkdown(markdowns),
     pageCount: markdowns.length,
-    hasScratchpad: Boolean(scratchpad.trim()),
+    hasScratchpad: Boolean(scratchpadMd.trim()),
     updatedAt: Date.now(),
   }, null, 2));
   await metaWritable.close();
@@ -163,7 +232,7 @@ let lastGrantedHandle: FileSystemDirectoryHandle | null = null;
 export async function writeProjectFiles(
   dirHandle: FileSystemDirectoryHandle,
   projectId: string,
-  markdowns: string[],
+  pages: string[],
   scratchpad = ''
 ): Promise<void> {
   try {
@@ -173,7 +242,7 @@ export async function writeProjectFiles(
       lastGrantedHandle = dirHandle;
     }
     const projectDir = await dirHandle.getDirectoryHandle(projectId, { create: true });
-    await syncProjectDirectory(projectDir, projectId, markdowns, scratchpad);
+    await syncProjectDirectory(projectDir, projectId, pages, scratchpad);
   } catch {
     lastGrantedHandle = null;
   }
@@ -182,9 +251,9 @@ export async function writeProjectFiles(
 // Legacy wrapper
 export async function writePageFiles(
   dirHandle: FileSystemDirectoryHandle,
-  markdowns: string[]
+  pages: string[]
 ): Promise<void> {
-  return writeProjectFiles(dirHandle, 'default', markdowns);
+  return writeProjectFiles(dirHandle, 'default', pages);
 }
 
 export function getDirName(handle: FileSystemDirectoryHandle | null): string {
@@ -231,8 +300,7 @@ export async function writeToOPFS(
   options: OPFSWriteOptions = {},
 ): Promise<void> {
   if (!('storage' in navigator && 'getDirectory' in navigator.storage)) return;
-  const markdowns = pages.map((page) => contentToMarkdown(page));
-  opfsPendingWrite = { pages: markdowns, projectId, scratchpad };
+  opfsPendingWrite = { pages, projectId, scratchpad };
 
   const delay = options.delay ?? 500;
   if (delay <= 0) {

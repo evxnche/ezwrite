@@ -1,6 +1,8 @@
 export const STRUCK_MARKER = '\u200B\u2713';
 export const LIST_EXIT = '\u2060'; // word joiner — invisible, marks explicit list exit
 export const INDENT = '        '; // 8 spaces
+export const NBSP = '\u00A0';
+export const NBSP_PER_INDENT = 4; // visible spaces per indent level in wysiwyg export
 
 export const getCleanLine = (line: string) => line.startsWith(STRUCK_MARKER) ? line.slice(STRUCK_MARKER.length) : line;
 export const isLineStruck = (line: string) => line.startsWith(STRUCK_MARKER);
@@ -476,37 +478,114 @@ export function setCursorPosition(editor: HTMLElement, lineIndex: number, offset
 
 // Optional range: when provided, only lines in [start, end] (inclusive) are emitted,
 // but full content is used for getLineType context so list-items are still detected.
+export interface MarkdownExportOptions {
+  // wysiwyg: emit markdown that *renders* like the editor (nbsp indentation,
+  // two-space hard line breaks, list-header names, image refs, blank-line-wrapped
+  // blocks). Default (omitted/false) = legacy plain output, kept byte-for-byte.
+  wysiwyg?: boolean;
+  // Maps image ids (polaroid::<id>) to a relative path written by the storage layer.
+  imagePaths?: Map<string, string>;
+}
+
 export function contentToMarkdown(
   content: string,
   range?: { start: number; end: number },
+  opts?: MarkdownExportOptions,
 ): string {
   if (!content.trim()) return '';
   const lines = content.split('\n');
-  const rendered = lines.map((line, i) => {
+
+  if (!opts?.wysiwyg) {
+    const rendered = lines.map((line, i) => {
+      const type = getLineType(lines, i);
+      if (type === 'divider') return '---';
+      if (type === 'timer' || type === 'list-header' || type === 'image') return '';
+      if (type === 'list-item') {
+        const struck = isLineStruck(line);
+        let clean = getCleanLine(line);
+        let indent = 0;
+        while (clean.startsWith(INDENT)) { indent++; clean = clean.slice(INDENT.length); }
+        const pad = '  '.repeat(indent);
+        return struck ? `${pad}- [x] ${clean}` : `${pad}- [ ] ${clean}`;
+      }
+      if (type === 'quote') return '> ' + line.replace(/^>> ?/, '');
+      return line.startsWith(LIST_EXIT) ? line.slice(LIST_EXIT.length) : line;
+    });
+
+    const start = range ? Math.max(0, range.start) : 0;
+    const end = range ? Math.min(lines.length - 1, range.end) : lines.length - 1;
+    const slice = rendered.slice(start, end + 1);
+    while (slice.length && slice[0] === '') slice.shift();
+    while (slice.length && slice[slice.length - 1] === '') slice.pop();
+    const out = slice.filter((line, i, arr) => !(line === '' && arr[i - 1] === ''))
+      .join('\n');
+    return range ? out : out + '\n';
+  }
+
+  // WYSIWYG mode — render-faithful markdown that mirrors the editor view.
+  const imagePaths = opts.imagePaths;
+  type Kind = 'text' | 'list' | 'heading' | 'quote' | 'divider' | 'image' | 'label' | 'empty';
+  const rendered = lines.map((line, i): { text: string; kind: Kind } => {
     const type = getLineType(lines, i);
-    if (type === 'divider') return '---';
-    if (type === 'timer' || type === 'list-header' || type === 'image') return '';
+    if (type === 'divider') return { text: '---', kind: 'divider' };
+    if (type === 'timer') return { text: '', kind: 'empty' };
+    if (type === 'list-header') {
+      const rawName = getCleanLine(line).trim();
+      if (rawName.toLowerCase() === 'list') return { text: '', kind: 'empty' };
+      return { text: `**${getListName(line)}**`, kind: 'label' };
+    }
+    if (type === 'image') {
+      const m = line.match(/^polaroid::([^|]+)\|?([^|]*)?\|?(.*)?$/);
+      const id = m?.[1] ?? '';
+      const caption = m?.[2] ?? '';
+      const path = imagePaths?.get(id);
+      if (!path) return { text: '', kind: 'empty' };
+      return { text: `![${caption}](${path})`, kind: 'image' };
+    }
     if (type === 'list-item') {
       const struck = isLineStruck(line);
       let clean = getCleanLine(line);
       let indent = 0;
       while (clean.startsWith(INDENT)) { indent++; clean = clean.slice(INDENT.length); }
       const pad = '  '.repeat(indent);
-      return struck ? `${pad}- [x] ${clean}` : `${pad}- [ ] ${clean}`;
+      return { text: struck ? `${pad}- [x] ${clean}` : `${pad}- [ ] ${clean}`, kind: 'list' };
     }
-    if (type === 'quote') return '> ' + line.replace(/^>> ?/, '');
-    return line.startsWith(LIST_EXIT) ? line.slice(LIST_EXIT.length) : line;
+    if (type === 'quote') return { text: '> ' + line.replace(/^>> ?/, ''), kind: 'quote' };
+    if (type === 'heading1' || type === 'heading2') {
+      let h = getCleanLine(line);
+      while (h.startsWith(INDENT)) { h = h.slice(INDENT.length); }
+      return { text: h, kind: 'heading' };
+    }
+    let text = line.startsWith(LIST_EXIT) ? line.slice(LIST_EXIT.length) : line;
+    let indent = 0;
+    while (text.startsWith(INDENT)) { indent++; text = text.slice(INDENT.length); }
+    if (text.length === 0) return { text: '', kind: 'empty' };
+    return { text: NBSP.repeat(indent * NBSP_PER_INDENT) + text + '  ', kind: 'text' };
   });
 
   const start = range ? Math.max(0, range.start) : 0;
   const end = range ? Math.min(lines.length - 1, range.end) : lines.length - 1;
   const slice = rendered.slice(start, end + 1);
-  // Drop empty lines produced by headers/timers at the boundaries so the
-  // exported markdown has no surprising leading/trailing blank lines.
-  while (slice.length && slice[0] === '') slice.shift();
-  while (slice.length && slice[slice.length - 1] === '') slice.pop();
-  const out = slice.filter((line, i, arr) => !(line === '' && arr[i - 1] === ''))
-    .join('\n');
+  while (slice.length && slice[0].kind === 'empty') slice.shift();
+  while (slice.length && slice[slice.length - 1].kind === 'empty') slice.pop();
+
+  // Insert a blank line between adjacent non-empty lines of differing kind so
+  // block elements render, while same-kind runs (text, multi-line list/quote) stay tight.
+  const outLines: string[] = [];
+  for (let i = 0; i < slice.length; i++) {
+    const cur = slice[i];
+    const prev = i > 0 ? slice[i - 1] : null;
+    if (cur.kind === 'empty') {
+      if (outLines.length && outLines[outLines.length - 1] !== '') outLines.push('');
+      continue;
+    }
+    if (prev && prev.kind !== 'empty' && prev.kind !== cur.kind && outLines.length && outLines[outLines.length - 1] !== '') {
+      outLines.push('');
+    }
+    outLines.push(cur.text);
+  }
+  while (outLines.length && outLines[outLines.length - 1] === '') outLines.pop();
+  const out = outLines.join('\n');
   return range ? out : out + '\n';
 }
 
@@ -575,7 +654,9 @@ export function markdownToContent(md: string): string {
     if (inChecklist) inChecklist = false;
   };
 
-  for (const raw of input) {
+  for (const rawLine of input) {
+    // Reverse wysiwyg export: drop trailing hard-break spaces.
+    const raw = rawLine.replace(/[ \t]+$/, '');
     const m = raw.match(/^(\s*)[-*+]\s+\[([ xX])\]\s?(.*)$/);
     if (m) {
       if (!inChecklist) {
@@ -594,6 +675,15 @@ export function markdownToContent(md: string): string {
     flushChecklistEnd();
     if (/^\s*---\s*$/.test(raw)) { out.push('line'); continue; }
     if (/^>\s?/.test(raw)) { out.push('>> ' + raw.replace(/^>\s?/, '')); continue; }
+    // Reverse wysiwyg export: leading non-breaking-space runs -> INDENT levels.
+    if (raw.startsWith(NBSP)) {
+      let rest = raw;
+      let n = 0;
+      while (rest.startsWith(NBSP)) { n++; rest = rest.slice(1); }
+      const level = Math.floor(n / NBSP_PER_INDENT);
+      out.push(INDENT.repeat(level) + rest);
+      continue;
+    }
     out.push(raw);
   }
   return out.join('\n');
