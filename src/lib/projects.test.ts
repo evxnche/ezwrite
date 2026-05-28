@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { registerHooks } from 'node:module';
 
 registerHooks({
@@ -13,18 +13,36 @@ registerHooks({
         shortCircuit: true,
       };
     }
+    if (specifier.startsWith('./') || specifier.startsWith('../')) {
+      const parentDir = path.dirname(fileURLToPath(context.parentURL));
+      const base = path.join(parentDir, specifier);
+      const candidate = base.endsWith('.ts') ? base : `${base}.ts`;
+      return {
+        url: pathToFileURL(candidate).href,
+        shortCircuit: true,
+      };
+    }
     return nextResolve(specifier, context);
   },
 });
 
 const {
   createProject,
+  getActiveProjectId,
   getProjectPages,
   getProjectTitle,
   initProjects,
+  listProjects,
   renameProjectTitle,
   saveProjectPages,
 } = await import('./projects.ts');
+
+const {
+  WELCOME_PROJECT_ID,
+  WELCOME_PROJECT_TITLE,
+  WELCOME_ROLLOUT_KEY,
+  WELCOME_ROLLOUT_VERSION,
+} = await import('./welcome-notebook.ts');
 
 class LocalStorageMock {
   private values = new Map<string, string>();
@@ -83,4 +101,15 @@ test('renaming a notebook does not write the title into editor content', () => {
 
   assert.equal(getProjectTitle(project.id), 'research notes');
   assert.deepEqual(getProjectPages(project.id), ['']);
+});
+
+test('welcome rollout delivers demo notebook to existing users', () => {
+  createProject('my private notes');
+  initProjects();
+
+  assert.equal(listProjects().some((project) => project.id === WELCOME_PROJECT_ID), true);
+  assert.equal(getProjectTitle(WELCOME_PROJECT_ID), WELCOME_PROJECT_TITLE);
+  assert.ok(getProjectPages(WELCOME_PROJECT_ID).length >= 10);
+  assert.equal(getActiveProjectId(), WELCOME_PROJECT_ID);
+  assert.equal(localStorageMock.getItem(WELCOME_ROLLOUT_KEY), WELCOME_ROLLOUT_VERSION);
 });

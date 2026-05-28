@@ -8,6 +8,13 @@
 //   ezwrite-project-{id}-lp  → number (last viewed page index)
 
 import { stripLegacyImageLines } from '@/components/writing-helpers';
+import {
+  WELCOME_PROJECT_ID,
+  WELCOME_PROJECT_PAGES,
+  WELCOME_PROJECT_TITLE,
+  WELCOME_ROLLOUT_KEY,
+  WELCOME_ROLLOUT_VERSION,
+} from './welcome-notebook';
 
 export interface ProjectMeta {
   id: string;
@@ -54,6 +61,15 @@ function saveLastKnownGoodPages(id: string): void {
 
 function saveProjects(projects: ProjectMeta[]): void {
   localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+}
+
+export function promoteProjectToFront(id: string): void {
+  const projects = listProjects();
+  const idx = projects.findIndex((project) => project.id === id);
+  if (idx <= 0) return;
+  const [project] = projects.splice(idx, 1);
+  projects.unshift(project);
+  saveProjects(projects);
 }
 
 function touchProject(id: string): void {
@@ -115,6 +131,34 @@ function runMigration() {
   localStorage.removeItem('ezwrite-last-page');
 }
 
+function ensureWelcomeNotebook(): void {
+  if (localStorage.getItem(WELCOME_ROLLOUT_KEY) === WELCOME_ROLLOUT_VERSION) return;
+
+  const now = Date.now();
+  const pages = [...WELCOME_PROJECT_PAGES];
+  const existing = getProjectMeta(WELCOME_PROJECT_ID);
+
+  if (existing) {
+    saveProjectPages(WELCOME_PROJECT_ID, pages);
+    saveProjectTimestamps(WELCOME_PROJECT_ID, pages.map(() => now));
+    renameProjectTitle(WELCOME_PROJECT_ID, WELCOME_PROJECT_TITLE);
+    updateProjectMeta(WELCOME_PROJECT_ID, { updatedAt: now });
+    promoteProjectToFront(WELCOME_PROJECT_ID);
+  } else {
+    createProjectWithId(WELCOME_PROJECT_ID, pages[0] ?? '', {
+      title: WELCOME_PROJECT_TITLE,
+      createdAt: now,
+      updatedAt: now,
+    });
+    saveProjectPages(WELCOME_PROJECT_ID, pages);
+    saveProjectTimestamps(WELCOME_PROJECT_ID, pages.map(() => now));
+    saveProjectLastPage(WELCOME_PROJECT_ID, 0);
+  }
+
+  setActiveProjectId(WELCOME_PROJECT_ID);
+  localStorage.setItem(WELCOME_ROLLOUT_KEY, WELCOME_ROLLOUT_VERSION);
+}
+
 function ensureStoredProjectTitles(): void {
   const projects = listProjects();
   let changed = false;
@@ -137,6 +181,7 @@ function generateId(): string {
 export function initProjects(): void {
   if (needsMigration()) runMigration();
   ensureStoredProjectTitles();
+  ensureWelcomeNotebook();
 }
 
 export function listProjects(): ProjectMeta[] {
