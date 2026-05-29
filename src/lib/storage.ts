@@ -25,7 +25,7 @@ interface IterableDirectoryHandle extends FileSystemDirectoryHandle {
 }
 
 function getPageFileName(index: number): string {
-  return `page-${String(index + 1).padStart(3, '0')}.md`;
+  return `${String(index + 1).padStart(3, '0')}.md`;
 }
 
 function getProjectTitleFromMarkdown(markdowns: string[]): string {
@@ -83,6 +83,7 @@ async function syncProjectDirectory(
   projectId: string,
   pages: string[],
   scratchpad = '',
+  title?: string,
 ): Promise<void> {
   const scratchpadContent = scratchpad.trim() ? scratchpadTextToContent(scratchpad) : '';
   const images = await collectImages([...pages, scratchpadContent]);
@@ -143,9 +144,10 @@ async function syncProjectDirectory(
 
   for await (const [name] of (projectDir as IterableDirectoryHandle).entries()) {
     const isLegacyPage = /^ezwrite-\d+\.md$/.test(name);
-    const isPage = /^page-\d{3}\.md$/.test(name);
+    const isLegacyPage2 = /^page-\d{3}\.md$/.test(name);
+    const isPage = /^\d{3}\.md$/.test(name);
     const isScratchpad = name === 'scratchpad.md';
-    if ((isLegacyPage || isPage || isScratchpad) && !expectedNames.has(name)) {
+    if ((isLegacyPage || isLegacyPage2 || isPage || isScratchpad) && !expectedNames.has(name)) {
       await projectDir.removeEntry(name);
     }
   }
@@ -233,7 +235,8 @@ export async function writeProjectFiles(
   dirHandle: FileSystemDirectoryHandle,
   projectId: string,
   pages: string[],
-  scratchpad = ''
+  scratchpad = '',
+  title?: string
 ): Promise<void> {
   try {
     if (dirHandle !== lastGrantedHandle) {
@@ -241,8 +244,9 @@ export async function writeProjectFiles(
       if (permission && permission !== 'granted') return;
       lastGrantedHandle = dirHandle;
     }
-    const projectDir = await dirHandle.getDirectoryHandle(projectId, { create: true });
-    await syncProjectDirectory(projectDir, projectId, pages, scratchpad);
+    const folderName = title?.trim() || projectId;
+    const projectDir = await dirHandle.getDirectoryHandle(folderName, { create: true });
+    await syncProjectDirectory(projectDir, projectId, pages, scratchpad, title);
   } catch {
     lastGrantedHandle = null;
   }
@@ -293,6 +297,7 @@ interface PendingOPFSWrite {
   pages: string[];
   projectId?: string;
   scratchpad: string;
+  title?: string;
 }
 
 interface OPFSWriteOptions {
@@ -313,10 +318,11 @@ async function flushPendingOPFSWrite(): Promise<void> {
   opfsWriteTimer = null;
   try {
     const root = await navigator.storage.getDirectory();
-    const dir = pending.projectId
-      ? await root.getDirectoryHandle(pending.projectId, { create: true })
+    const folderName = pending.title?.trim() || pending.projectId;
+    const dir = folderName
+      ? await root.getDirectoryHandle(folderName, { create: true })
       : root;
-    await syncProjectDirectory(dir, pending.projectId ?? 'default', pending.pages, pending.scratchpad);
+    await syncProjectDirectory(dir, pending.projectId ?? 'default', pending.pages, pending.scratchpad, pending.title);
   } catch {
     // silently fail
   }
@@ -327,9 +333,10 @@ export async function writeToOPFS(
   projectId?: string,
   scratchpad = '',
   options: OPFSWriteOptions = {},
+  title?: string,
 ): Promise<void> {
   if (!('storage' in navigator && 'getDirectory' in navigator.storage)) return;
-  opfsPendingWrite = { pages, projectId, scratchpad };
+  opfsPendingWrite = { pages, projectId, scratchpad, title };
 
   const delay = options.delay ?? 500;
   if (delay <= 0) {
