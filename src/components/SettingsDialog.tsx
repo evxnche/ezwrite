@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Cloud, Copy, Eye, EyeOff, FolderOpen, Lock, RefreshCw, Cpu } from 'lucide-react';
+import { Cloud, Copy, Eye, EyeOff, FolderOpen, Lock, RefreshCw } from 'lucide-react';
 import DialogSupportFooter from './DialogSupportFooter';
 import { BUG_REPORT_EMAIL } from '@/lib/bug-report';
 import { copyLandingPageUrl, getLandingPageDisplayLabel, getLandingPageUrl } from '@/lib/app-links';
@@ -131,10 +131,6 @@ interface Props {
   onToggleActiveProjectSync?: () => void;
   accessToken?: string;
   userId?: string;
-  mcpSyncEnabled?: boolean;
-  onToggleMcpSync?: () => void;
-  mcpToken?: string | null;
-  mcpUrl?: string | null;
 }
 
 export const SettingsDialog: React.FC<Props> = ({
@@ -203,10 +199,6 @@ export const SettingsDialog: React.FC<Props> = ({
   onToggleActiveProjectSync,
   accessToken,
   userId,
-  mcpSyncEnabled,
-  onToggleMcpSync,
-  mcpToken,
-  mcpUrl,
   autoPairBrackets,
   onToggleAutoPairBrackets,
 }) => {
@@ -542,73 +534,6 @@ export const SettingsDialog: React.FC<Props> = ({
                   {syncError && (
                     <div className="text-[10px] text-destructive lowercase">
                       {syncError}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">ai sync</h3>
-                <div className={`${PANEL_SURFACE} bg-muted/10 p-3 space-y-3`}>
-                  <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 text-muted-foreground text-xs uppercase tracking-wider">
-                      <Cpu size={13} />
-                      mcp server
-                    </span>
-                    <span className={`text-[10px] lowercase ${mcpUrl ? 'text-accent-foreground' : 'text-muted-foreground'}`}>
-                      {mcpUrl ? 'ready' : 'needs folder'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    share this url with your ai assistant (claude, cursor, codex, chatgpt) so it can read and write your notebooks.
-                  </p>
-                  <SettingsToggle
-                    label="enable mcp sync"
-                    checked={mcpSyncEnabled}
-                    onToggle={onToggleMcpSync}
-                  />
-                  {mcpSyncEnabled && (
-                    <div className="space-y-2">
-                      {mcpUrl ? (
-                        <>
-                          <div className="rounded-lg border border-border/60 bg-muted/20 p-2 space-y-1.5">
-                            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">step 1 — start the server</p>
-                            <code className="block font-mono text-[10px] text-foreground bg-background/50 rounded px-2 py-1 select-all">
-                              cd mcp && bun run start
-                            </code>
-                            <p className="text-[10px] text-muted-foreground leading-relaxed">
-                              keep this running in a terminal. that's what your llm talks to.
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              readOnly
-                              value={mcpUrl}
-                              className="flex-1 rounded-lg border border-border bg-muted/30 px-2 py-1.5 font-mono text-[10px] text-foreground outline-none select-all"
-                              onClick={(e) => (e.target as HTMLInputElement).select()}
-                            />
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                try {
-                                  await navigator.clipboard.writeText(mcpUrl);
-                                } catch { /* */ }
-                              }}
-                              className="shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-mono bg-accent/20 text-accent-foreground"
-                            >
-                              copy
-                            </button>
-                          </div>
-                          <p className="text-[10px] text-muted-foreground leading-relaxed">
-                            step 2 — paste this into your llm's mcp / server settings (claude desktop, cursor, codex, etc.)
-                          </p>
-                        </>
-                      ) : (
-                        <p className="text-xs text-muted-foreground leading-relaxed">
-                          pick a save folder above to generate your mcp url.
-                        </p>
-                      )}
                     </div>
                   )}
                 </div>

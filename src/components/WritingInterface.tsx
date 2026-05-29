@@ -90,7 +90,6 @@ import { runSequentialSyncBatch, toSyncError } from '@/lib/sync-retry';
 import { recordBugReportBreadcrumb, setBugReportRuntimeContext } from '@/lib/bug-report';
 import { loadSyncSession, saveSyncSession, clearSyncSession } from '@/lib/sync-session-store';
 import MobileSyncGate from './MobileSyncGate';
-import { getMcpUrl, ensureMcpToken, readMcpToken } from '@/lib/mcp-sync';
 
 
 const InfoDialog = lazy(() => import('./InfoDialog'));
@@ -364,8 +363,6 @@ const WritingInterface = () => {
   const [syncStatus, setSyncStatus] = useState('local only');
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncError, setSyncError] = useState('');
-  const [mcpSyncEnabled, setMcpSyncEnabled] = useState(() => localStorage.getItem('ezwrite-mcp-sync') === 'true');
-  const [mcpSyncConnected, setMcpSyncConnected] = useState(false);
   const syncPushTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const syncQueueRef = useRef<Set<string>>(new Set());
   const syncSessionRef = useRef<SyncSession | null>(null);
@@ -1970,27 +1967,6 @@ const WritingInterface = () => {
     setSyncStatus('syncing...');
     void runProjectSync(projectId);
   }, [flushCurrentProject, runProjectSync]);
-
-  // --- MCP sync ---
-  const [mcpToken, setMcpToken] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!mcpSyncEnabled || !dirHandleRef.current) {
-      setMcpToken(null);
-      return;
-    }
-    let cancelled = false;
-    ensureMcpToken(dirHandleRef.current).then((token) => {
-      if (!cancelled) setMcpToken(token);
-    });
-    return () => { cancelled = true; };
-  }, [mcpSyncEnabled]);
-
-  const handleToggleMcpSync = useCallback(() => {
-    const next = !mcpSyncEnabled;
-    setMcpSyncEnabled(next);
-    localStorage.setItem('ezwrite-mcp-sync', String(next));
-  }, [mcpSyncEnabled]);
 
   // --- Touch swipe ---
   const touchStartX = useRef(0);
@@ -4120,10 +4096,6 @@ const WritingInterface = () => {
               }}
               notesTransferMode={notesTransferMode}
               onToggleNotesTransferMode={handleToggleNotesTransferMode}
-              mcpSyncEnabled={mcpSyncEnabled}
-              onToggleMcpSync={handleToggleMcpSync}
-              mcpToken={mcpToken}
-              mcpUrl={mcpToken ? getMcpUrl(mcpToken) : null}
             />
           </>
         )}
