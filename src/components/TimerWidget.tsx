@@ -1,8 +1,14 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Play, Pause, RotateCcw, Square, Timer } from 'lucide-react';
+import { loadTimerState, saveTimerState, restoreDisplaySeconds } from './timer-storage';
 
 interface TimerWidgetProps {
   config: string;
+  /**
+   * Stable key for persisting runtime state across unmounts (page switches,
+   * reloads). When omitted, the timer is purely ephemeral.
+   */
+  persistKey?: string;
   onRemove?: () => void;
   onComplete?: () => void;
 }
@@ -41,23 +47,35 @@ function formatTime(s: number): string {
   return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 }
 
-const TimerWidget: React.FC<TimerWidgetProps> = ({ config, onRemove, onComplete }) => {
+const TimerWidget: React.FC<TimerWidgetProps> = ({ config, persistKey, onRemove, onComplete }) => {
   const parsed = useMemo(() => parseConfig(config), [config]);
-  const [seconds, setSeconds] = useState(parsed.initial);
-  const [running, setRunning] = useState(true);
-  const [phase, setPhase] = useState<PomoPhase>('work');
-  const phaseRef = useRef<PomoPhase>('work');
-  const [done, setDone] = useState(false);
-  // Wall-clock anchor: when running, the timestamp at which the current phase started
-  const epochRef = useRef<number>(Date.now());
-  const baseSecondsRef = useRef<number>(parsed.initial);
+  // Restore any persisted runtime state for this timer once, on mount. The key
+  // embeds the config, so editing the timer line yields a fresh key (fresh timer).
+  const saved = useMemo(() => loadTimerState(persistKey), [persistKey]);
 
-  // Re-anchor epoch whenever running starts
+  const [seconds, setSeconds] = useState(() =>
+    saved ? restoreDisplaySeconds(saved, parsed.mode) : parsed.initial,
+  );
+  const [running, setRunning] = useState(saved ? saved.running : true);
+  const [phase, setPhase] = useState<PomoPhase>(saved ? saved.phase : 'work');
+  const phaseRef = useRef<PomoPhase>(saved ? saved.phase : 'work');
+  const [done, setDone] = useState(saved ? saved.done : false);
+  // Wall-clock anchor: when running, the timestamp at which the current phase started
+  const epochRef = useRef<number>(saved ? saved.epoch : Date.now());
+  const baseSecondsRef = useRef<number>(saved ? saved.baseSeconds : parsed.initial);
+
+  // Persist runtime state so the timer survives unmounts (page switches, reloads).
+  // baseSecondsRef/epochRef are always mutated before the setState calls that flip
+  // these deps, so the values read here are current. Runs on mount too (initial save).
   useEffect(() => {
-    if (running && !done) {
-      epochRef.current = Date.now();
-    }
-  }, [running, done]);
+    saveTimerState(persistKey, {
+      baseSeconds: baseSecondsRef.current,
+      epoch: epochRef.current,
+      running,
+      phase: phaseRef.current,
+      done,
+    });
+  }, [persistKey, running, phase, done]);
 
   useEffect(() => {
     if (!running || done) return;
@@ -70,17 +88,18 @@ const TimerWidget: React.FC<TimerWidgetProps> = ({ config, onRemove, onComplete 
       }
       const remaining = baseSecondsRef.current - elapsed;
       if (remaining <= 0) {
-        if (parsed.mode === 'pomodoro') {
-          const np: PomoPhase = phaseRef.current === 'work' ? 'break' : 'work';
-          phaseRef.current = np;
-          setPhase(np);
-          const nextSecs = np === 'work' ? parsed.work : parsed.break;
-          baseSecondsRef.current = nextSecs;
+        // Pomodoro runs a single round: work → break → stop. After the work
+        // phase, switch to the break; after the break, fall through to "done".
+        if (parsed.mode === 'pomodoro' && phaseRef.current === 'work') {
+          phaseRef.current = 'break';
+          setPhase('break');
+          baseSecondsRef.current = parsed.break;
           epochRef.current = Date.now();
-          setSeconds(nextSecs);
+          setSeconds(parsed.break);
           onComplete?.();
           return;
         }
+        // Countdown finished, or pomodoro break finished → stop.
         setDone(true);
         setRunning(false);
         setSeconds(0);
@@ -105,6 +124,9 @@ const TimerWidget: React.FC<TimerWidgetProps> = ({ config, onRemove, onComplete 
 
   const toggle = () => {
     if (done) {
+      // Restart from the top (pomodoro returns to its work phase).
+      phaseRef.current = 'work';
+      setPhase('work');
       baseSecondsRef.current = parsed.initial;
       epochRef.current = Date.now();
       setSeconds(parsed.initial);
@@ -119,6 +141,9 @@ const TimerWidget: React.FC<TimerWidgetProps> = ({ config, onRemove, onComplete 
         } else {
           baseSecondsRef.current = Math.max(0, baseSecondsRef.current - elapsed);
         }
+      } else {
+        // Resuming: re-anchor to now (base already holds the remaining seconds).
+        epochRef.current = Date.now();
       }
       setRunning(r => !r);
     }

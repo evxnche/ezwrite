@@ -2,8 +2,18 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspens
 import { createPortal } from 'react-dom';
 import { ChevronLeft, Trash2, NotebookPen } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import SlashCommandPopup from './SlashCommandPopup';
 import TimerWidget from './TimerWidget';
+import { clearTimerState } from './timer-storage';
 import PolaroidImage from './PolaroidImage';
 import NormalImage from './NormalImage';
 import { useImagePicker } from './useImagePicker';
@@ -350,6 +360,7 @@ const WritingInterface = () => {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isExportingShareCard, setIsExportingShareCard] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+  const [pendingProjectDelete, setPendingProjectDelete] = useState<{ id: string; title: string } | null>(null);
   const [imageDropDialog, setImageDropDialog] = useState<{
     open: boolean;
     dataUrl: string | null;
@@ -1388,9 +1399,14 @@ const WritingInterface = () => {
               return;
             }
             try {
-              const range = currentSel.getRangeAt(0);
-              const rect = range.getBoundingClientRect();
-              if (rect.width > 0 && rect.height > 0) {
+              // Use a collapsed range at the selection focus point (where the
+              // cursor actually is) so the floating button appears next to the
+              // user's active position, not the center of the selection.
+              const focusRange = document.createRange();
+              focusRange.setStart(currentSel.focusNode!, currentSel.focusOffset);
+              focusRange.collapse(true);
+              const rect = focusRange.getBoundingClientRect();
+              if (rect.width >= 0 && rect.height > 0) {
                 setSelectionRect(rect);
               } else {
                 setSelectionRect(null);
@@ -1631,6 +1647,14 @@ const WritingInterface = () => {
   }, [persistScratchpad, scratchpad, switchToProject]);
 
   const handleDeleteProject = useCallback((id: string) => {
+    setPendingProjectDelete({ id, title: getProjectTitle(id) });
+  }, []);
+
+  const confirmDeleteProject = useCallback(() => {
+    const pendingDelete = pendingProjectDelete;
+    if (!pendingDelete) return;
+    const { id } = pendingDelete;
+    setPendingProjectDelete(null);
     const meta = getProjectMeta(id);
     const wasSynced = Boolean(meta?.syncEnabled);
     deleteProject(id);
@@ -1651,7 +1675,11 @@ const WritingInterface = () => {
         setSyncError(error instanceof Error ? error.message : 'Sync delete failed');
       });
     }
-  }, [switchToProject]);
+  }, [pendingProjectDelete, switchToProject]);
+
+  const cancelDeleteProject = useCallback(() => {
+    setPendingProjectDelete(null);
+  }, []);
 
   const handleRenameProject = useCallback((id: string, newTitle: string) => {
     // Save current editor state first so unsaved edits on other lines aren't lost.
@@ -3726,26 +3754,28 @@ const WritingInterface = () => {
         >
           ezwrite.
         </span>
-        <div className="flex items-center gap-3 opacity-60 hover:opacity-100 transition-opacity duration-300">
-          <div className="w-4 h-4 flex items-center justify-center">
-            {isPageEmpty && pageCount > 1 && (
-              <button
-                onClick={() => deletePage(currentPage)}
-                className="text-muted-foreground hover:text-destructive transition-colors"
-                aria-label="Delete current page"
-              >
-                <Trash2 size={16} />
-              </button>
-            )}
-          </div>
-          <button
-            onClick={handleOpenDocs}
-            className="text-muted-foreground hover:text-foreground transition-colors"
-            aria-label="Open notebooks"
-          >
-            <ChevronLeft size={16} />
-          </button>
+      </div>
+
+      {/* Floating Actions */}
+      <div className="fixed top-5 right-4 sm:top-[70px] sm:right-[64px] z-50 flex items-center gap-3 opacity-60 hover:opacity-100 transition-opacity duration-300">
+        <div className="w-4 h-4 flex items-center justify-center">
+          {isPageEmpty && pageCount > 1 && (
+            <button
+              onClick={() => deletePage(currentPage)}
+              className="text-muted-foreground hover:text-destructive transition-colors"
+              aria-label="Delete current page"
+            >
+              <Trash2 size={16} />
+            </button>
+          )}
         </div>
+        <button
+          onClick={handleOpenDocs}
+          className="text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="Open notebooks"
+        >
+          <ChevronLeft size={16} />
+        </button>
       </div>
 
       {/* Editor */}
@@ -3792,8 +3822,8 @@ const WritingInterface = () => {
                 <button
                   className="absolute z-50 flex items-center justify-center bg-background border border-border shadow-lg rounded-full p-2 text-foreground/80 hover:text-foreground hover:bg-accent/50 transition-all hover:scale-105 active:scale-95 cursor-pointer"
                   style={{
-                    top: selectionRect.top - 48,
-                    left: selectionRect.left + (selectionRect.width / 2) - 18,
+                    top: Math.max(16, Math.min(selectionRect.top - 44, window.innerHeight - 64)),
+                    left: Math.max(8, Math.min(selectionRect.left + (selectionRect.width / 2) - 18, window.innerWidth - 44)),
                   }}
                   onClick={(e) => {
                     e.preventDefault();
@@ -3907,11 +3937,14 @@ const WritingInterface = () => {
       {timerSlots.map(({ stableId, config, lineIndex }) => {
         const container = timerContainers.current.get(stableId);
         if (!container) return null;
+        const persistKey = `main:${activeProjectId ?? 'none'}:${currentPage}:${stableId}`;
         return createPortal(
           <TimerWidget
             key={stableId}
             config={config}
+            persistKey={persistKey}
             onRemove={() => {
+              clearTimerState(persistKey);
               pushUndo(true);
               const ls = contentRef.current.split('\n');
               if (lineIndex >= 0) {
@@ -3997,6 +4030,8 @@ const WritingInterface = () => {
           onMoveToEditor={handleInsertFromScratchpad}
           onResize={setScratchpadWidth}
           onClose={() => setScratchpadOpen(false)}
+          timerScope={`scratch:${activeProjectId ?? 'none'}`}
+          onTimerComplete={handleTimerComplete}
           slashCommands={getSlashCommands({
             imagesEnabled: false,
             sidetabEnabled: false,
@@ -4007,6 +4042,38 @@ const WritingInterface = () => {
           }).filter(c => ['list', 'line', 'timer'].includes(c.name))}
         />
       </Suspense>
+
+      <Dialog open={Boolean(pendingProjectDelete)} onOpenChange={(open) => { if (!open) cancelDeleteProject(); }}>
+        <DialogContent className="max-w-[90vw] sm:max-w-md bg-popover text-popover-foreground !rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-mono text-base lowercase">delete notebook?</DialogTitle>
+            <DialogDescription className="font-mono text-sm lowercase">
+              delete this notebook and everything inside it? this cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="font-mono text-sm text-foreground lowercase">
+            {pendingProjectDelete?.title || 'untitled'}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="font-mono lowercase"
+              onClick={cancelDeleteProject}
+            >
+              keep notebook
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              className="font-mono lowercase"
+              onClick={confirmDeleteProject}
+            >
+              delete notebook
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Info dialog */}
       <Suspense fallback={null}>

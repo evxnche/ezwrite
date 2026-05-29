@@ -429,6 +429,17 @@ test('WritingInterface imports the empty-page delete icon used after page creati
   assert.equal(source.includes('<Trash2 size={16} />'), true);
 });
 
+test('WritingInterface confirms notebook deletion before removing a notebook', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  assert.match(source, /const \[pendingProjectDelete, setPendingProjectDelete\] = useState<\{ id: string; title: string \} \| null>\(null\);/);
+  assert.match(source, /const handleDeleteProject = useCallback\(\(id: string\) => \{[\s\S]*?setPendingProjectDelete\(\{ id, title: getProjectTitle\(id\) \}\);[\s\S]*?\}, \[\]\);/);
+  assert.match(source, /const confirmDeleteProject = useCallback\(\(\) => \{[\s\S]*?const pendingDelete = pendingProjectDelete;[\s\S]*?deleteProject\(id\);/);
+  assert.equal(source.includes('delete notebook?'), true);
+  assert.equal(source.includes('delete this notebook and everything inside it? this cannot be undone.'), true);
+  assert.equal(source.includes('keep notebook'), true);
+  assert.equal(source.includes('delete notebook'), true);
+});
+
 test('WritingInterface applies requested dark text color', () => {
   const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   assert.equal(source.includes("darkTextColor: '#F0EEDE'"), true);

@@ -4,6 +4,7 @@ import { GripVertical, X, NotebookPen } from 'lucide-react';
 import type { NotesTransferMode } from './preferences';
 import SlashCommandPopup from './SlashCommandPopup';
 import TimerWidget from './TimerWidget';
+import { clearTimerState } from './timer-storage';
 import { buildTimerSlots } from './timer-identity';
 import {
   contentToHTML,
@@ -46,6 +47,10 @@ interface Props {
   onClose: () => void;
   onResize: (width: number) => void;
   slashCommands: { name: string; description: string }[];
+  /** Prefix for persisting timer runtime state (scoped to the active notebook). */
+  timerScope?: string;
+  /** Fires when a scratchpad timer completes a phase / finishes — used to alert the main editor. */
+  onTimerComplete?: () => void;
 }
 
 interface CursorInfo {
@@ -68,6 +73,8 @@ const ScratchpadPanel: React.FC<Props> = ({
   onClose,
   onResize,
   slashCommands,
+  timerScope,
+  onTimerComplete,
 }) => {
   const isResizingRef = useRef(false);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -80,7 +87,7 @@ const ScratchpadPanel: React.FC<Props> = ({
   const llmAbortRef = useRef<AbortController | null>(null);
 
   const [selectionText, setSelectionText] = useState('');
-  const [selectionRect, setSelectionRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [selectionRect, setSelectionRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   const [timerSlots, setTimerSlots] = useState<Array<{ stableId: string; config: string; lineIndex: number }>>([]);
   const [slashPopup, setSlashPopup] = useState<{ filter: string; lineIndex: number; rect: DOMRect } | null>(null);
   const [popupHighlight, setPopupHighlight] = useState(0);
@@ -291,12 +298,18 @@ const ScratchpadPanel: React.FC<Props> = ({
       return;
     }
 
-    const rect = range.getBoundingClientRect();
+    // Use a collapsed range at the selection focus point so the floating
+    // button appears next to where the cursor actually is.
+    const focusRange = document.createRange();
+    focusRange.setStart(sel.focusNode!, sel.focusOffset);
+    focusRange.collapse(true);
+    const rect = focusRange.getBoundingClientRect();
     setSelectionText(nextSelection);
     setSelectionRect({
       top: rect.top,
       left: rect.left,
-      width: rect.width || 100,
+      width: rect.width || 0,
+      height: rect.height || 24,
     });
   }, [getLineOffsetFromDOMPoint]);
 
@@ -871,8 +884,8 @@ const ScratchpadPanel: React.FC<Props> = ({
         <button
           className="fixed z-50 flex items-center justify-center bg-background border border-border shadow-lg rounded-full p-2 text-foreground/80 hover:text-foreground hover:bg-accent/50 transition-all hover:scale-105 active:scale-95 cursor-pointer"
           style={{
-            top: selectionRect.top - 48,
-            left: selectionRect.left + (selectionRect.width / 2) - 18,
+            top: Math.max(16, Math.min(selectionRect.top - 44, window.innerHeight - 64)),
+            left: Math.max(8, Math.min(selectionRect.left + (selectionRect.width / 2) - 18, window.innerWidth - 44)),
           }}
           onPointerDown={(e) => {
             e.preventDefault();
@@ -899,11 +912,15 @@ const ScratchpadPanel: React.FC<Props> = ({
       {timerSlots.map(({ stableId, config, lineIndex }) => {
         const container = timerContainers.current.get(stableId);
         if (!container) return null;
+        const persistKey = timerScope ? `${timerScope}:${stableId}` : undefined;
         return createPortal(
           <TimerWidget
             key={stableId}
             config={config}
+            persistKey={persistKey}
+            onComplete={onTimerComplete}
             onRemove={() => {
+              clearTimerState(persistKey);
               const lines = contentRef.current.split('\n');
               lines.splice(lineIndex, 1);
               if (!lines.length) lines.push('');
