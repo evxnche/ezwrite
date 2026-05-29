@@ -1,6 +1,6 @@
 import {
   readdirSync, readFileSync, writeFileSync, existsSync,
-  mkdirSync, statSync, watch, rmSync, renameSync,
+  mkdirSync, rmSync, renameSync,
 } from 'node:fs';
 import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
@@ -17,23 +17,26 @@ export interface ProjectMeta {
 
 export interface ProjectData {
   meta: ProjectMeta;
-  pages: string[];      // markdown content
-  scratchpad: string;   // markdown content
+  pages: string[];
+  scratchpad: string;
 }
-
-// --- Token ---
-
-const MCP_CONFIG_FILE = 'mcp.json';
-const EZWRITE_MARKER_DIR = '.ezwrite';
 
 interface McpConfig {
   token: string;
   createdAt: number;
 }
 
-function generateToken(): string {
-  return randomUUID();
-}
+// --- Discovery ---
+
+const MCP_CONFIG_FILE = 'mcp.json';
+const EZWRITE_MARKER_DIR = '.ezwrite';
+
+const COMMON_PARENTS = [
+  join(homedir(), 'Documents'),
+  join(homedir(), 'Desktop'),
+  homedir(),
+  join(homedir(), 'ezwrite-data'),
+];
 
 function loadMcpConfig(dir: string): McpConfig | null {
   const path = join(dir, EZWRITE_MARKER_DIR, MCP_CONFIG_FILE);
@@ -52,106 +55,67 @@ function saveMcpConfig(dir: string, config: McpConfig): void {
   writeFileSync(join(markerDir, MCP_CONFIG_FILE), JSON.stringify(config, null, 2), 'utf-8');
 }
 
-// --- Directory discovery ---
+/** Scan for ALL .ezwrite/mcp.json files and return a map of token → directory. */
+function discoverTokens(): Map<string, string> {
+  const map = new Map<string, string>();
+  const scanned = new Set<string>();
 
-const COMMON_PARENTS = [
-  join(homedir(), 'Documents'),
-  join(homedir(), 'Desktop'),
-  homedir(),
-  join(homedir(), 'ezwrite-data'),
-];
-
-function findExportDirectory(): string | null {
-  // 1. Env var override
-  const envDir = process.env.EZWRITE_EXPORT_DIR;
-  if (envDir && existsSync(envDir)) {
-    const configPath = join(envDir, EZWRITE_MARKER_DIR, MCP_CONFIG_FILE);
-    if (existsSync(configPath)) return envDir;
-  }
-
-  // 2. Scan common parents for .ezwrite/mcp.json
   for (const parent of COMMON_PARENTS) {
     if (!existsSync(parent)) continue;
     try {
       const entries = readdirSync(parent, { withFileTypes: true });
       for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
+        if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
         const candidate = join(parent, entry.name);
-        const configPath = join(candidate, EZWRITE_MARKER_DIR, MCP_CONFIG_FILE);
-        if (existsSync(configPath)) return candidate;
+        if (scanned.has(candidate)) continue;
+        scanned.add(candidate);
+        const config = loadMcpConfig(candidate);
+        if (config) map.set(config.token, candidate);
       }
     } catch { /* */ }
   }
 
-  // 3. Default directory
-  const defaultDir = join(homedir(), 'ezwrite-data');
-  if (!existsSync(defaultDir)) mkdirSync(defaultDir, { recursive: true });
-  return defaultDir;
+  return map;
+}
+
+/** Find the directory for a given token. Re-scans each time so picks are always found. */
+function findDirForToken(token: string, explicitDir?: string): string | null {
+  // 1. Explicit dir override
+  if (explicitDir && existsSync(explicitDir)) {
+    const config = loadMcpConfig(explicitDir);
+    if (config?.token === token) return explicitDir;
+  }
+
+  // 2. Scan all known locations
+  const map = discoverTokens();
+  const dir = map.get(token);
+  if (dir) return dir;
+
+  return null;
 }
 
 // --- Store ---
 
 export class Store {
-  private dataDir: string;
-  private token: string;
-  private listeners: Set<() => void> = new Set();
-  private watcher: ReturnType<typeof watch> | null = null;
+  private explicitDir?: string;
 
   constructor(explicitDir?: string) {
-    this.dataDir = explicitDir ?? findExportDirectory() ?? join(homedir(), 'ezwrite-data');
-    if (!existsSync(this.dataDir)) mkdirSync(this.dataDir, { recursive: true });
-
-    // Token: load existing or generate new
-    const config = loadMcpConfig(this.dataDir);
-    if (config) {
-      this.token = config.token;
-    } else {
-      this.token = generateToken();
-      saveMcpConfig(this.dataDir, { token: this.token, createdAt: Date.now() });
-    }
-
-    // Watch for external changes
-    this.startWatcher();
+    this.explicitDir = explicitDir;
   }
 
-  getDataDir(): string { return this.dataDir; }
-  getToken(): string { return this.token; }
-
-  // --- Projects ---
-
-  listProjects(): ProjectMeta[] {
-    const projects: ProjectMeta[] = [];
-    try {
-      const entries = readdirSync(this.dataDir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        if (entry.name.startsWith('.')) continue;
-        const metaPath = join(this.dataDir, entry.name, 'project.json');
-        if (!existsSync(metaPath)) continue;
-        try {
-          const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
-          projects.push({
-            id: meta.id ?? entry.name,
-            title: meta.title,
-            createdAt: meta.createdAt ?? 0,
-            updatedAt: meta.updatedAt ?? 0,
-          });
-        } catch { /* */ }
-      }
-    } catch { /* */ }
-    return projects.sort((a, b) => b.updatedAt - a.updatedAt);
+  private getDir(token: string): string | null {
+    return findDirForToken(token, this.explicitDir);
   }
 
-  getProject(id: string): ProjectData | null {
-    const dir = join(this.dataDir, id);
+  private readProjectDir(dir: string): ProjectData | null {
     if (!existsSync(dir)) return null;
 
-    let meta: ProjectMeta = { id, createdAt: 0, updatedAt: 0 };
+    let meta: ProjectMeta = { id: basename(dir), createdAt: 0, updatedAt: 0 };
     try {
       const raw = readFileSync(join(dir, 'project.json'), 'utf-8');
       const parsed = JSON.parse(raw);
       meta = {
-        id: parsed.id ?? id,
+        id: parsed.id ?? basename(dir),
         title: parsed.title,
         createdAt: parsed.createdAt ?? 0,
         updatedAt: parsed.updatedAt ?? 0,
@@ -160,7 +124,6 @@ export class Store {
 
     const pages = this.readPages(dir);
     const scratchpad = this.readScratchpad(dir);
-
     return { meta, pages, scratchpad };
   }
 
@@ -173,9 +136,7 @@ export class Store {
       if (!existsSync(path)) break;
       try {
         pages.push(readFileSync(path, 'utf-8'));
-      } catch {
-        pages.push('');
-      }
+      } catch { pages.push(''); }
       i++;
     }
     return pages.length ? pages : [''];
@@ -184,18 +145,77 @@ export class Store {
   private readScratchpad(dir: string): string {
     const path = join(dir, 'scratchpad.md');
     if (!existsSync(path)) return '';
-    try {
-      return readFileSync(path, 'utf-8');
-    } catch { return ''; }
+    try { return readFileSync(path, 'utf-8'); } catch { return ''; }
   }
 
-  // --- Write ---
+  // --- Public API (token-scoped) ---
 
-  createProject(firstPageContent = '', title?: string): ProjectData {
+  validateToken(token: string): boolean {
+    return this.getDir(token) !== null;
+  }
+
+  getDataDir(token: string): string | null {
+    return this.getDir(token);
+  }
+
+  listProjects(token: string): ProjectMeta[] {
+    const dir = this.getDir(token);
+    if (!dir) return [];
+
+    const projects: ProjectMeta[] = [];
+    try {
+      const entries = readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+        const projectDir = join(dir, entry.name);
+        const metaPath = join(projectDir, 'project.json');
+        if (!existsSync(metaPath)) continue;
+        try {
+          const raw = readFileSync(metaPath, 'utf-8');
+          const parsed = JSON.parse(raw);
+          projects.push({
+            id: parsed.id ?? entry.name,
+            title: parsed.title,
+            createdAt: parsed.createdAt ?? 0,
+            updatedAt: parsed.updatedAt ?? 0,
+          });
+        } catch { /* */ }
+      }
+    } catch { /* */ }
+    return projects.sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  getProject(token: string, id: string): ProjectData | null {
+    const dir = this.getDir(token);
+    if (!dir) return null;
+    const projectDir = join(dir, id);
+    return this.readProjectDir(projectDir);
+  }
+
+  getPage(token: string, id: string, pageIndex: number): string | null {
+    const dir = this.getDir(token);
+    if (!dir) return null;
+    const projectDir = join(dir, id);
+    const pages = this.readPages(projectDir);
+    if (pageIndex < 0 || pageIndex >= pages.length) return null;
+    return pages[pageIndex];
+  }
+
+  getScratchpad(token: string, id: string): string | null {
+    const dir = this.getDir(token);
+    if (!dir) return null;
+    const projectDir = join(dir, id);
+    return this.readScratchpad(projectDir);
+  }
+
+  createProject(token: string, firstPageContent = '', title?: string): ProjectData {
+    const dir = this.getDir(token);
+    if (!dir) throw new Error('No data directory found for this token');
+
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
     const now = Date.now();
-    const dir = join(this.dataDir, id);
-    mkdirSync(dir, { recursive: true });
+    const projectDir = join(dir, id);
+    mkdirSync(projectDir, { recursive: true });
 
     const meta: ProjectMeta = {
       id,
@@ -204,40 +224,43 @@ export class Store {
       updatedAt: now,
     };
 
-    writeFileSync(join(dir, 'project.json'), JSON.stringify({
+    writeFileSync(join(projectDir, 'project.json'), JSON.stringify({
       id,
-      title: meta.title ?? getProjectTitleFromMarkdown([firstPageContent]),
+      title: meta.title ?? getTitleFromText(firstPageContent),
       pageCount: 1,
       hasScratchpad: false,
       updatedAt: now,
     }, null, 2), 'utf-8');
 
-    writeFileSync(join(dir, 'page-001.md'), firstPageContent || '', 'utf-8');
+    writeFileSync(join(projectDir, 'page-001.md'), firstPageContent || '', 'utf-8');
 
     return { meta, pages: [firstPageContent || ''], scratchpad: '' };
   }
 
-  updatePage(id: string, pageIndex: number, content: string): void {
-    const dir = join(this.dataDir, id);
-    if (!existsSync(dir)) return;
+  updatePage(token: string, id: string, pageIndex: number, content: string): void {
+    const dir = this.getDir(token);
+    if (!dir) return;
+    const projectDir = join(dir, id);
+    if (!existsSync(projectDir)) return;
 
     const fileName = `page-${String(pageIndex + 1).padStart(3, '0')}.md`;
-    writeFileSync(join(dir, fileName), content, 'utf-8');
-    this.touchProjectMeta(id);
+    writeFileSync(join(projectDir, fileName), content, 'utf-8');
+    this.touchMeta(projectDir);
   }
 
-  addPage(id: string, content = ''): number {
-    const dir = join(this.dataDir, id);
-    if (!existsSync(dir)) return -1;
+  addPage(token: string, id: string, content = ''): number {
+    const dir = this.getDir(token);
+    if (!dir) return -1;
+    const projectDir = join(dir, id);
+    if (!existsSync(projectDir)) return -1;
 
-    const pages = this.readPages(dir);
+    const pages = this.readPages(projectDir);
     const newIndex = pages.length;
     const fileName = `page-${String(newIndex + 1).padStart(3, '0')}.md`;
-    writeFileSync(join(dir, fileName), content, 'utf-8');
+    writeFileSync(join(projectDir, fileName), content, 'utf-8');
 
-    // Update meta
     try {
-      const metaPath = join(dir, 'project.json');
+      const metaPath = join(projectDir, 'project.json');
       const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
       meta.pageCount = newIndex + 1;
       meta.updatedAt = Date.now();
@@ -247,28 +270,27 @@ export class Store {
     return newIndex;
   }
 
-  deletePage(id: string, pageIndex: number): void {
-    const dir = join(this.dataDir, id);
-    if (!existsSync(dir)) return;
+  deletePage(token: string, id: string, pageIndex: number): void {
+    const dir = this.getDir(token);
+    if (!dir) return;
+    const projectDir = join(dir, id);
+    if (!existsSync(projectDir)) return;
 
-    const pages = this.readPages(dir);
+    const pages = this.readPages(projectDir);
     if (pages.length <= 1) return;
     if (pageIndex < 0 || pageIndex >= pages.length) return;
 
-    // Remove the file
     const fileName = `page-${String(pageIndex + 1).padStart(3, '0')}.md`;
-    try { rmSync(join(dir, fileName)); } catch { /* */ }
+    try { rmSync(join(projectDir, fileName)); } catch { /* */ }
 
-    // Rename subsequent pages down
     for (let i = pageIndex + 1; i < pages.length; i++) {
       const oldName = `page-${String(i + 1).padStart(3, '0')}.md`;
       const newName = `page-${String(i).padStart(3, '0')}.md`;
-      try { renameSync(join(dir, oldName), join(dir, newName)); } catch { /* */ }
+      try { renameSync(join(projectDir, oldName), join(projectDir, newName)); } catch { /* */ }
     }
 
-    // Update meta
     try {
-      const metaPath = join(dir, 'project.json');
+      const metaPath = join(projectDir, 'project.json');
       const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
       meta.pageCount = pages.length - 1;
       meta.updatedAt = Date.now();
@@ -276,13 +298,15 @@ export class Store {
     } catch { /* */ }
   }
 
-  saveScratchpad(id: string, value: string): void {
-    const dir = join(this.dataDir, id);
-    if (!existsSync(dir)) return;
-    writeFileSync(join(dir, 'scratchpad.md'), value, 'utf-8');
+  saveScratchpad(token: string, id: string, value: string): void {
+    const dir = this.getDir(token);
+    if (!dir) return;
+    const projectDir = join(dir, id);
+    if (!existsSync(projectDir)) return;
+    writeFileSync(join(projectDir, 'scratchpad.md'), value, 'utf-8');
 
     try {
-      const metaPath = join(dir, 'project.json');
+      const metaPath = join(projectDir, 'project.json');
       const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
       meta.hasScratchpad = Boolean(value.trim());
       meta.updatedAt = Date.now();
@@ -290,14 +314,16 @@ export class Store {
     } catch { /* */ }
   }
 
-  renameProject(id: string, newTitle: string): void {
-    const dir = join(this.dataDir, id);
-    if (!existsSync(dir)) return;
+  renameProject(token: string, id: string, newTitle: string): void {
+    const dir = this.getDir(token);
+    if (!dir) return;
+    const projectDir = join(dir, id);
+    if (!existsSync(projectDir)) return;
     const cleaned = newTitle.trim();
     if (!cleaned) return;
 
     try {
-      const metaPath = join(dir, 'project.json');
+      const metaPath = join(projectDir, 'project.json');
       const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
       meta.title = cleaned;
       meta.updatedAt = Date.now();
@@ -305,20 +331,20 @@ export class Store {
     } catch { /* */ }
   }
 
-  deleteProject(id: string): void {
-    const dir = join(this.dataDir, id);
-    if (!existsSync(dir)) return;
-    try { rmSync(dir, { recursive: true }); } catch { /* */ }
+  deleteProject(token: string, id: string): void {
+    const dir = this.getDir(token);
+    if (!dir) return;
+    const projectDir = join(dir, id);
+    if (!existsSync(projectDir)) return;
+    try { rmSync(projectDir, { recursive: true }); } catch { /* */ }
   }
 
-  // --- Search ---
-
-  searchNotes(query: string): Array<{ projectId: string; projectTitle: string; pageIndex: number; lineMatches: string[]; scratchpadMatches?: string[] }> {
+  searchNotes(token: string, query: string): Array<{ projectId: string; projectTitle: string; pageIndex: number; lineMatches: string[]; scratchpadMatches?: string[] }> {
     const results: Array<{ projectId: string; projectTitle: string; pageIndex: number; lineMatches: string[]; scratchpadMatches?: string[] }> = [];
     const q = query.toLowerCase();
 
-    for (const meta of this.listProjects()) {
-      const project = this.getProject(meta.id);
+    for (const meta of this.listProjects(token)) {
+      const project = this.getProject(token, meta.id);
       if (!project) continue;
       let hasMatch = false;
 
@@ -343,41 +369,18 @@ export class Store {
 
   // --- Helpers ---
 
-  private touchProjectMeta(id: string): void {
-    const dir = join(this.dataDir, id);
-    if (!existsSync(dir)) return;
+  private touchMeta(projectDir: string): void {
     try {
-      const metaPath = join(dir, 'project.json');
+      const metaPath = join(projectDir, 'project.json');
       const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
       meta.updatedAt = Date.now();
       writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf-8');
     } catch { /* */ }
   }
-
-  // --- Watch ---
-
-  private startWatcher(): void {
-    try {
-      this.watcher = watch(this.dataDir, { recursive: true }, (_event, filename) => {
-        if (typeof filename === 'string' && filename.includes(EZWRITE_MARKER_DIR)) return;
-        this.notifyListeners();
-      });
-    } catch { /* */ }
-  }
-
-  onChange(listener: () => void): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  private notifyListeners(): void {
-    for (const listener of this.listeners) listener();
-  }
 }
 
-function getProjectTitleFromMarkdown(markdowns: string[]): string {
-  const first = markdowns[0] ?? '';
-  for (const line of first.split('\n')) {
+function getTitleFromText(text: string): string {
+  for (const line of text.split('\n')) {
     const clean = line.trim();
     if (clean) return clean.replace(/^#+\s*/, '').replace(/^>\s*/, '').slice(0, 120);
   }

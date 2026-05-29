@@ -566,6 +566,15 @@ export const SettingsDialog: React.FC<Props> = ({
                     <div className="space-y-2">
                       {mcpUrl ? (
                         <>
+                          <div className="rounded-lg border border-border/60 bg-muted/20 p-2 space-y-1.5">
+                            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">step 1 — start the server</p>
+                            <code className="block font-mono text-[10px] text-foreground bg-background/50 rounded px-2 py-1 select-all">
+                              cd mcp && bun run start
+                            </code>
+                            <p className="text-[10px] text-muted-foreground leading-relaxed">
+                              keep this running in a terminal. that's what your llm talks to.
+                            </p>
+                          </div>
                           <div className="flex items-center gap-2">
                             <input
                               type="text"
@@ -587,7 +596,7 @@ export const SettingsDialog: React.FC<Props> = ({
                             </button>
                           </div>
                           <p className="text-[10px] text-muted-foreground leading-relaxed">
-                            paste this into your llm's mcp / server settings. your notebooks live in the folder you picked — the llm reads and writes those same files.
+                            step 2 — paste this into your llm's mcp / server settings (claude desktop, cursor, codex, etc.)
                           </p>
                         </>
                       ) : (
