@@ -631,6 +631,10 @@ const WritingInterface = () => {
   const [exportCenterAlign, setExportCenterAlign] = useState(() => localStorage.getItem('ezwrite-export-center-align') === 'true');
   const handleToggleExportCenterAlign = () => setExportCenterAlign(v => { const next = !v; localStorage.setItem('ezwrite-export-center-align', String(next)); return next; });
 
+  // Auto-pair brackets toggle (persisted, default on)
+  const [autoPairBrackets, setAutoPairBrackets] = useState(() => localStorage.getItem('ezwrite-auto-pair-brackets') !== 'false');
+  const handleToggleAutoPairBrackets = () => setAutoPairBrackets(v => { const next = !v; localStorage.setItem('ezwrite-auto-pair-brackets', String(next)); return next; });
+
   const slashCommands = useMemo(() => getSlashCommands({
     imagesEnabled,
     sidetabEnabled,
@@ -2765,7 +2769,7 @@ const WritingInterface = () => {
 
     // Auto-close brackets: (), [], {}
     const BRACKET_PAIRS: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
-    if (BRACKET_PAIRS[e.key]) {
+    if (autoPairBrackets && BRACKET_PAIRS[e.key]) {
       e.preventDefault();
       document.execCommand('insertText', false, e.key + BRACKET_PAIRS[e.key]);
       const sel = window.getSelection();
@@ -2781,7 +2785,7 @@ const WritingInterface = () => {
     }
 
     // Item 19: auto-close double quotes, position cursor between them
-    if (e.key === '"') {
+    if (autoPairBrackets && e.key === '"') {
       e.preventDefault();
       document.execCommand('insertText', false, '""');
       const sel = window.getSelection();
@@ -4083,6 +4087,8 @@ const WritingInterface = () => {
               onToggleJustify={handleToggleJustify}
               exportCenterAlign={exportCenterAlign}
               onToggleExportCenterAlign={handleToggleExportCenterAlign}
+              autoPairBrackets={autoPairBrackets}
+              onToggleAutoPairBrackets={handleToggleAutoPairBrackets}
               dirName={getDirName(dirHandle)}
               onPickFolder={handlePickFolder}
               onClearFolder={handleClearFolder}

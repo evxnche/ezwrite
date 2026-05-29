@@ -104,6 +104,8 @@ interface Props {
   onToggleExportCenterAlign?: () => void;
   notesTransferMode?: 'move' | 'copy';
   onToggleNotesTransferMode?: () => void;
+  autoPairBrackets?: boolean;
+  onToggleAutoPairBrackets?: () => void;
   dirName?: string;
   onPickFolder?: () => void;
   onClearFolder?: () => void;
@@ -205,6 +207,8 @@ export const SettingsDialog: React.FC<Props> = ({
   onToggleMcpSync,
   mcpToken,
   mcpUrl,
+  autoPairBrackets,
+  onToggleAutoPairBrackets,
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('storage');
   const [landingCopied, setLandingCopied] = useState(false);
@@ -337,6 +341,7 @@ export const SettingsDialog: React.FC<Props> = ({
                 <SettingsToggle label="center align text in img export" checked={exportCenterAlign} onToggle={onToggleExportCenterAlign} />
                 <SettingsToggle label="polaroid frames" checked={polaroidFramesEnabled} onToggle={onTogglePolaroidFrames} />
                 <SettingsToggle label="cmd+←/→ pages" checked={cmdArrowPageNav} onToggle={onToggleCmdArrowPageNav} />
+                <SettingsToggle label="auto-close brackets" checked={autoPairBrackets} onToggle={onToggleAutoPairBrackets} />
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-muted-foreground text-xs uppercase tracking-wider">transfer to scratchpad</span>
