@@ -244,7 +244,7 @@ export async function writeProjectFiles(
       if (permission && permission !== 'granted') return;
       lastGrantedHandle = dirHandle;
     }
-    const folderName = title?.trim() || projectId;
+    const folderName = (title?.trim() && title.trim() !== 'untitled') ? title.trim() : projectId;
     const projectDir = await dirHandle.getDirectoryHandle(folderName, { create: true });
     await syncProjectDirectory(projectDir, projectId, pages, scratchpad, title);
   } catch {
@@ -318,7 +318,7 @@ async function flushPendingOPFSWrite(): Promise<void> {
   opfsWriteTimer = null;
   try {
     const root = await navigator.storage.getDirectory();
-    const folderName = pending.title?.trim() || pending.projectId;
+    const folderName = (pending.title?.trim() && pending.title.trim() !== 'untitled') ? pending.title.trim() : pending.projectId;
     const dir = folderName
       ? await root.getDirectoryHandle(folderName, { create: true })
       : root;
