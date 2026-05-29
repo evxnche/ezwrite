@@ -150,6 +150,13 @@ const getDefaultPage = (index: number): string => {
   return '';
 };
 
+function getUntitledFolderName(projectId: string): string {
+  const projects = listProjects();
+  const untitledProjects = projects.filter(p => !p.title?.trim() || p.title.trim() === 'untitled');
+  const index = untitledProjects.findIndex(p => p.id === projectId);
+  return `Untitled_${String(index + 1).padStart(3, '0')}`;
+}
+
 function getInitialProjectState(): { projects: ProjectMeta[]; activeProjectId: string | null } {
   initProjects();
   return {
@@ -705,7 +712,10 @@ const WritingInterface = () => {
       setDirHandle(h);
       dirHandleRef.current = h;
       // Write all pages immediately after picking
-      writeProjectFiles(h, activeProjectIdRef.current ?? 'default', pagesRef.current, scratchpad, activeProjectIdRef.current ? getProjectTitle(activeProjectIdRef.current) : undefined);
+      const activeId = activeProjectIdRef.current;
+      const title = activeId ? getProjectTitle(activeId) : undefined;
+      const folderTitle = title === 'untitled' && activeId ? getUntitledFolderName(activeId) : title;
+    writeProjectFiles(h, activeId ?? 'default', pagesRef.current, scratchpad, folderTitle);
     }
   };
 
@@ -1012,9 +1022,9 @@ const WritingInterface = () => {
     clearTimeout(scratchpadPersistTimeoutRef.current);
     scratchpadPersistTimeoutRef.current = setTimeout(() => {
       if (dirHandleRef.current) {
-        void writeProjectFiles(dirHandleRef.current, projectId, pagesSnapshot, value, getProjectTitle(projectId));
+        void writeProjectFiles(dirHandleRef.current, projectId, pagesSnapshot, value, getProjectTitle(projectId) === 'untitled' ? getUntitledFolderName(projectId) : getProjectTitle(projectId));
       }
-      void writeToOPFS(pagesSnapshot, projectId, value, {}, getProjectTitle(projectId));
+      void writeToOPFS(pagesSnapshot, projectId, value, {}, getProjectTitle(projectId) === 'untitled' ? getUntitledFolderName(projectId) : getProjectTitle(projectId));
       scheduleSyncPush(projectId);
     }, 250);
   }, [scheduleSyncPush]);
@@ -1030,9 +1040,9 @@ const WritingInterface = () => {
     clearTimeout(deferredPersistTimeoutRef.current);
     deferredPersistTimeoutRef.current = setTimeout(() => {
       if (dirHandleRef.current) {
-        void writeProjectFiles(dirHandleRef.current, projectId, pagesSnapshot, scratchpadSnapshot, getProjectTitle(projectId));
+        void writeProjectFiles(dirHandleRef.current, projectId, pagesSnapshot, scratchpadSnapshot, getProjectTitle(projectId) === 'untitled' ? getUntitledFolderName(projectId) : getProjectTitle(projectId));
       }
-      void writeToOPFS(pagesSnapshot, projectId, scratchpadSnapshot, {}, getProjectTitle(projectId));
+      void writeToOPFS(pagesSnapshot, projectId, scratchpadSnapshot, {}, getProjectTitle(projectId) === 'untitled' ? getUntitledFolderName(projectId) : getProjectTitle(projectId));
       scheduleSyncPush(projectId);
     }, 250);
   }, [scheduleSyncPush]);
@@ -1048,9 +1058,9 @@ const WritingInterface = () => {
       saveProjectLastPage(projectId, selectedPage);
     }
     if (dirHandleRef.current) {
-      void writeProjectFiles(dirHandleRef.current, projectId ?? 'default', pagesSnapshot, scratchpadSnapshot, projectId ? getProjectTitle(projectId) : undefined);
+      void writeProjectFiles(dirHandleRef.current, projectId ?? 'default', pagesSnapshot, scratchpadSnapshot, projectId ? (getProjectTitle(projectId) === 'untitled' ? getUntitledFolderName(projectId) : getProjectTitle(projectId)) : undefined);
     }
-    void writeToOPFS(pagesSnapshot, projectId ?? undefined, scratchpadSnapshot, {}, projectId ? getProjectTitle(projectId) : undefined);
+    void writeToOPFS(pagesSnapshot, projectId ?? undefined, scratchpadSnapshot, {}, projectId ? (getProjectTitle(projectId) === 'untitled' ? getUntitledFolderName(projectId) : getProjectTitle(projectId)) : undefined);
     if (projectId) scheduleSyncPush(projectId);
   }, [scheduleSyncPush]);
 
@@ -1068,9 +1078,9 @@ const WritingInterface = () => {
     clearTimeout(deferredPersistTimeoutRef.current);
     clearTimeout(scratchpadPersistTimeoutRef.current);
     if (dirHandleRef.current) {
-      void writeProjectFiles(dirHandleRef.current, projectId, latestPages, scratchpadValue, getProjectTitle(projectId));
+      void writeProjectFiles(dirHandleRef.current, projectId, latestPages, scratchpadValue, getProjectTitle(projectId) === 'untitled' ? getUntitledFolderName(projectId) : getProjectTitle(projectId));
     }
-    void writeToOPFS(latestPages, projectId, scratchpadValue, { delay: 0 }, getProjectTitle(projectId));
+    void writeToOPFS(latestPages, projectId, scratchpadValue, { delay: 0 }, getProjectTitle(projectId) === 'untitled' ? getUntitledFolderName(projectId) : getProjectTitle(projectId));
     scheduleSyncPush(projectId);
   }, [scheduleSyncPush]);
 
