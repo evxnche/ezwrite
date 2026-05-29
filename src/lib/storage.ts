@@ -260,6 +260,35 @@ export function getDirName(handle: FileSystemDirectoryHandle | null): string {
   return handle?.name ?? '';
 }
 
+// --- MCP token ---
+
+const MCP_CONFIG_DIR = '.ezwrite';
+const MCP_CONFIG_FILE = 'mcp.json';
+
+export async function writeMcpConfig(dirHandle: FileSystemDirectoryHandle, token: string): Promise<void> {
+  try {
+    const ezwriteDir = await dirHandle.getDirectoryHandle(MCP_CONFIG_DIR, { create: true });
+    const fileHandle = await ezwriteDir.getFileHandle(MCP_CONFIG_FILE, { create: true });
+    const writable = await (fileHandle as FileSystemFileHandle & WritableHandle).createWritable();
+    await writable.write(JSON.stringify({ token, createdAt: Date.now() }, null, 2));
+    await writable.close();
+  } catch {
+    // silently fail
+  }
+}
+
+export async function readMcpConfig(dirHandle: FileSystemDirectoryHandle): Promise<{ token: string } | null> {
+  try {
+    const ezwriteDir = await dirHandle.getDirectoryHandle(MCP_CONFIG_DIR);
+    const fileHandle = await ezwriteDir.getFileHandle(MCP_CONFIG_FILE);
+    const file = await fileHandle.getFile();
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    if (typeof parsed.token === 'string') return { token: parsed.token };
+  } catch { /* */ }
+  return null;
+}
+
 interface PendingOPFSWrite {
   pages: string[];
   projectId?: string;

@@ -5,9 +5,20 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { z } from 'zod';
 import { Store } from './store.js';
 
-const store = new Store();
 const MCP_PATH = '/mcp';
 const HTTP_PORT = parseInt(process.env.EZWRITE_MCP_PORT ?? '3157', 10);
+
+const store = new Store(process.env.EZWRITE_EXPORT_DIR);
+
+// --- Token validation helper ---
+function extractToken(req: { url?: string }): string | null {
+  try {
+    const url = new URL(req.url ?? '/', 'http://localhost');
+    return url.searchParams.get('token');
+  } catch {
+    return null;
+  }
+}
 
 // --- MCP Server ---
 
@@ -24,12 +35,10 @@ server.tool(
   {},
   async () => {
     const projects = store.listProjects();
-    const activeId = store.getActiveProjectId();
     const lines = projects.map((p) => {
       const data = store.getProject(p.id);
-      const active = p.id === activeId ? ' ← active' : '';
       const pages = data ? data.pages.length : 0;
-      return `- [${p.id}] "${p.title ?? 'untitled'}" (${pages} page${pages !== 1 ? 's' : ''}, updated ${new Date(p.updatedAt).toLocaleString()})${active}`;
+      return `- [${p.id}] "${p.title ?? 'untitled'}" (${pages} page${pages !== 1 ? 's' : ''}, updated ${new Date(p.updatedAt).toLocaleString()})`;
     });
     return {
       content: [{ type: 'text', text: lines.length ? lines.join('\n') : 'No notebooks found.' }],
@@ -39,7 +48,7 @@ server.tool(
 
 server.tool(
   'get_project',
-  'Get full details of a notebook: all page contents and scratchpad.',
+  'Get full details of a notebook: all page contents (markdown) and scratchpad.',
   { id: z.string().describe('Notebook/project ID') },
   async ({ id }) => {
     const project = store.getProject(id);
@@ -70,35 +79,37 @@ server.tool(
 
 server.tool(
   'get_page',
-  'Get the content of a specific page in a notebook.',
+  'Get the content of a specific page in a notebook (markdown).',
   {
     id: z.string().describe('Notebook/project ID'),
     page: z.number().int().min(1).describe('Page number (1-indexed)'),
   },
   async ({ id, page }) => {
-    const content = store.getPage(id, page - 1);
-    if (content === null) return { content: [{ type: 'text', text: `Page ${page} not found in notebook "${id}".` }], isError: true };
-    return { content: [{ type: 'text', text: content }] };
+    const project = store.getProject(id);
+    if (!project || page < 1 || page > project.pages.length) {
+      return { content: [{ type: 'text', text: `Page ${page} not found in notebook "${id}".` }], isError: true };
+    }
+    return { content: [{ type: 'text', text: project.pages[page - 1] }] };
   },
 );
 
 server.tool(
   'get_scratchpad',
-  "Get a notebook's scratchpad content.",
+  "Get a notebook's scratchpad content (markdown).",
   { id: z.string().describe('Notebook/project ID') },
   async ({ id }) => {
-    const content = store.getScratchpad(id);
-    if (content === null) return { content: [{ type: 'text', text: `Notebook "${id}" not found.` }], isError: true };
-    return { content: [{ type: 'text', text: content || '(scratchpad is empty)' }] };
+    const project = store.getProject(id);
+    if (!project) return { content: [{ type: 'text', text: `Notebook "${id}" not found.` }], isError: true };
+    return { content: [{ type: 'text', text: project.scratchpad || '(scratchpad is empty)' }] };
   },
 );
 
 server.tool(
   'create_project',
-  'Create a new notebook with an optional title and first page content.',
+  'Create a new notebook with an optional title and first page content (markdown).',
   {
     title: z.string().optional().describe('Notebook title'),
-    content: z.string().optional().describe('First page content'),
+    content: z.string().optional().describe('First page content (markdown)'),
   },
   async ({ title, content }) => {
     const project = store.createProject(content ?? '', title);
@@ -110,11 +121,11 @@ server.tool(
 
 server.tool(
   'update_page',
-  'Replace the content of a specific page in a notebook.',
+  'Replace the content of a specific page in a notebook (markdown).',
   {
     id: z.string().describe('Notebook/project ID'),
     page: z.number().int().min(1).describe('Page number (1-indexed)'),
-    content: z.string().describe('New page content'),
+    content: z.string().describe('New page content (markdown)'),
   },
   async ({ id, page, content }) => {
     const project = store.getProject(id);
@@ -132,7 +143,7 @@ server.tool(
   'Add a new page to a notebook.',
   {
     id: z.string().describe('Notebook/project ID'),
-    content: z.string().optional().describe('Page content'),
+    content: z.string().optional().describe('Page content (markdown)'),
   },
   async ({ id, content }) => {
     const pageIndex = store.addPage(id, content ?? '');
@@ -143,10 +154,10 @@ server.tool(
 
 server.tool(
   'update_scratchpad',
-  "Replace a notebook's scratchpad content.",
+  "Replace a notebook's scratchpad content (markdown).",
   {
     id: z.string().describe('Notebook/project ID'),
-    content: z.string().describe('New scratchpad content'),
+    content: z.string().describe('New scratchpad content (markdown)'),
   },
   async ({ id, content }) => {
     const project = store.getProject(id);
@@ -212,11 +223,13 @@ server.tool(
     content: z.string().describe('Text to append'),
   },
   async ({ id, page, content }) => {
-    const current = store.getPage(id, page - 1);
-    if (current === null) return { content: [{ type: 'text', text: `Page ${page} not found in notebook "${id}".` }], isError: true };
-    store.updatePage(id, page - 1, current + (current && !current.endsWith('\n') ? '\n' : '') + content);
     const project = store.getProject(id);
-    return { content: [{ type: 'text', text: `Appended to page ${page} of "${project?.meta.title ?? 'untitled'}".` }] };
+    if (!project || page < 1 || page > project.pages.length) {
+      return { content: [{ type: 'text', text: `Page ${page} not found in notebook "${id}".` }], isError: true };
+    }
+    const current = project.pages[page - 1];
+    store.updatePage(id, page - 1, current + (current && !current.endsWith('\n') ? '\n' : '') + content);
+    return { content: [{ type: 'text', text: `Appended to page ${page} of "${project.meta.title ?? 'untitled'}".` }] };
   },
 );
 
@@ -228,15 +241,15 @@ server.tool(
     content: z.string().describe('Text to append'),
   },
   async ({ id, content }) => {
-    const current = store.getScratchpad(id);
-    if (current === null) return { content: [{ type: 'text', text: `Notebook "${id}" not found.` }], isError: true };
-    store.saveScratchpad(id, current + (current && !current.endsWith('\n') ? '\n' : '') + content);
     const project = store.getProject(id);
-    return { content: [{ type: 'text', text: `Appended to scratchpad of "${project?.meta.title ?? 'untitled'}".` }] };
+    if (!project) return { content: [{ type: 'text', text: `Notebook "${id}" not found.` }], isError: true };
+    const current = project.scratchpad;
+    store.saveScratchpad(id, current + (current && !current.endsWith('\n') ? '\n' : '') + content);
+    return { content: [{ type: 'text', text: `Appended to scratchpad of "${project.meta.title ?? 'untitled'}".` }] };
   },
 );
 
-// ---- HTTP Server (MCP Streamable HTTP + REST API + WebSocket) ----
+// ---- HTTP Server (MCP Streamable HTTP with token auth) ----
 
 async function main() {
   const transport = new StreamableHTTPServerTransport({
@@ -245,27 +258,50 @@ async function main() {
   await server.connect(transport);
 
   const httpServer = createServer(async (req, res) => {
-    const url = new URL(req.url ?? '/', `http://localhost`);
+    const url = new URL(req.url ?? '/', 'http://localhost');
+
     if (url.pathname === MCP_PATH) {
+      // Validate token
+      const token = extractToken(req);
+      if (token !== store.getToken()) {
+        res.statusCode = 401;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Invalid or missing token. Check your MCP URL.' }));
+        return;
+      }
       await transport.handleRequest(req, res);
+      return;
     }
+
+    // Simple status endpoint
+    if (url.pathname === '/') {
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'text/plain');
+      res.end('ezwrite MCP server is running. Use /mcp?token=... for MCP connection.');
+      return;
+    }
+
+    res.statusCode = 404;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'Not found' }));
   });
 
-  // Attach REST API + WebSocket (routes /api/* and /ws)
-  const { attachRestAndWs } = await import('./http.js');
-  attachRestAndWs(httpServer, store);
-
   httpServer.listen(HTTP_PORT, () => {
-    console.log(``);
-    console.log(`  ✦ ezwrite MCP server running`);
-    console.log(``);
-    console.log(`  Paste this URL into your LLM's MCP settings:`);
-    console.log(``);
-    console.log(`  http://localhost:${HTTP_PORT}${MCP_PATH}`);
-    console.log(``);
-    console.log(`  REST API: http://localhost:${HTTP_PORT}/api`);
-    console.log(`  WebSocket: ws://localhost:${HTTP_PORT}/ws`);
-    console.log(``);
+    const dataDir = store.getDataDir();
+    const token = store.getToken();
+    const url = `http://localhost:${HTTP_PORT}${MCP_PATH}?token=${token}`;
+
+    console.log('');
+    console.log('  ✦ ezwrite MCP server running');
+    console.log('');
+    console.log(`  Reading from: ${dataDir}`);
+    console.log('');
+    console.log('  Paste this URL into your LLM\'s MCP settings:');
+    console.log('');
+    console.log(`  ${url}`);
+    console.log('');
+    console.log('  Or share it with a friend — it connects to your local folder.');
+    console.log('');
   });
 }
 

@@ -90,7 +90,7 @@ import { runSequentialSyncBatch, toSyncError } from '@/lib/sync-retry';
 import { recordBugReportBreadcrumb, setBugReportRuntimeContext } from '@/lib/bug-report';
 import { loadSyncSession, saveSyncSession, clearSyncSession } from '@/lib/sync-session-store';
 import MobileSyncGate from './MobileSyncGate';
-import { startMcpSync, stopMcpSync, isMcpSyncConnected, onMcpSyncChange, pushLocalStorageToMcp, pullMcpToLocalStorage } from '@/lib/mcp-sync';
+import { getMcpUrl, ensureMcpToken, readMcpToken } from '@/lib/mcp-sync';
 
 
 const InfoDialog = lazy(() => import('./InfoDialog'));
@@ -1958,20 +1958,18 @@ const WritingInterface = () => {
   }, [flushCurrentProject, runProjectSync]);
 
   // --- MCP sync ---
+  const [mcpToken, setMcpToken] = useState<string | null>(null);
+
   useEffect(() => {
-    if (!mcpSyncEnabled) {
-      stopMcpSync();
-      setMcpSyncConnected(false);
+    if (!mcpSyncEnabled || !dirHandleRef.current) {
+      setMcpToken(null);
       return;
     }
-    startMcpSync();
-    const checkInterval = setInterval(() => setMcpSyncConnected(isMcpSyncConnected()), 2000);
-    const unsubscribe = onMcpSyncChange(() => setMcpSyncConnected(isMcpSyncConnected()));
-    return () => {
-      clearInterval(checkInterval);
-      unsubscribe();
-      stopMcpSync();
-    };
+    let cancelled = false;
+    ensureMcpToken(dirHandleRef.current).then((token) => {
+      if (!cancelled) setMcpToken(token);
+    });
+    return () => { cancelled = true; };
   }, [mcpSyncEnabled]);
 
   const handleToggleMcpSync = useCallback(() => {
@@ -1979,30 +1977,6 @@ const WritingInterface = () => {
     setMcpSyncEnabled(next);
     localStorage.setItem('ezwrite-mcp-sync', String(next));
   }, [mcpSyncEnabled]);
-
-  const handlePushToMcp = useCallback(async () => {
-    try {
-      await pushLocalStorageToMcp();
-    } catch (err) {
-      console.error('MCP push failed:', err);
-    }
-  }, []);
-
-  const handlePullFromMcp = useCallback(async () => {
-    try {
-      await pullMcpToLocalStorage();
-      setProjects(listProjects());
-      const activeId = getActiveProjectId();
-      if (activeId) {
-        setActiveProjectId(activeId);
-        const pages = getProjectPages(activeId);
-        setCurrentPageContent(pages[getProjectLastPage(activeId)] ?? '');
-        setScratchpadValue(getProjectScratchpad(activeId));
-      }
-    } catch (err) {
-      console.error('MCP pull failed:', err);
-    }
-  }, []);
 
   // --- Touch swipe ---
   const touchStartX = useRef(0);
@@ -4132,9 +4106,8 @@ const WritingInterface = () => {
               onToggleNotesTransferMode={handleToggleNotesTransferMode}
               mcpSyncEnabled={mcpSyncEnabled}
               onToggleMcpSync={handleToggleMcpSync}
-              mcpSyncConnected={mcpSyncConnected}
-              onPushToMcp={handlePushToMcp}
-              onPullFromMcp={handlePullFromMcp}
+              mcpToken={mcpToken}
+              mcpUrl={mcpToken ? getMcpUrl(mcpToken) : null}
             />
           </>
         )}

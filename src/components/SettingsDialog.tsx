@@ -13,7 +13,7 @@ const THEMES = [
   { id: 'red' as ColorTheme, label: 'red', swatch: 'bg-[#7C3232]' },
 ];
 
-const SETTINGS_TABS = ['features', 'storage', 'customization', 'about'] as const;
+const SETTINGS_TABS = ['storage', 'customization', 'about'] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 const SEGMENT_TRACK = 'flex gap-1 p-1 rounded-xl bg-muted/30 border border-border/60';
@@ -131,9 +131,8 @@ interface Props {
   userId?: string;
   mcpSyncEnabled?: boolean;
   onToggleMcpSync?: () => void;
-  mcpSyncConnected?: boolean;
-  onPushToMcp?: () => void;
-  onPullFromMcp?: () => void;
+  mcpToken?: string | null;
+  mcpUrl?: string | null;
 }
 
 export const SettingsDialog: React.FC<Props> = ({
@@ -204,18 +203,17 @@ export const SettingsDialog: React.FC<Props> = ({
   userId,
   mcpSyncEnabled,
   onToggleMcpSync,
-  mcpSyncConnected,
-  onPushToMcp,
-  onPullFromMcp,
+  mcpToken,
+  mcpUrl,
 }) => {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('storage');
   const [landingCopied, setLandingCopied] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const landingPageUrl = getLandingPageUrl();
   const landingPageLabel = getLandingPageDisplayLabel();
 
   useEffect(() => {
-    if (open) setActiveTab('features');
+    if (open) setActiveTab('storage');
   }, [open]);
 
   useEffect(() => {
@@ -254,56 +252,6 @@ export const SettingsDialog: React.FC<Props> = ({
         </div>
 
         <div className="overflow-y-auto pr-1 -mr-1">
-          {activeTab === 'features' && (
-            <div role="tabpanel" className="space-y-6 pt-1">
-              <div className="space-y-3">
-                <div className="font-mono text-[10px] text-muted-foreground/50 uppercase tracking-widest border-b border-border/50 pb-1.5 mb-2">
-                  Preferences
-                </div>
-                <SettingsToggle
-                  label="word/char count"
-                  checked={showStats}
-                  onToggle={onToggleStats}
-                  hint={showStats ? (
-                    <span className="text-xs text-muted-foreground">{wordCount ?? 0}w · {charCount ?? 0}c</span>
-                  ) : undefined}
-                />
-                <SettingsToggle label="spellcheck" checked={spellCheckEnabled} onToggle={onToggleSpellCheck} />
-                <SettingsToggle label="justify text" checked={justifyText} onToggle={onToggleJustify} />
-                <SettingsToggle label="export img center align" checked={exportCenterAlign} onToggle={onToggleExportCenterAlign} />
-                <SettingsToggle label="polaroid frames" checked={polaroidFramesEnabled} onToggle={onTogglePolaroidFrames} />
-                <SettingsToggle label="cmd+←/→ pages" checked={cmdArrowPageNav} onToggle={onToggleCmdArrowPageNav} />
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-muted-foreground text-xs uppercase tracking-wider">transfer to scratchpad</span>
-                    <div className={`${SEGMENT_TRACK} w-32`}>
-                      <button
-                        type="button"
-                        onClick={() => { if (notesTransferMode === 'copy') onToggleNotesTransferMode?.(); }}
-                        className={`${segmentItemClass(notesTransferMode === 'move', 'flex-1 py-1 font-mono')}`}
-                      >
-                        move
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { if (notesTransferMode === 'move') onToggleNotesTransferMode?.(); }}
-                        className={`${segmentItemClass(notesTransferMode === 'copy', 'flex-1 py-1 font-mono')}`}
-                      >
-                        copy
-                      </button>
-                    </div>
-                  </div>
-                  <p className="text-muted-foreground/50 text-[10px] leading-snug">
-                    {notesTransferMode === 'move'
-                      ? 'selected text is moved from the editor to the scratchpad.'
-                      : 'selected text is copied to the scratchpad.'}
-                  </p>
-                </div>
-              </div>
-
-            </div>
-          )}
-
           {activeTab === 'customization' && (
             <div role="tabpanel" className="space-y-6 pt-1">
               <div className="space-y-3">
@@ -369,6 +317,51 @@ export const SettingsDialog: React.FC<Props> = ({
                       serif
                     </button>
                   </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="font-mono text-[10px] text-muted-foreground/50 uppercase tracking-widest border-b border-border/50 pb-1.5 mb-2">
+                  Preferences
+                </div>
+                <SettingsToggle
+                  label="word/char count"
+                  checked={showStats}
+                  onToggle={onToggleStats}
+                  hint={showStats ? (
+                    <span className="text-xs text-muted-foreground">{wordCount ?? 0}w · {charCount ?? 0}c</span>
+                  ) : undefined}
+                />
+                <SettingsToggle label="spellcheck" checked={spellCheckEnabled} onToggle={onToggleSpellCheck} />
+                <SettingsToggle label="justify text" checked={justifyText} onToggle={onToggleJustify} />
+                <SettingsToggle label="export img center align" checked={exportCenterAlign} onToggle={onToggleExportCenterAlign} />
+                <SettingsToggle label="polaroid frames" checked={polaroidFramesEnabled} onToggle={onTogglePolaroidFrames} />
+                <SettingsToggle label="cmd+←/→ pages" checked={cmdArrowPageNav} onToggle={onToggleCmdArrowPageNav} />
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground text-xs uppercase tracking-wider">transfer to scratchpad</span>
+                    <div className={`${SEGMENT_TRACK} w-32`}>
+                      <button
+                        type="button"
+                        onClick={() => { if (notesTransferMode === 'copy') onToggleNotesTransferMode?.(); }}
+                        className={`${segmentItemClass(notesTransferMode === 'move', 'flex-1 py-1 font-mono')}`}
+                      >
+                        move
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { if (notesTransferMode === 'move') onToggleNotesTransferMode?.(); }}
+                        className={`${segmentItemClass(notesTransferMode === 'copy', 'flex-1 py-1 font-mono')}`}
+                      >
+                        copy
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-muted-foreground/50 text-[10px] leading-snug">
+                    {notesTransferMode === 'move'
+                      ? 'selected text is moved from the editor to the scratchpad.'
+                      : 'selected text is copied to the scratchpad.'}
+                  </p>
                 </div>
               </div>
 
@@ -557,12 +550,12 @@ export const SettingsDialog: React.FC<Props> = ({
                       <Cpu size={13} />
                       mcp server
                     </span>
-                    <span className={`text-[10px] lowercase ${mcpSyncConnected ? 'text-accent-foreground' : 'text-muted-foreground'}`}>
-                      {mcpSyncConnected ? 'connected' : 'not connected'}
+                    <span className={`text-[10px] lowercase ${mcpUrl ? 'text-accent-foreground' : 'text-muted-foreground'}`}>
+                      {mcpUrl ? 'ready' : 'needs folder'}
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    connect to a local mcp server so your ai assistants (claude, codex, chatgpt) can read and write your notebooks.
+                    share this url with your ai assistant (claude, cursor, codex, chatgpt) so it can read and write your notebooks.
                   </p>
                   <SettingsToggle
                     label="enable mcp sync"
@@ -570,21 +563,38 @@ export const SettingsDialog: React.FC<Props> = ({
                     onToggle={onToggleMcpSync}
                   />
                   {mcpSyncEnabled && (
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={onPushToMcp}
-                        disabled={!mcpSyncConnected}
-                        className="px-2.5 py-1.5 rounded-lg text-xs font-mono bg-accent/20 text-accent-foreground disabled:opacity-40"
-                      >
-                        push → server
-                      </button>
-                      <button
-                        onClick={onPullFromMcp}
-                        disabled={!mcpSyncConnected}
-                        className="px-2.5 py-1.5 rounded-lg text-xs font-mono text-muted-foreground hover:text-foreground disabled:opacity-40"
-                      >
-                        ← pull from server
-                      </button>
+                    <div className="space-y-2">
+                      {mcpUrl ? (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              readOnly
+                              value={mcpUrl}
+                              className="flex-1 rounded-lg border border-border bg-muted/30 px-2 py-1.5 font-mono text-[10px] text-foreground outline-none select-all"
+                              onClick={(e) => (e.target as HTMLInputElement).select()}
+                            />
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  await navigator.clipboard.writeText(mcpUrl);
+                                } catch { /* */ }
+                              }}
+                              className="shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-mono bg-accent/20 text-accent-foreground"
+                            >
+                              copy
+                            </button>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground leading-relaxed">
+                            paste this into your llm's mcp / server settings. your notebooks live in the folder you picked — the llm reads and writes those same files.
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                          pick a save folder above to generate your mcp url.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>

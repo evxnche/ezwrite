@@ -37,7 +37,7 @@ function el(opts: {
 } = {}): MockEl {
   const classes = opts.classes ?? [];
   const childNodes = opts.childNodes ?? [];
-  const node: MockEl = {
+  const node: MockEl & { getAttribute: (k: string) => string | null } = {
     nodeType: ELEMENT_NODE,
     tagName: opts.tag ?? 'DIV',
     dataset: opts.dataset ?? {},
@@ -45,6 +45,10 @@ function el(opts: {
     childNodes,
     classList: { contains: (n) => classes.includes(n) },
     parentElement: null,
+    getAttribute(key: string) {
+      if (key === 'href') return 'https://x.com';
+      return null;
+    },
     contains(cand) {
       if (!cand) return false;
       if (cand === this) return true;
