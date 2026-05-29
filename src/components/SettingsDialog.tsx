@@ -333,8 +333,8 @@ export const SettingsDialog: React.FC<Props> = ({
                   ) : undefined}
                 />
                 <SettingsToggle label="spellcheck" checked={spellCheckEnabled} onToggle={onToggleSpellCheck} />
-                <SettingsToggle label="justify text" checked={justifyText} onToggle={onToggleJustify} />
-                <SettingsToggle label="export img center align" checked={exportCenterAlign} onToggle={onToggleExportCenterAlign} />
+                <SettingsToggle label="justify text in main editor" checked={justifyText} onToggle={onToggleJustify} />
+                <SettingsToggle label="center align text in img export" checked={exportCenterAlign} onToggle={onToggleExportCenterAlign} />
                 <SettingsToggle label="polaroid frames" checked={polaroidFramesEnabled} onToggle={onTogglePolaroidFrames} />
                 <SettingsToggle label="cmd+←/→ pages" checked={cmdArrowPageNav} onToggle={onToggleCmdArrowPageNav} />
                 <div className="space-y-1.5">

@@ -104,6 +104,18 @@ function installSelectionMock() {
         captured.startNode = n;
         captured.startOffset = o;
       },
+      setStartBefore: (n: MockEl) => {
+        const parent = n.parentElement;
+        if (!parent) return;
+        captured.startNode = parent;
+        captured.startOffset = parent.childNodes.indexOf(n);
+      },
+      setStartAfter: (n: MockEl) => {
+        const parent = n.parentElement;
+        if (!parent) return;
+        captured.startNode = parent;
+        captured.startOffset = parent.childNodes.indexOf(n) + 1;
+      },
       collapse: (v: boolean) => {
         captured.collapsed = v;
       },
@@ -404,6 +416,36 @@ test('forward: contentEditable=false subtree contributes 0', () => {
   const { offset, found } = getRawOffsetUpTo(line as unknown as Node, after as unknown as Node, 3);
   assert.equal(found, true);
   assert.equal(offset, 1 + 0 + 3); // 'a' + (hidden=0) + 'aft'
+});
+
+test('forward: cursor after titled ce-link counts full markdown length', () => {
+  const link = el({
+    tag: 'A',
+    classes: ['ce-link'],
+    contentEditable: 'false',
+    childNodes: [tx('Example Site')],
+  });
+  const line = el({ dataset: { type: 'text' }, childNodes: [tx('See '), link] });
+  const md = '[Example Site](https://x.com)'; // mock href is always https://x.com
+  const { offset, found } = getRawOffsetUpTo(line as unknown as Node, line as unknown as Node, 2);
+  assert.equal(found, true);
+  assert.equal(offset, 'See '.length + md.length);
+});
+
+test('reverse: cursor at end of line with titled ce-link lands after link', () => {
+  const cap = installSelectionMock();
+  const link = el({
+    tag: 'A',
+    classes: ['ce-link'],
+    contentEditable: 'false',
+    childNodes: [tx('Example Site')],
+  });
+  const line = el({ dataset: { type: 'text' }, childNodes: [tx('See '), link] });
+  const editor = el({ childNodes: [line] });
+  const md = '[Example Site](https://x.com)';
+  setCursorPosition(editor as unknown as HTMLElement, 0, 'See '.length + md.length);
+  assert.equal(cap.startNode, line);
+  assert.equal(cap.startOffset, 2);
 });
 
 test('forward edge: target IS the line root — child-offset path counts hidden wrappers', () => {

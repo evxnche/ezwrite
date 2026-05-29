@@ -325,6 +325,28 @@ export function extractContent(editor: HTMLElement): string {
   return lines.join('\n');
 }
 
+function linkElementToMarkdown(htmlEl: HTMLElement): string {
+  const url = (typeof htmlEl.getAttribute === 'function' ? htmlEl.getAttribute('href') : '') || htmlEl.dataset?.url || '';
+  const innerText = Array.from(htmlEl.childNodes).map(child => {
+    if (child.nodeType === Node.TEXT_NODE) return child.textContent || '';
+    if (child.nodeType === Node.ELEMENT_NODE) {
+      const childEl = child as HTMLElement;
+      const childTag = childEl.tagName.toUpperCase();
+      const childText = extractText(childEl);
+      if (childTag === 'STRONG' || childTag === 'B') return '**' + childText + '**';
+      if (childTag === 'EM' || childTag === 'I') return '*' + childText + '*';
+      if (childTag === 'DEL' || childTag === 'S' || childTag === 'STRIKE') return '~~' + childText + '~~';
+      if (childTag === 'CODE') return '`' + childText + '`';
+      return childText;
+    }
+    return '';
+  }).join('');
+  if (innerText && innerText !== url && innerText !== escapeHTML(url)) {
+    return `[${innerText}](${url})`;
+  }
+  return url;
+}
+
 function extractText(el: Element): string {
   let result = '';
   el.childNodes.forEach(node => {
@@ -336,28 +358,7 @@ function extractText(el: Element): string {
       if (tag === 'BR') {
         // ignore
       } else if (htmlEl.classList.contains('ce-link')) {
-        const url = (typeof htmlEl.getAttribute === 'function' ? htmlEl.getAttribute('href') : '') || htmlEl.dataset?.url || '';
-        // If we want to get the formatted inner text:
-        // Temporarily allow extraction of inner elements without skipping
-        const innerText = Array.from(htmlEl.childNodes).map(child => {
-           if (child.nodeType === Node.TEXT_NODE) return child.textContent || '';
-           if (child.nodeType === Node.ELEMENT_NODE) {
-             const childEl = child as HTMLElement;
-             const childTag = childEl.tagName.toUpperCase();
-             const childText = extractText(childEl);
-             if (childTag === 'STRONG' || childTag === 'B') return '**' + childText + '**';
-             if (childTag === 'EM' || childTag === 'I') return '*' + childText + '*';
-             if (childTag === 'DEL' || childTag === 'S' || childTag === 'STRIKE') return '~~' + childText + '~~';
-             if (childTag === 'CODE') return '`' + childText + '`';
-             return childText;
-           }
-           return '';
-        }).join('');
-        if (innerText && innerText !== url && innerText !== escapeHTML(url)) {
-          result += `[${innerText}](${url})`;
-        } else {
-          result += url;
-        }
+        result += linkElementToMarkdown(htmlEl);
       } else if (htmlEl.contentEditable === 'false' || htmlEl.classList.contains('ce-checkbox')) {
         // skip
       } else if (tag !== 'BUTTON') {
@@ -379,6 +380,9 @@ function getRawTextLength(node: Node): number {
 
   const el = node as HTMLElement;
   const tag = el.tagName.toUpperCase();
+  if (el.classList.contains('ce-link')) {
+    return linkElementToMarkdown(el).length;
+  }
   if (tag === 'BR' || tag === 'BUTTON' || el.contentEditable === 'false' || el.classList.contains('ce-checkbox')) {
     return 0;
   }
@@ -413,6 +417,13 @@ export function getRawOffsetUpTo(root: Node, targetContainer: Node, targetOffset
   let total = 0;
   if (root.nodeType === Node.ELEMENT_NODE) {
     const el = root as HTMLElement;
+    if (el.classList.contains('ce-link')) {
+      const len = linkElementToMarkdown(el).length;
+      if (el === targetContainer || el.contains(targetContainer)) {
+        return { offset: len, found: true };
+      }
+      return { offset: len, found: false };
+    }
     if (el.contentEditable === 'false' || el.classList.contains('ce-checkbox')) return { offset: 0, found: false };
     
     const tag = el.tagName.toUpperCase();
@@ -470,6 +481,18 @@ export function setCursorPosition(editor: HTMLElement, lineIndex: number, offset
       remaining -= len;
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as HTMLElement;
+      if (el.classList.contains('ce-link')) {
+        const len = linkElementToMarkdown(el).length;
+        if (remaining <= len) {
+          if (remaining <= 0) range.setStartBefore(el);
+          else if (remaining >= len) range.setStartAfter(el);
+          else range.setStartBefore(el);
+          range.collapse(true);
+          return true;
+        }
+        remaining -= len;
+        return false;
+      }
       if (el.contentEditable === 'false' || el.classList.contains('ce-checkbox')) return false;
 
       const tag = el.tagName.toUpperCase();
