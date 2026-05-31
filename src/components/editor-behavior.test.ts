@@ -464,6 +464,11 @@ test('Scratchpad stays isolated and follows editor font choice', () => {
   assert.equal(scratchpadSource.includes('aria-hidden={!open}'), true);
 });
 
+test('Moving all editor content to scratchpad rebuilds a blank editable page', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  assert.match(source, /if \(editorRef\.current && !extractContent\(editorRef\.current\)\.trim\(\)\) \{\s+structuralUpdate\('', 0, 0\);\s+\}/);
+});
+
 test('Timer autocomplete stays editable until the slash invocation is submitted', () => {
   const writingSource = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   const scratchpadSource = fs.readFileSync(path.join(process.cwd(), 'src/components/ScratchpadPanel.tsx'), 'utf8');

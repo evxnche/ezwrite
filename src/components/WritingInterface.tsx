@@ -1347,11 +1347,15 @@ const WritingInterface = () => {
           setIsPageEmpty(textContent.trim() === '');
         }
       }
+
+      if (editorRef.current && !extractContent(editorRef.current).trim()) {
+        structuralUpdate('', 0, 0);
+      }
     }
 
     setSelectionRect(null);
     setSelectionText('');
-  }, [scratchpad, selectionText, activeProjectId, saveContent, notesTransferMode, scratchpadOpen]);
+  }, [scratchpad, selectionText, activeProjectId, saveContent, notesTransferMode, scratchpadOpen, structuralUpdate]);
 
   // --- Cursor normalizer ---
   // When structuralUpdate resets innerHTML, the browser can leave the cursor at the
