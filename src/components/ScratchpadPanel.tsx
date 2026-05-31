@@ -483,6 +483,18 @@ const ScratchpadPanel: React.FC<Props> = ({
       return;
     }
 
+    if (actionTarget.dataset.action === 'delete') {
+      e.preventDefault();
+      const lineIndex = parseInt(actionTarget.dataset.line || '-1', 10);
+      const lines = contentRef.current.split('\n');
+      if (lineIndex < 0 || lineIndex >= lines.length) return;
+      lines.splice(lineIndex, 1);
+      if (lines.length === 0) lines.push('');
+      const target = Math.min(lineIndex, lines.length - 1);
+      structuralUpdate(lines.join('\n'), target, 0);
+      return;
+    }
+
     const toggle = target.closest('[data-action="toggle"]') as HTMLElement | null;
     if (!toggle) return;
 
