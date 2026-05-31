@@ -487,11 +487,15 @@ export interface SelectedLinePoint {
   offset: number;
 }
 
-export function getMarkdownRangeForSelection(
+export interface SelectedLineRange {
+  start: number;
+  end: number;
+}
+
+export function getSelectedLineRange(
   startPoint: SelectedLinePoint,
   endPoint: SelectedLinePoint,
-  lines: string[],
-): { start: number; end: number } | null {
+): SelectedLineRange | null {
   const startsFirst = startPoint.lineIndex < endPoint.lineIndex ||
     (startPoint.lineIndex === endPoint.lineIndex && startPoint.offset <= endPoint.offset);
   const first = startsFirst ? startPoint : endPoint;
@@ -500,13 +504,47 @@ export function getMarkdownRangeForSelection(
   let end = last.lineIndex;
 
   // Browser selections that end at the start of the next line report that next
-  // line as the range end. For line-based markdown export, that line was not
-  // actually selected and must not be copied.
+  // line as the range end even though it was not selected.
   if (last.offset === 0 && end > start) {
     end -= 1;
   }
 
-  if (end < start) return null;
+  return end < start ? null : { start, end };
+}
+
+export function moveSelectedLineRange(
+  lines: readonly string[],
+  range: SelectedLineRange,
+  direction: 'up' | 'down',
+): { lines: string[]; range: SelectedLineRange } | null {
+  const { start, end } = range;
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start || end >= lines.length) {
+    return null;
+  }
+  if ((direction === 'up' && start === 0) || (direction === 'down' && end === lines.length - 1)) {
+    return null;
+  }
+
+  const nextLines = [...lines];
+  if (direction === 'up') {
+    const [previousLine] = nextLines.splice(start - 1, 1);
+    nextLines.splice(end, 0, previousLine);
+    return { lines: nextLines, range: { start: start - 1, end: end - 1 } };
+  }
+
+  const [nextLine] = nextLines.splice(end + 1, 1);
+  nextLines.splice(start, 0, nextLine);
+  return { lines: nextLines, range: { start: start + 1, end: end + 1 } };
+}
+
+export function getMarkdownRangeForSelection(
+  startPoint: SelectedLinePoint,
+  endPoint: SelectedLinePoint,
+  lines: string[],
+): { start: number; end: number } | null {
+  const range = getSelectedLineRange(startPoint, endPoint);
+  if (!range) return null;
+  const { start, end } = range;
 
   const touchesStructuredLine = lines
     .slice(start, end + 1)

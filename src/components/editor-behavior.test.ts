@@ -24,6 +24,8 @@ import {
   restoreDeletedPageToList,
   shouldAutoFocusAfterPageSwitch,
   splitExitedListLine,
+  getSelectedLineRange,
+  moveSelectedLineRange,
   getMarkdownRangeForSelection,
   getExactSlashCommand,
   getClosestLineIndexForClick,
@@ -486,6 +488,13 @@ test('WritingInterface does not attach dragstart to the contentEditable surface'
   assert.equal(source.includes('onDragStart={handleEditorDragStart}'), false);
 });
 
+test('WritingInterface moves highlighted lines together from Cmd/Ctrl arrow shortcuts', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  assert.equal(source.includes('getSelectedLineRange'), true);
+  assert.equal(source.includes('moveSelectedLineRange'), true);
+  assert.equal(source.includes('selectEditorLineRange'), true);
+});
+
 test('WritingInterface seeds default copy only on page 1', () => {
   const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   assert.equal(source.includes("Array(TOTAL_PAGES - 1).fill(DEFAULT_PAGE_CONTENT)"), false);
@@ -669,6 +678,36 @@ test('getMarkdownRangeForSelection lets native copy handle plain prose', () => {
       ['plain one', 'plain two'],
     ),
     null,
+  );
+});
+
+test('getSelectedLineRange excludes an untouched trailing line', () => {
+  assert.deepEqual(
+    getSelectedLineRange(
+      { lineIndex: 1, offset: 0 },
+      { lineIndex: 3, offset: 0 },
+    ),
+    { start: 1, end: 2 },
+  );
+});
+
+test('moveSelectedLineRange moves a highlighted block up together', () => {
+  assert.deepEqual(
+    moveSelectedLineRange(['before', 'first', 'second', 'after'], { start: 1, end: 2 }, 'up'),
+    {
+      lines: ['first', 'second', 'before', 'after'],
+      range: { start: 0, end: 1 },
+    },
+  );
+});
+
+test('moveSelectedLineRange moves a highlighted block down together', () => {
+  assert.deepEqual(
+    moveSelectedLineRange(['before', 'first', 'second', 'after'], { start: 1, end: 2 }, 'down'),
+    {
+      lines: ['before', 'after', 'first', 'second'],
+      range: { start: 2, end: 3 },
+    },
   );
 });
 
