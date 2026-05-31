@@ -1,8 +1,27 @@
 import React from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 
+const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
+
 const UpdateBanner: React.FC = () => {
-  const { needRefresh: [needRefresh, setNeedRefresh], updateServiceWorker } = useRegisterSW();
+  const { needRefresh: [needRefresh, setNeedRefresh], updateServiceWorker } = useRegisterSW({
+    onRegisteredSW(_swUrl, registration) {
+      if (!registration) return;
+
+      const checkForUpdate = () => {
+        if (registration.installing || !navigator.onLine) return;
+        void registration.update();
+      };
+
+      // Poll while the app stays open (default only checks on page load).
+      setInterval(checkForUpdate, UPDATE_CHECK_INTERVAL_MS);
+
+      // Also check when the user returns to the tab/PWA.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') checkForUpdate();
+      });
+    },
+  });
 
   if (!needRefresh) return null;
 
