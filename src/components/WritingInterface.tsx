@@ -106,7 +106,7 @@ import { runSequentialSyncBatch, toSyncError } from '@/lib/sync-retry';
 import { recordBugReportBreadcrumb, setBugReportRuntimeContext } from '@/lib/bug-report';
 import { loadSyncSession, saveSyncSession, clearSyncSession } from '@/lib/sync-session-store';
 import MobileSyncGate from './MobileSyncGate';
-import { EditorHistory, MOBILE_HISTORY_CONTROLS_STACK_HEIGHT_PX, type EditorHistorySnapshot } from './editor-history';
+import { EditorHistory, MOBILE_HISTORY_BUTTON_SIZE_PX, type EditorHistorySnapshot } from './editor-history';
 import MobileHistoryControls from './MobileHistoryControls';
 
 
@@ -205,8 +205,11 @@ const VISUAL_METRICS = {
 } as const;
 
 const MOBILE_FIXED_UI_CLEARANCE_PX = 132;
-/** Breathing room (~2 lines) kept between the caret line and the keyboard. */
-const MOBILE_CARET_KEYBOARD_MARGIN_PX = 56;
+/**
+ * Room kept between the caret line and the keyboard: enough to clear the
+ * floating toolbar (~44px button + 8px margin) plus a line of breathing space.
+ */
+const MOBILE_CARET_KEYBOARD_MARGIN_PX = 88;
 const MOBILE_EDITOR_BOTTOM_PADDING = 'calc(env(safe-area-inset-bottom, 0px) + 13rem)';
 const MOBILE_FOOTER_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 0.5rem)';
 const MOBILE_PAGE_DOTS_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 2.75rem)';
@@ -466,7 +469,9 @@ const WritingInterface = () => {
     setMobileSlashButtonTop(getMobileFloatingSlashButtonTop(caretParams));
     setMobileHistoryControlsTop(getMobileFloatingHistoryControlsTop({
       ...caretParams,
-      stackHeight: MOBILE_HISTORY_CONTROLS_STACK_HEIGHT_PX,
+      // Undo/redo sit in a horizontal row, so anchor on a single button's
+      // height to line up with the slash button above the keyboard.
+      stackHeight: MOBILE_HISTORY_BUTTON_SIZE_PX,
     }));
   }, [isTouchDevice]);
 

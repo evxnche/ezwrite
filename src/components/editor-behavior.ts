@@ -207,16 +207,12 @@ export function getMobileFloatingSlashButtonTop(params: {
   const buttonSize = params.buttonSize ?? MOBILE_FLOATING_SLASH_BUTTON_SIZE_PX;
   const margin = params.margin ?? MOBILE_FLOATING_SLASH_BUTTON_MARGIN_PX;
   const safeTop = params.safeAreaTop ?? 0;
-  const lineHeight = Math.max(params.caretHeight, 20);
-  const preferredTop = params.caretTop + lineHeight / 2 - buttonSize / 2;
-  const minTop = safeTop + margin;
-  const maxTop = params.viewportHeight - params.keyboardHeight - buttonSize - margin;
+  // Pinned as a fixed toolbar just above the keyboard (no longer caret-following,
+  // which scattered the buttons across the text). Caret clearance is handled by
+  // the editor auto-scroll instead.
+  const aboveKeyboard = params.viewportHeight - params.keyboardHeight - buttonSize - margin;
 
-  if (maxTop < minTop) {
-    return Math.max(safeTop + margin, maxTop);
-  }
-
-  return Math.min(Math.max(preferredTop, minTop), maxTop);
+  return Math.max(safeTop + margin, aboveKeyboard);
 }
 
 export function getFloatingSlashButtonCursor(content: string): {

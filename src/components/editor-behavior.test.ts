@@ -223,7 +223,7 @@ test('getPageEndCursor places the cursor at the end of the final line', () => {
   );
 });
 
-test('getMobileFloatingSlashButtonTop centers on the caret line when there is room', () => {
+test('getMobileFloatingSlashButtonTop pins above the bottom edge regardless of caret', () => {
   assert.equal(
     getMobileFloatingSlashButtonTop({
       caretTop: 200,
@@ -232,7 +232,7 @@ test('getMobileFloatingSlashButtonTop centers on the caret line when there is ro
       viewportHeight: 800,
       keyboardHeight: 0,
     }),
-    200 + 28 / 2 - MOBILE_FLOATING_SLASH_BUTTON_SIZE_PX / 2,
+    800 - 0 - MOBILE_FLOATING_SLASH_BUTTON_SIZE_PX - 8,
   );
 });
 
@@ -545,7 +545,7 @@ test('WritingInterface passes isTouchDevice into ScratchpadPanel', () => {
   assert.match(source, /isTouchDevice=\{isTouchDevice\}/);
 });
 
-test('getMobileFloatingHistoryControlsTop centers the undo/redo stack on the caret line', () => {
+test('getMobileFloatingHistoryControlsTop pins the undo/redo row above the bottom edge', () => {
   const top = getMobileFloatingHistoryControlsTop({
     caretTop: 200,
     caretBottom: 228,
@@ -556,7 +556,7 @@ test('getMobileFloatingHistoryControlsTop centers the undo/redo stack on the car
   });
   assert.equal(
     top,
-    200 + 28 / 2 - MOBILE_HISTORY_CONTROLS_STACK_HEIGHT_PX / 2,
+    800 - 0 - MOBILE_HISTORY_CONTROLS_STACK_HEIGHT_PX - 8,
   );
 });
 

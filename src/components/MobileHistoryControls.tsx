@@ -11,7 +11,7 @@ interface Props {
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
-  /** Viewport `top` for the undo button; redo stacks below when shown. */
+  /** Viewport `top` for the undo/redo toolbar row (pinned above the keyboard). */
   top?: number | null;
   /** Fallback bottom offset when `top` is unavailable. */
   fallbackBottom?: string;
@@ -37,7 +37,7 @@ const MobileHistoryControls: React.FC<Props> = ({
     'w-11 h-11 rounded-full bg-popover border border-border text-muted-foreground flex items-center justify-center shadow-lg transition-[top,colors] disabled:opacity-35 disabled:pointer-events-none';
 
   return (
-    <div className="fixed left-4 z-50 flex flex-col gap-2" style={containerStyle}>
+    <div className="fixed left-4 z-50 flex flex-row gap-2" style={containerStyle}>
       {canUndo && (
         <button
           type="button"
