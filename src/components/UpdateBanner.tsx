@@ -2,9 +2,11 @@ import React from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 
 const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
+const UPDATE_RELOAD_FALLBACK_MS = 2 * 1000;
 
 const UpdateBanner: React.FC = () => {
-  const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW({
+  const refreshStartedRef = React.useRef(false);
+  const { needRefresh: [needRefresh, setNeedRefresh], updateServiceWorker } = useRegisterSW({
     onRegisteredSW(_swUrl, registration) {
       if (!registration) return;
 
@@ -26,10 +28,14 @@ const UpdateBanner: React.FC = () => {
   if (!needRefresh) return null;
 
   const handleUpdate = () => {
-    // updateServiceWorker(true) sends SKIP_WAITING and reloads once the new
-    // worker takes control (on `controllerchange`). Don't reset state first —
-    // let the swap drive the reload so we always land on the new build.
-    void updateServiceWorker(true);
+    if (refreshStartedRef.current) return;
+    refreshStartedRef.current = true;
+    setNeedRefresh(false);
+
+    // The helper normally reloads on controllerchange. Reload after a short
+    // delay as a recovery path when a PWA never receives that event.
+    window.setTimeout(() => window.location.reload(), UPDATE_RELOAD_FALLBACK_MS);
+    void updateServiceWorker(true).catch(() => window.location.reload());
   };
 
   return (

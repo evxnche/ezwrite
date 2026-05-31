@@ -632,10 +632,12 @@ test('App mounts UpdateBanner outside deferred idle UI gating', () => {
   assert.equal(deferredCount, 1);
 });
 
-test('UpdateBanner refreshes through the service-worker update helper', () => {
+test('UpdateBanner dismisses immediately and reloads if the service-worker handoff stalls', () => {
   const source = fs.readFileSync(path.join(process.cwd(), 'src/components/UpdateBanner.tsx'), 'utf8');
   assert.equal(source.includes('updateServiceWorker(true)'), true);
-  assert.equal(source.includes('window.location.reload()'), false);
+  assert.equal(source.includes('setNeedRefresh(false)'), true);
+  assert.equal(source.includes('UPDATE_RELOAD_FALLBACK_MS'), true);
+  assert.equal(source.includes('window.location.reload()'), true);
 });
 
 test('shouldAutoFocusAfterPageSwitch keeps autofocus on desktop only', () => {
