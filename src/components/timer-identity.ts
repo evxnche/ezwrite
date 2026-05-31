@@ -29,3 +29,17 @@ export function buildTimerSlots(
     }];
   });
 }
+
+export function getRemovedTimerStableIds(previousLines: string[], nextLines: string[]): string[] {
+  const nextIds = new Set(buildTimerSlots(nextLines).map(({ stableId }) => stableId));
+  return buildTimerSlots(previousLines)
+    .map(({ stableId }) => stableId)
+    .filter((stableId) => !nextIds.has(stableId));
+}
+
+export function getAddedTimerStableIds(previousLines: string[], nextLines: string[]): string[] {
+  const previousIds = new Set(buildTimerSlots(previousLines).map(({ stableId }) => stableId));
+  return buildTimerSlots(nextLines)
+    .map(({ stableId }) => stableId)
+    .filter((stableId) => !previousIds.has(stableId));
+}

@@ -9,7 +9,7 @@ import {
   pickTimerAlertMode,
   resolveColorTheme,
 } from './preferences.ts';
-import { buildTimerSlots } from './timer-identity.ts';
+import { buildTimerSlots, getAddedTimerStableIds, getRemovedTimerStableIds } from './timer-identity.ts';
 
 test('pickColorTheme returns the exact theme that was clicked', () => {
   assert.equal(pickColorTheme('green'), 'green');
@@ -47,4 +47,10 @@ test('buildTimerSlots gives duplicate timers distinct stable ids', () => {
     slots.map((slot) => slot.lineIndex),
     [0, 1, 2, 3],
   );
+});
+
+test('timer identity helpers detect removed and newly added runtime keys', () => {
+  assert.deepEqual(getRemovedTimerStableIds(['timer'], ['']), ['__stopwatch__::1']);
+  assert.deepEqual(getAddedTimerStableIds([''], ['timer']), ['__stopwatch__::1']);
+  assert.deepEqual(getAddedTimerStableIds(['timer 25'], ['timer 25', 'timer 25']), ['25::2']);
 });

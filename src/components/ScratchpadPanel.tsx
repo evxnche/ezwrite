@@ -5,7 +5,7 @@ import type { NotesTransferMode } from './preferences';
 import SlashCommandPopup from './SlashCommandPopup';
 import TimerWidget from './TimerWidget';
 import { clearTimerState } from './timer-storage';
-import { buildTimerSlots } from './timer-identity';
+import { buildTimerSlots, getAddedTimerStableIds, getRemovedTimerStableIds } from './timer-identity';
 import {
   contentToHTML,
   contentToScratchpadText,
@@ -447,13 +447,8 @@ const ScratchpadPanel: React.FC<Props> = ({
 
     pushUndo(true);
     if (command === 'timer') {
-      const finalizedLines = finalizeTimerSlashCommand(lines, lineIndex);
-      if (finalizedLines) {
-        structuralUpdate(finalizedLines.join('\n'), lineIndex + 1, 0);
-      } else {
-        lines[lineIndex] = '/timer ';
-        structuralUpdate(lines.join('\n'), lineIndex, 7);
-      }
+      lines[lineIndex] = '/timer ';
+      structuralUpdate(lines.join('\n'), lineIndex, 7);
     } else if (command === 'line') {
       lines[lineIndex] = 'line';
       if (lineIndex >= lines.length - 1) lines.push('');
@@ -490,6 +485,8 @@ const ScratchpadPanel: React.FC<Props> = ({
     const rawContent = extractContent(editorRef.current);
     const nextContent = normalizeEditorContent(rawContent);
     const info = getCursorInfo();
+    getRemovedTimerStableIds(contentRef.current.split('\n'), nextContent.split('\n'))
+      .forEach((stableId) => clearTimerState(timerScope ? `${timerScope}:${stableId}` : undefined));
 
     if (info) trackedCursor.current = { lineIndex: info.lineIndex, offset: info.offset };
 
@@ -529,7 +526,7 @@ const ScratchpadPanel: React.FC<Props> = ({
     }
 
     if (slashPopup) setSlashPopup(null);
-  }, [emitContent, getCursorInfo, pushUndo, slashCommands, slashPopup, structuralUpdate]);
+  }, [emitContent, getCursorInfo, pushUndo, slashCommands, slashPopup, structuralUpdate, timerScope]);
 
   const handleEditorClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
@@ -808,6 +805,8 @@ const ScratchpadPanel: React.FC<Props> = ({
       const finalizedTimerLines = finalizeTimerSlashCommand(lines, lineIndex);
       if (finalizedTimerLines) {
         pushUndo(true);
+        getAddedTimerStableIds(lines, finalizedTimerLines)
+          .forEach((stableId) => clearTimerState(timerScope ? `${timerScope}:${stableId}` : undefined));
         structuralUpdate(finalizedTimerLines.join('\n'), lineIndex + 1, 0);
         return;
       }

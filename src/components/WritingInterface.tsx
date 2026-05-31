@@ -28,7 +28,7 @@ import {
   type NotesTransferMode,
   type ColorTheme,
 } from './preferences';
-import { buildTimerSlots } from './timer-identity';
+import { buildTimerSlots, getAddedTimerStableIds, getRemovedTimerStableIds } from './timer-identity';
 import {
   getTouchGestureIntent,
   getPageEndCursor,
@@ -2406,6 +2406,8 @@ const WritingInterface = () => {
 
     const rawContent = extractContent(editorRef.current);
     const newContent = normalizeEditorContent(rawContent);
+    getRemovedTimerStableIds(contentRef.current.split('\n'), newContent.split('\n'))
+      .forEach((stableId) => clearTimerState(`main:${activeProjectIdRef.current ?? 'none'}:${currentPageRef.current}:${stableId}`));
 
     saveContent(newContent);
     triggerTyping();
@@ -2554,13 +2556,8 @@ const WritingInterface = () => {
       })();
       return;
     } else if (command === 'timer') {
-      const finalizedLines = finalizeTimerSlashCommand(lines, lineIndex);
-      if (finalizedLines) {
-        structuralUpdate(finalizedLines.join('\n'), lineIndex + 1, 0);
-      } else {
-        lines[lineIndex] = '/timer ';
-        structuralUpdate(lines.join('\n'), lineIndex, 7);
-      }
+      lines[lineIndex] = '/timer ';
+      structuralUpdate(lines.join('\n'), lineIndex, 7);
     } else {
       lines[lineIndex] = command;
       // For /list: collapse consecutive empty lines below to prevent multiple empty checkboxes
@@ -2935,6 +2932,8 @@ const WritingInterface = () => {
       const finalizedTimerLines = finalizeTimerSlashCommand(freshLines, li);
       if (finalizedTimerLines) {
         pushUndo(true);
+        getAddedTimerStableIds(freshLines, finalizedTimerLines)
+          .forEach((stableId) => clearTimerState(`main:${activeProjectIdRef.current ?? 'none'}:${currentPageRef.current}:${stableId}`));
         structuralUpdate(finalizedTimerLines.join('\n'), li + 1, 0);
         scrollToLine(li + 1);
         return;
