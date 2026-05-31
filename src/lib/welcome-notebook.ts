@@ -90,7 +90,7 @@ swap out the numbers for whatever works for you (type in /timer, hit enter and t
 type in /image (or /4) in the line underneath and pick a random image.
 
 
-resize, add a caption, resize the image w/ handlers at the bottom right, and move the image within the frame by double-clicking your img.`,
+add a caption, resize the image w/ handlers at the bottom right, and move the image within the frame by double-clicking your img.`,
 `/list
 type in /list (or /1) in the following line to create a task list.
 
@@ -120,7 +120,7 @@ this is not exported w/ the main note, it is stored separately in the local repo
 try typing in /scratchpad (or /6) on the line underneath and resize the panel to your liking.
 
 > three /commands work in the scratchpad as well. ie, /list, /timer, and /line.
-> select this text placeholder text underneath and hit the floating icon that pops up. you could also hit cmd/ctrl+shift+m. (these work even w/ the scratchpad collapsed)
+> select this placeholder text underneath and hit the floating icon that pops up. you could also hit cmd/ctrl+shift+m. (these work even w/ the scratchpad collapsed)
 >> Sint elit aute commodo anim incididunt non. Non et mollit reprehenderit reprehenderit velit nisi tempor Lorem. Amet labore occaecat deserunt ut. Non veniam pariatur Lorem incididunt consequat. Ut aliqua deserunt officia proident. Aliqua cupidatat adipisicing occaecat quis quis in est ex. Incididunt irure mollit excepteur amet sint irure cillum laborum adipisicing pariatur fugiat incididunt duis labore laboris. Pariatur officia qui cillum.
 
 > now make edits in the scratchpad, select the text there, and hit cmd+shift+m to move it back to your main editor.
