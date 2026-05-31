@@ -4,7 +4,7 @@ import { useRegisterSW } from 'virtual:pwa-register/react';
 const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
 
 const UpdateBanner: React.FC = () => {
-  const { needRefresh: [needRefresh, setNeedRefresh], updateServiceWorker } = useRegisterSW({
+  const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW({
     onRegisteredSW(_swUrl, registration) {
       if (!registration) return;
 
@@ -26,7 +26,9 @@ const UpdateBanner: React.FC = () => {
   if (!needRefresh) return null;
 
   const handleUpdate = () => {
-    setNeedRefresh(false);
+    // updateServiceWorker(true) sends SKIP_WAITING and reloads once the new
+    // worker takes control (on `controllerchange`). Don't reset state first —
+    // let the swap drive the reload so we always land on the new build.
     void updateServiceWorker(true);
   };
 
