@@ -103,8 +103,22 @@ async function authWithCredentials(email: string, password: string, createAccoun
   );
 }
 
-// Refreshes an expired access token in place so long-lived sessions keep working.
-async function refreshSession(session: SyncSession): Promise<void> {
+// Supabase refresh tokens are single-use: each refresh rotates the token and
+// invalidates the old one. Concurrent sync operations can each hit a 401 at the
+// same time and would otherwise POST the same token twice, which Supabase
+// rejects as `refresh_token_already_used`. Share one in-flight refresh per
+// session so simultaneous callers wait on the same rotation.
+const inFlightRefresh = new WeakMap<SyncSession, Promise<void>>();
+
+// The app registers this to persist a rotated refresh token immediately, rather
+// than only at the end of a full sync. Without it, a reload between refreshes
+// would restore a spent token from storage and fail on the next refresh.
+let onSessionRefreshed: ((session: SyncSession) => void) | null = null;
+export function setOnSessionRefreshed(cb: ((session: SyncSession) => void) | null): void {
+  onSessionRefreshed = cb;
+}
+
+async function performRefresh(session: SyncSession): Promise<void> {
   const auth = await requestJson<AuthResponse>(
     getAuthUrl('token?grant_type=refresh_token'),
     {
@@ -116,6 +130,18 @@ async function refreshSession(session: SyncSession): Promise<void> {
   if (!auth.access_token) throw new Error('Session expired, sign in again');
   session.accessToken = auth.access_token;
   if (auth.refresh_token) session.refreshToken = auth.refresh_token;
+  onSessionRefreshed?.(session);
+}
+
+// Refreshes an expired access token in place so long-lived sessions keep working.
+async function refreshSession(session: SyncSession): Promise<void> {
+  const existing = inFlightRefresh.get(session);
+  if (existing) return existing;
+  const promise = performRefresh(session).finally(() => {
+    if (inFlightRefresh.get(session) === promise) inFlightRefresh.delete(session);
+  });
+  inFlightRefresh.set(session, promise);
+  return promise;
 }
 
 // Authenticated REST call that transparently refreshes once on a 401.

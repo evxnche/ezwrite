@@ -406,6 +406,38 @@ export function getExactSlashCommand(line: string, slashCommands: readonly { nam
   return slashCommands.some(item => item.name === command) ? command : null;
 }
 
+export interface FloatingSelectionRect {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+}
+
+function isUsableFloatingSelectionRect(rect: FloatingSelectionRect): boolean {
+  return rect.width > 0 && rect.height > 0;
+}
+
+export function pickFloatingSelectionAnchorRect<T extends FloatingSelectionRect>(
+  selectionRects: readonly T[],
+  focusAtStart: boolean,
+  fallbackRect?: T | null,
+): T | null {
+  const usableRects = selectionRects.filter(isUsableFloatingSelectionRect);
+  if (usableRects.length > 0) {
+    return focusAtStart ? usableRects[0] : usableRects[usableRects.length - 1];
+  }
+
+  return fallbackRect && isUsableFloatingSelectionRect(fallbackRect) ? fallbackRect : null;
+}
+
+export function getFloatingSelectionAnchorRect(selection: Selection, range: Range): DOMRect | null {
+  return pickFloatingSelectionAnchorRect(
+    Array.from(range.getClientRects()),
+    selection.focusNode === range.startContainer && selection.focusOffset === range.startOffset,
+    range.getBoundingClientRect(),
+  );
+}
+
 export interface SelectedLinePoint {
   lineIndex: number;
   offset: number;

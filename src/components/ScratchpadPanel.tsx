@@ -23,6 +23,7 @@ import {
 } from './writing-helpers';
 import {
   getExactSlashCommand,
+  getFloatingSelectionAnchorRect,
   getMarkdownRangeForSelection,
   normalizeEditorContent,
   normalizeClipboardPasteText,
@@ -298,19 +299,14 @@ const ScratchpadPanel: React.FC<Props> = ({
       return;
     }
 
-    // Use a collapsed range at the selection focus point so the floating
-    // button appears next to where the cursor actually is.
-    const focusRange = document.createRange();
-    focusRange.setStart(sel.focusNode!, sel.focusOffset);
-    focusRange.collapse(true);
-    const rect = focusRange.getBoundingClientRect();
+    const rect = getFloatingSelectionAnchorRect(sel, range);
     setSelectionText(nextSelection);
-    setSelectionRect({
+    setSelectionRect(rect ? {
       top: rect.top,
       left: rect.left,
-      width: rect.width || 0,
-      height: rect.height || 24,
-    });
+      width: rect.width,
+      height: rect.height,
+    } : null);
   }, [getLineOffsetFromDOMPoint]);
 
   useEffect(() => {

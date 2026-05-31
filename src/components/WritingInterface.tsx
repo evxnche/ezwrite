@@ -45,6 +45,7 @@ import {
   restoreDeletedPageToList,
   shouldAutoFocusAfterPageSwitch,
   splitExitedListLine,
+  getFloatingSelectionAnchorRect,
   getMarkdownRangeForSelection,
   getExactSlashCommand,
   getClosestLineIndexForClick,
@@ -91,6 +92,7 @@ import {
   deleteRemoteSyncNote,
   getSyncConfigStatus,
   listRemoteSyncNotes,
+  setOnSessionRefreshed,
   upsertRemoteSyncNote,
   type RemoteSyncNote,
   type SyncSession,
@@ -1399,18 +1401,9 @@ const WritingInterface = () => {
               return;
             }
             try {
-              // Use a collapsed range at the selection focus point (where the
-              // cursor actually is) so the floating button appears next to the
-              // user's active position, not the center of the selection.
-              const focusRange = document.createRange();
-              focusRange.setStart(currentSel.focusNode!, currentSel.focusOffset);
-              focusRange.collapse(true);
-              const rect = focusRange.getBoundingClientRect();
-              if (rect.width >= 0 && rect.height > 0) {
-                setSelectionRect(rect);
-              } else {
-                setSelectionRect(null);
-              }
+              setSelectionRect(
+                getFloatingSelectionAnchorRect(currentSel, currentSel.getRangeAt(0)),
+              );
             } catch (err) {
               setSelectionRect(null);
             }
@@ -1942,6 +1935,13 @@ const WritingInterface = () => {
 
   // Restore a persisted sign-in on mount so login survives reloads (and the mobile
   // gate doesn't re-prompt every visit). Runs once.
+  // Persist a rotated refresh token the moment it changes, so a reload never
+  // restores a spent token and fails with `refresh_token_already_used`.
+  useEffect(() => {
+    setOnSessionRefreshed((session) => { void saveSyncSession(session); });
+    return () => setOnSessionRefreshed(null);
+  }, []);
+
   const sessionRestoreStartedRef = useRef(false);
   useEffect(() => {
     if (sessionRestoreStartedRef.current) return;
@@ -3820,7 +3820,7 @@ const WritingInterface = () => {
             {selectionRect && containerRef.current && (
               createPortal(
                 <button
-                  className="absolute z-50 flex items-center justify-center bg-background border border-border shadow-lg rounded-full p-2 text-foreground/80 hover:text-foreground hover:bg-accent/50 transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                  className="fixed z-50 flex items-center justify-center bg-background border border-border shadow-lg rounded-full p-2 text-foreground/80 hover:text-foreground hover:bg-accent/50 transition-all hover:scale-105 active:scale-95 cursor-pointer"
                   style={{
                     top: Math.max(16, Math.min(selectionRect.top - 44, window.innerHeight - 64)),
                     left: Math.max(8, Math.min(selectionRect.left + (selectionRect.width / 2) - 18, window.innerWidth - 44)),

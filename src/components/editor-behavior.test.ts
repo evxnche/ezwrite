@@ -6,6 +6,7 @@ import path from 'node:path';
 import { INDENT, LIST_EXIT } from './writing-helpers.ts';
 import {
   getFloatingSlashButtonCursor,
+  pickFloatingSelectionAnchorRect,
   getMobileFloatingSlashButtonTop,
   MOBILE_FLOATING_SLASH_BUTTON_SIZE_PX,
   getTouchGestureIntent,
@@ -624,6 +625,28 @@ test('getMarkdownRangeForSelection lets native copy handle plain prose', () => {
       { lineIndex: 1, offset: 3 },
       ['plain one', 'plain two'],
     ),
+    null,
+  );
+});
+
+test('pickFloatingSelectionAnchorRect uses the rendered line nearest the active selection end', () => {
+  const firstLine = { top: 120, left: 400, width: 80, height: 20 };
+  const lastLine = { top: 148, left: 400, width: 44, height: 20 };
+  const unusableOrigin = { top: 0, left: 0, width: 0, height: 0 };
+
+  assert.deepEqual(
+    pickFloatingSelectionAnchorRect([unusableOrigin, firstLine, lastLine], false),
+    lastLine,
+  );
+  assert.deepEqual(
+    pickFloatingSelectionAnchorRect([unusableOrigin, firstLine, lastLine], true),
+    firstLine,
+  );
+});
+
+test('pickFloatingSelectionAnchorRect rejects an unusable viewport-origin fallback', () => {
+  assert.equal(
+    pickFloatingSelectionAnchorRect([], false, { top: 0, left: 0, width: 0, height: 0 }),
     null,
   );
 });
