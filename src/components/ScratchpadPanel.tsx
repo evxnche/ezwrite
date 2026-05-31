@@ -23,6 +23,7 @@ import {
 } from './writing-helpers';
 import {
   getExactSlashCommand,
+  finalizeTimerSlashCommand,
   getFloatingSelectionAnchorRect,
   getMarkdownRangeForSelection,
   normalizeEditorContent,
@@ -446,9 +447,13 @@ const ScratchpadPanel: React.FC<Props> = ({
 
     pushUndo(true);
     if (command === 'timer') {
-      lines[lineIndex] = 'timer';
-      if (lineIndex >= lines.length - 1) lines.push('');
-      structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
+      const finalizedLines = finalizeTimerSlashCommand(lines, lineIndex);
+      if (finalizedLines) {
+        structuralUpdate(finalizedLines.join('\n'), lineIndex + 1, 0);
+      } else {
+        lines[lineIndex] = '/timer ';
+        structuralUpdate(lines.join('\n'), lineIndex, 7);
+      }
     } else if (command === 'line') {
       lines[lineIndex] = 'line';
       if (lineIndex >= lines.length - 1) lines.push('');
@@ -797,6 +802,13 @@ const ScratchpadPanel: React.FC<Props> = ({
       const llmPrompt = parseScratchpadLlmPrompt(currentLine);
       if (llmPrompt) {
         void runScratchpadLlmQuery(lineIndex, llmPrompt);
+        return;
+      }
+
+      const finalizedTimerLines = finalizeTimerSlashCommand(lines, lineIndex);
+      if (finalizedTimerLines) {
+        pushUndo(true);
+        structuralUpdate(finalizedTimerLines.join('\n'), lineIndex + 1, 0);
         return;
       }
 

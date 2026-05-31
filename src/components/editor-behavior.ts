@@ -425,6 +425,21 @@ export function getExactSlashCommand(line: string, slashCommands: readonly { nam
   return slashCommands.some(item => item.name === command) ? command : null;
 }
 
+export function finalizeTimerSlashCommand(lines: string[], lineIndex: number): string[] | null {
+  const line = lines[lineIndex];
+  if (line === undefined) return null;
+
+  const visibleLine = line.startsWith(LIST_EXIT) ? line.slice(LIST_EXIT.length) : line;
+  const match = visibleLine.trim().match(/^\/timer(?:\s+(.*))?$/i);
+  if (!match) return null;
+
+  const config = match[1]?.trim() ?? '';
+  const nextLines = [...lines];
+  nextLines[lineIndex] = config ? `timer ${config}` : 'timer';
+  if (lineIndex >= nextLines.length - 1) nextLines.push('');
+  return nextLines;
+}
+
 export interface FloatingSelectionRect {
   top: number;
   left: number;

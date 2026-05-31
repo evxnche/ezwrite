@@ -52,6 +52,7 @@ import {
   type SelectedLineRange,
   getMarkdownRangeForSelection,
   getExactSlashCommand,
+  finalizeTimerSlashCommand,
   getClosestLineIndexForClick,
 } from './editor-behavior';
 import {
@@ -2553,9 +2554,13 @@ const WritingInterface = () => {
       })();
       return;
     } else if (command === 'timer') {
-      lines[lineIndex] = 'timer ';
-      editingTimerLineRef.current = lineIndex;
-      structuralUpdate(lines.join('\n'), lineIndex, 6);
+      const finalizedLines = finalizeTimerSlashCommand(lines, lineIndex);
+      if (finalizedLines) {
+        structuralUpdate(finalizedLines.join('\n'), lineIndex + 1, 0);
+      } else {
+        lines[lineIndex] = '/timer ';
+        structuralUpdate(lines.join('\n'), lineIndex, 7);
+      }
     } else {
       lines[lineIndex] = command;
       // For /list: collapse consecutive empty lines below to prevent multiple empty checkboxes
@@ -2927,6 +2932,13 @@ const WritingInterface = () => {
       const freshOffset = offset;
       const li = Math.min(lineIndex, freshLines.length - 1);
       const currentLine = freshLines[li] || '';
+      const finalizedTimerLines = finalizeTimerSlashCommand(freshLines, li);
+      if (finalizedTimerLines) {
+        pushUndo(true);
+        structuralUpdate(finalizedTimerLines.join('\n'), li + 1, 0);
+        scrollToLine(li + 1);
+        return;
+      }
       const exactSlashCommand = getExactSlashCommand(currentLine, slashCommands);
       if (exactSlashCommand) {
         applySlashCommand(exactSlashCommand, li);

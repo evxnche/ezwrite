@@ -28,6 +28,7 @@ import {
   moveSelectedLineRange,
   getMarkdownRangeForSelection,
   getExactSlashCommand,
+  finalizeTimerSlashCommand,
   getClosestLineIndexForClick,
 } from './editor-behavior.ts';
 import { MOBILE_HISTORY_CONTROLS_STACK_HEIGHT_PX } from './editor-history.ts';
@@ -463,6 +464,13 @@ test('Scratchpad stays isolated and follows editor font choice', () => {
   assert.equal(scratchpadSource.includes('aria-hidden={!open}'), true);
 });
 
+test('Timer autocomplete stays editable until the slash invocation is submitted', () => {
+  const writingSource = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  const scratchpadSource = fs.readFileSync(path.join(process.cwd(), 'src/components/ScratchpadPanel.tsx'), 'utf8');
+  assert.match(writingSource, /lines\[lineIndex\] = '\/timer ';\s+structuralUpdate\(lines\.join\('\\n'\), lineIndex, 7\);/);
+  assert.match(scratchpadSource, /lines\[lineIndex\] = '\/timer ';\s+structuralUpdate\(lines\.join\('\\n'\), lineIndex, 7\);/);
+});
+
 test('scratchpad // LLM prompts are handled only in ScratchpadPanel', () => {
   const writingSource = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   const scratchpadSource = fs.readFileSync(path.join(process.cwd(), 'src/components/ScratchpadPanel.tsx'), 'utf8');
@@ -657,6 +665,14 @@ test('getExactSlashCommand recognizes complete slash commands only', () => {
   assert.equal(getExactSlashCommand('/li'), null);
   assert.equal(getExactSlashCommand('/line extra'), null);
   assert.equal(getExactSlashCommand('not /line'), null);
+});
+
+test('finalizeTimerSlashCommand converts submitted timer arguments into timer lines', () => {
+  assert.deepEqual(finalizeTimerSlashCommand(['/timer'], 0), ['timer', '']);
+  assert.deepEqual(finalizeTimerSlashCommand(['/timer 25'], 0), ['timer 25', '']);
+  assert.deepEqual(finalizeTimerSlashCommand(['/timer 15:30'], 0), ['timer 15:30', '']);
+  assert.deepEqual(finalizeTimerSlashCommand(['/timer 45 15', 'after'], 0), ['timer 45 15', 'after']);
+  assert.equal(finalizeTimerSlashCommand(['/tim'], 0), null);
 });
 
 test('getMarkdownRangeForSelection excludes an untouched trailing line', () => {
