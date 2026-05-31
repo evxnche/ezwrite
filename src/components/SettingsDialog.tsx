@@ -532,7 +532,7 @@ export const SettingsDialog: React.FC<Props> = ({
                   )}
 
                   {syncError && (
-                    <div className="text-[10px] text-destructive lowercase">
+                    <div className="text-[10px] text-destructive lowercase break-all whitespace-pre-wrap">
                       {syncError}
                     </div>
                   )}
