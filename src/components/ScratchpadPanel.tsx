@@ -30,6 +30,8 @@ import {
   renumberFollowingPlainNumberedListItems,
   splitExitedListLine,
 } from './editor-behavior';
+import { EditorHistory, type EditorHistorySnapshot } from './editor-history';
+import MobileHistoryControls from './MobileHistoryControls';
 import { completeScratchpadPrompt } from '@/lib/openrouter';
 import {
   parseScratchpadLlmPrompt,
@@ -52,6 +54,7 @@ interface Props {
   timerScope?: string;
   /** Fires when a scratchpad timer completes a phase / finishes — used to alert the main editor. */
   onTimerComplete?: () => void;
+  isTouchDevice?: boolean;
 }
 
 interface CursorInfo {
@@ -76,6 +79,7 @@ const ScratchpadPanel: React.FC<Props> = ({
   slashCommands,
   timerScope,
   onTimerComplete,
+  isTouchDevice = false,
 }) => {
   const isResizingRef = useRef(false);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -86,6 +90,10 @@ const ScratchpadPanel: React.FC<Props> = ({
   const trackedCursor = useRef<{ lineIndex: number; offset: number } | null>(null);
   const pendingCursor = useRef<{ lineIndex: number; offset: number } | null>(null);
   const llmAbortRef = useRef<AbortController | null>(null);
+  const editorHistory = useRef(new EditorHistory());
+  const suppressInputHistoryRef = useRef(false);
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const bumpHistory = useCallback(() => setHistoryVersion((v) => v + 1), []);
 
   const [selectionText, setSelectionText] = useState('');
   const [selectionRect, setSelectionRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
@@ -121,6 +129,7 @@ const ScratchpadPanel: React.FC<Props> = ({
 
     if (!editorRef.current) return;
 
+    suppressInputHistoryRef.current = true;
     editorRef.current.innerHTML = contentToHTML(nextContent, {
       editingTimerLine: editingTimerLineRef.current ?? undefined,
       hideUnnamedListHeaders: true,
@@ -158,6 +167,11 @@ const ScratchpadPanel: React.FC<Props> = ({
           setCursorPosition(editorRef.current, cursorLine, cursorOffset ?? 0);
         }
         pendingCursor.current = null;
+        suppressInputHistoryRef.current = false;
+      });
+    } else {
+      requestAnimationFrame(() => {
+        suppressInputHistoryRef.current = false;
       });
     }
   }, [emitContent]);
@@ -167,10 +181,12 @@ const ScratchpadPanel: React.FC<Props> = ({
     const nextContent = scratchpadTextToContent(value);
     contentRef.current = nextContent;
     editingTimerLineRef.current = null;
+    editorHistory.current.clear();
+    bumpHistory();
     if (open && editorRef.current) {
       structuralUpdate(nextContent, undefined, undefined, false, false);
     }
-  }, [open, structuralUpdate, value]);
+  }, [bumpHistory, open, structuralUpdate, value]);
 
   useEffect(() => {
     if (!open) return;
@@ -266,6 +282,40 @@ const ScratchpadPanel: React.FC<Props> = ({
     };
   }, [getLineOffsetFromDOMPoint]);
 
+  const captureHistorySnapshot = useCallback((): EditorHistorySnapshot => {
+    const tracked = pendingCursor.current ?? trackedCursor.current;
+    const live = tracked ?? getCursorInfo();
+    return {
+      content: contentRef.current,
+      cursor: live ? { lineIndex: live.lineIndex, offset: live.offset } : undefined,
+    };
+  }, [getCursorInfo]);
+
+  const pushUndo = useCallback((force = false) => {
+    editorHistory.current.push(captureHistorySnapshot(), { force });
+    bumpHistory();
+  }, [captureHistorySnapshot, bumpHistory]);
+
+  const applyHistorySnapshot = useCallback((snapshot: EditorHistorySnapshot) => {
+    const lineIndex = snapshot.cursor?.lineIndex ?? 0;
+    const offset = snapshot.cursor?.offset ?? 0;
+    structuralUpdate(snapshot.content, lineIndex, offset, !isTouchDevice);
+  }, [isTouchDevice, structuralUpdate]);
+
+  const performUndo = useCallback(() => {
+    const snapshot = editorHistory.current.undo(captureHistorySnapshot());
+    if (!snapshot) return;
+    applyHistorySnapshot(snapshot);
+    bumpHistory();
+  }, [applyHistorySnapshot, bumpHistory, captureHistorySnapshot]);
+
+  const performRedo = useCallback(() => {
+    const snapshot = editorHistory.current.redo(captureHistorySnapshot());
+    if (!snapshot) return;
+    applyHistorySnapshot(snapshot);
+    bumpHistory();
+  }, [applyHistorySnapshot, bumpHistory, captureHistorySnapshot]);
+
   const updateSelection = useCallback(() => {
     if (!editorRef.current) return;
     const sel = window.getSelection();
@@ -354,6 +404,7 @@ const ScratchpadPanel: React.FC<Props> = ({
     const controller = new AbortController();
     llmAbortRef.current = controller;
 
+    pushUndo(true);
     const lines = contentRef.current.split('\n');
     const loadingIndex = lineIndex + 1;
     lines.splice(loadingIndex, 0, SCRATCHPAD_LLM_LOADING_LINE);
@@ -387,12 +438,13 @@ const ScratchpadPanel: React.FC<Props> = ({
       fresh.splice(insertAt, 1, `// error: ${message}`, '');
       structuralUpdate(fresh.join('\n'), insertAt + 1, 0);
     }
-  }, [structuralUpdate]);
+  }, [pushUndo, structuralUpdate]);
 
   const applySlashCommand = useCallback((command: string, lineIndex: number) => {
     const lines = contentRef.current.split('\n');
     if (lineIndex < 0 || lineIndex >= lines.length) return;
 
+    pushUndo(true);
     if (command === 'timer') {
       lines[lineIndex] = 'timer';
       if (lineIndex >= lines.length - 1) lines.push('');
@@ -410,10 +462,17 @@ const ScratchpadPanel: React.FC<Props> = ({
     }
 
     setSlashPopup(null);
-  }, [structuralUpdate]);
+  }, [pushUndo, structuralUpdate]);
+
+  const handleBeforeInput = useCallback(() => {
+    pushUndo();
+  }, [pushUndo]);
 
   const handleInput = useCallback(() => {
     if (!editorRef.current) return;
+    if (!suppressInputHistoryRef.current) {
+      pushUndo();
+    }
 
     let hasRawTextNode = false;
     for (const node of editorRef.current.childNodes) {
@@ -465,7 +524,7 @@ const ScratchpadPanel: React.FC<Props> = ({
     }
 
     if (slashPopup) setSlashPopup(null);
-  }, [emitContent, getCursorInfo, slashCommands, slashPopup, structuralUpdate]);
+  }, [emitContent, getCursorInfo, pushUndo, slashCommands, slashPopup, structuralUpdate]);
 
   const handleEditorClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
@@ -481,6 +540,7 @@ const ScratchpadPanel: React.FC<Props> = ({
 
     if (actionTarget.dataset.action === 'delete') {
       e.preventDefault();
+      pushUndo(true);
       const lineIndex = parseInt(actionTarget.dataset.line || '-1', 10);
       const lines = contentRef.current.split('\n');
       if (lineIndex < 0 || lineIndex >= lines.length) return;
@@ -495,6 +555,7 @@ const ScratchpadPanel: React.FC<Props> = ({
     if (!toggle) return;
 
     e.preventDefault();
+    pushUndo(true);
     const lineIndex = parseInt(toggle.dataset.line || '-1', 10);
     const lines = contentRef.current.split('\n');
     if (lineIndex < 0 || lineIndex >= lines.length) return;
@@ -502,13 +563,14 @@ const ScratchpadPanel: React.FC<Props> = ({
     const clean = getCleanLine(lines[lineIndex]);
     lines[lineIndex] = isLineStruck(lines[lineIndex]) ? clean : STRUCK_MARKER + clean;
     structuralUpdate(lines.join('\n'), lineIndex, clean.length);
-  }, [structuralUpdate]);
+  }, [pushUndo, structuralUpdate]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     e.preventDefault();
 
     const raw = e.clipboardData.getData('text/plain');
     if (!raw) return;
+    pushUndo(true);
 
     const htmlData = e.clipboardData.getData('text/html');
     const plain = normalizeClipboardPasteText(raw, htmlData);
@@ -647,8 +709,20 @@ const ScratchpadPanel: React.FC<Props> = ({
     const currentLine = lines[lineIndex] || '';
     const lineType = getLineType(lines, lineIndex);
 
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      performUndo();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y')) {
+      e.preventDefault();
+      performRedo();
+      return;
+    }
+
     if (e.key === 'Tab' && !e.shiftKey) {
       e.preventDefault();
+      pushUndo(true);
       if (lineType === 'list-item') {
         const clean = getCleanLine(currentLine);
         lines[lineIndex] = (isLineStruck(currentLine) ? STRUCK_MARKER : '') + INDENT + clean;
@@ -663,6 +737,7 @@ const ScratchpadPanel: React.FC<Props> = ({
 
     if (e.key === 'Tab' && e.shiftKey) {
       e.preventDefault();
+      pushUndo(true);
       if (lineType === 'list-item') {
         const clean = getCleanLine(currentLine);
         if (!clean.startsWith(INDENT)) return;
@@ -679,6 +754,7 @@ const ScratchpadPanel: React.FC<Props> = ({
 
     if (e.key === 'Backspace' && lineType === 'list-item' && offset === 0) {
       e.preventDefault();
+      pushUndo(true);
       const clean = getCleanLine(currentLine);
       let indentLevel = 0;
       let visibleText = clean;
@@ -708,6 +784,7 @@ const ScratchpadPanel: React.FC<Props> = ({
     if (e.key === 'Backspace' && offset >= INDENT.length && lineType !== 'list-item') {
       if (currentLine.substring(offset - INDENT.length, offset) === INDENT) {
         e.preventDefault();
+        pushUndo(true);
         lines[lineIndex] = currentLine.substring(0, offset - INDENT.length) + currentLine.substring(offset);
         structuralUpdate(lines.join('\n'), lineIndex, offset - INDENT.length);
         return;
@@ -728,6 +805,8 @@ const ScratchpadPanel: React.FC<Props> = ({
         applySlashCommand(exactSlashCommand, lineIndex);
         return;
       }
+
+      pushUndo(true);
 
       if (editingTimerLineRef.current === lineIndex) {
         editingTimerLineRef.current = null;
@@ -831,12 +910,17 @@ const ScratchpadPanel: React.FC<Props> = ({
 
     if (e.key === 'Escape' && editingTimerLineRef.current === lineIndex) {
       e.preventDefault();
+      pushUndo(true);
       lines.splice(lineIndex, 1);
       if (!lines.length) lines.push('');
       editingTimerLineRef.current = null;
       structuralUpdate(lines.join('\n'), Math.max(0, lineIndex - 1), 0);
     }
   };
+
+  void historyVersion;
+  const canContentUndo = editorHistory.current.canUndo;
+  const canContentRedo = editorHistory.current.canRedo;
 
   return (
     <div
@@ -880,6 +964,7 @@ const ScratchpadPanel: React.FC<Props> = ({
         suppressContentEditableWarning
         spellCheck={false}
         onInput={handleInput}
+        onBeforeInput={handleBeforeInput}
         onKeyDown={handleKeyDown}
         onClick={handleEditorClick}
         onPaste={handlePaste}
@@ -887,6 +972,17 @@ const ScratchpadPanel: React.FC<Props> = ({
           useSerif ? 'font-playfair' : 'font-mono'
         }`}
       />
+
+      {isTouchDevice && open && !slashPopup && (
+        <MobileHistoryControls
+          visible
+          canUndo={canContentUndo}
+          canRedo={canContentRedo}
+          onUndo={performUndo}
+          onRedo={performRedo}
+          fallbackBottom="calc(env(safe-area-inset-bottom, 0px) + 5rem)"
+        />
+      )}
 
       {selectionText && selectionRect && (
         <button
@@ -929,6 +1025,7 @@ const ScratchpadPanel: React.FC<Props> = ({
             onComplete={onTimerComplete}
             onRemove={() => {
               clearTimerState(persistKey);
+              pushUndo(true);
               const lines = contentRef.current.split('\n');
               lines.splice(lineIndex, 1);
               if (!lines.length) lines.push('');

@@ -88,18 +88,28 @@ const TimerWidget: React.FC<TimerWidgetProps> = ({ config, persistKey, onRemove,
       }
       const remaining = baseSecondsRef.current - elapsed;
       if (remaining <= 0) {
-        // Pomodoro runs a single round: work → break → stop. After the work
-        // phase, switch to the break; after the break, fall through to "done".
-        if (parsed.mode === 'pomodoro' && phaseRef.current === 'work') {
-          phaseRef.current = 'break';
-          setPhase('break');
-          baseSecondsRef.current = parsed.break;
-          epochRef.current = Date.now();
-          setSeconds(parsed.break);
-          onComplete?.();
-          return;
+        // Pomodoro runs infinitely: work → break → work → break...
+        if (parsed.mode === 'pomodoro') {
+          if (phaseRef.current === 'work') {
+            phaseRef.current = 'break';
+            setPhase('break');
+            baseSecondsRef.current = parsed.break;
+            epochRef.current = Date.now();
+            setSeconds(parsed.break);
+            onComplete?.();
+            return;
+          } else {
+            // After break, loop back to work phase
+            phaseRef.current = 'work';
+            setPhase('work');
+            baseSecondsRef.current = parsed.work;
+            epochRef.current = Date.now();
+            setSeconds(parsed.work);
+            onComplete?.();
+            return;
+          }
         }
-        // Countdown finished, or pomodoro break finished → stop.
+        // Countdown finished (non-pomodoro)
         setDone(true);
         setRunning(false);
         setSeconds(0);

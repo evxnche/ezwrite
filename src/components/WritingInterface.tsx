@@ -34,6 +34,7 @@ import {
   getPageEndCursor,
   prepareFloatingSlashButtonCommand,
   getMobileFloatingSlashButtonTop,
+  getMobileFloatingHistoryControlsTop,
   getShareCardLines,
   getShareCardPalette,
   normalizeClipboardPasteText,
@@ -102,6 +103,8 @@ import { runSequentialSyncBatch, toSyncError } from '@/lib/sync-retry';
 import { recordBugReportBreadcrumb, setBugReportRuntimeContext } from '@/lib/bug-report';
 import { loadSyncSession, saveSyncSession, clearSyncSession } from '@/lib/sync-session-store';
 import MobileSyncGate from './MobileSyncGate';
+import { EditorHistory, MOBILE_HISTORY_CONTROLS_STACK_HEIGHT_PX, type EditorHistorySnapshot } from './editor-history';
+import MobileHistoryControls from './MobileHistoryControls';
 
 
 const InfoDialog = lazy(() => import('./InfoDialog'));
@@ -420,8 +423,10 @@ const WritingInterface = () => {
   const [kbHeight, setKbHeight] = useState(0);
   const kbHeightRef = useRef(0);
   const [mobileSlashButtonTop, setMobileSlashButtonTop] = useState<number | null>(null);
+  const [mobileHistoryControlsTop, setMobileHistoryControlsTop] = useState<number | null>(null);
+  const getCursorInfoRef = useRef<(() => { lineIndex: number; offset: number } | null)>(() => null);
 
-  const updateMobileSlashButtonPosition = useCallback(() => {
+  const updateMobileFloatingControlsPosition = useCallback(() => {
     if (!isTouchDevice) return;
     const editor = editorRef.current;
     const sel = window.getSelection();
@@ -438,22 +443,26 @@ const WritingInterface = () => {
     }
 
     if (rect.height === 0 && rect.width === 0) {
-      const info = getCursorInfo() ?? trackedCursor.current;
+      const info = getCursorInfoRef.current() ?? trackedCursor.current;
       if (info) {
         const lineNode = editor.childNodes[info.lineIndex] as HTMLElement | undefined;
         if (lineNode) rect = lineNode.getBoundingClientRect();
       }
     }
 
-    setMobileSlashButtonTop(
-      getMobileFloatingSlashButtonTop({
-        caretTop: rect.top,
-        caretBottom: rect.bottom,
-        caretHeight: rect.height,
-        viewportHeight: window.innerHeight,
-        keyboardHeight: kbHeightRef.current,
-      }),
-    );
+    const caretParams = {
+      caretTop: rect.top,
+      caretBottom: rect.bottom,
+      caretHeight: rect.height,
+      viewportHeight: window.innerHeight,
+      keyboardHeight: kbHeightRef.current,
+    };
+
+    setMobileSlashButtonTop(getMobileFloatingSlashButtonTop(caretParams));
+    setMobileHistoryControlsTop(getMobileFloatingHistoryControlsTop({
+      ...caretParams,
+      stackHeight: MOBILE_HISTORY_CONTROLS_STACK_HEIGHT_PX,
+    }));
   }, [isTouchDevice]);
 
   useEffect(() => {
@@ -464,7 +473,7 @@ const WritingInterface = () => {
       const h = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
       kbHeightRef.current = h;
       setKbHeight(h);
-      updateMobileSlashButtonPosition();
+      updateMobileFloatingControlsPosition();
     };
     update();
     vv.addEventListener('resize', update);
@@ -473,14 +482,14 @@ const WritingInterface = () => {
       vv.removeEventListener('resize', update);
       vv.removeEventListener('scroll', update);
     };
-  }, [isTouchDevice, updateMobileSlashButtonPosition]);
+  }, [isTouchDevice, updateMobileFloatingControlsPosition]);
 
   useEffect(() => {
     if (!isTouchDevice) return;
-    const onScroll = () => updateMobileSlashButtonPosition();
+    const onScroll = () => updateMobileFloatingControlsPosition();
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
-  }, [isTouchDevice, updateMobileSlashButtonPosition]);
+  }, [isTouchDevice, updateMobileFloatingControlsPosition]);
 
   // Color theme toggle — cycles: '' → 'blue' → 'green' → 'red' → ''
   const [colorTheme, setColorTheme] = useState<ColorTheme>(() => getInitialColorTheme());
@@ -680,7 +689,7 @@ const WritingInterface = () => {
 
   // Font toggle (persisted)
   const [useSerif, setUseSerif] = useState(() =>
-    localStorage.getItem('ezwrite-font') !== 'mono'
+    localStorage.getItem('ezwrite-font') === 'serif'
   );
   const handleToggleFont = () => {
     setUseSerif(v => {
@@ -761,10 +770,11 @@ const WritingInterface = () => {
   // True while structuralUpdate is resetting innerHTML — suppresses selectionchange tracking.
   const isResettingDOM = useRef(false);
   // Undo / Redo
-  const undoStack = useRef<string[]>([]);
-  const redoStack = useRef<string[]>([]);
+  const editorHistory = useRef(new EditorHistory());
   const deletedPageUndoStack = useRef<DeletedPageSnapshot[]>([]);
-  const lastUndoTime = useRef(0);
+  const suppressInputHistoryRef = useRef(false);
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const bumpHistory = useCallback(() => setHistoryVersion((v) => v + 1), []);
   const deferredPersistTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const scratchpadPersistTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const pageDeleteNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
@@ -772,13 +782,25 @@ const WritingInterface = () => {
   const [pageDeleteNoticeVisible, setPageDeleteNoticeVisible] = useState(false);
   const scratchpadRef = useRef(scratchpad);
   useEffect(() => { scratchpadRef.current = scratchpad; }, [scratchpad]);
-  const pushUndo = useCallback((force = false) => {
-    const now = Date.now();
-    if (!force && now - lastUndoTime.current < 500) return;
-    undoStack.current.push(contentRef.current);
-    redoStack.current = [];
-    lastUndoTime.current = now;
+
+  const captureHistorySnapshot = useCallback((): EditorHistorySnapshot => {
+    const tracked = pendingCursor.current ?? trackedCursor.current;
+    const live = tracked ?? getCursorInfoRef.current();
+    return {
+      content: contentRef.current,
+      cursor: live ? { lineIndex: live.lineIndex, offset: live.offset } : undefined,
+    };
   }, []);
+
+  const clearEditorHistory = useCallback(() => {
+    editorHistory.current.clear();
+    bumpHistory();
+  }, [bumpHistory]);
+
+  const pushUndo = useCallback((force = false) => {
+    editorHistory.current.push(captureHistorySnapshot(), { force });
+    bumpHistory();
+  }, [captureHistorySnapshot, bumpHistory]);
 
   const clearDeletedPageUndo = useCallback(() => {
     deletedPageUndoStack.current = [];
@@ -1171,6 +1193,7 @@ const WritingInterface = () => {
     if (persist) saveContent(content);
     if (!editorRef.current) return;
 
+    suppressInputHistoryRef.current = true;
     isResettingDOM.current = true;
     editorRef.current.innerHTML = contentToHTML(content, {
       editingTimerLine: editingTimerLineRef.current ?? undefined,
@@ -1227,6 +1250,11 @@ const WritingInterface = () => {
           setCursorPosition(editorRef.current, cursorLine, cursorOffset ?? 0);
         }
         pendingCursor.current = null; // RAF fired — Selection API is reliable again
+        suppressInputHistoryRef.current = false;
+      });
+    } else {
+      requestAnimationFrame(() => {
+        suppressInputHistoryRef.current = false;
       });
     }
   }, [saveContent]);
@@ -1384,7 +1412,7 @@ const WritingInterface = () => {
       
       const info = getCursorInfo();
       if (info) trackedCursor.current = { lineIndex: info.lineIndex, offset: info.offset };
-      updateMobileSlashButtonPosition();
+      updateMobileFloatingControlsPosition();
 
       const sel = window.getSelection();
       if (!sel) return;
@@ -1419,7 +1447,7 @@ const WritingInterface = () => {
     };
     document.addEventListener('selectionchange', handler);
     return () => document.removeEventListener('selectionchange', handler);
-  }, [updateMobileSlashButtonPosition]); // getCursorInfo only uses stable refs (editorRef) — closure is safe
+  }, [updateMobileFloatingControlsPosition]); // getCursorInfo only uses stable refs (editorRef) — closure is safe
 
   // Pre-warm heavy export chunks so first-click latency is negligible.
   useEffect(() => { void import('jspdf'); }, []);
@@ -1459,9 +1487,7 @@ const WritingInterface = () => {
     }
     // Clear timer editing
     editingTimerLineRef.current = null;
-    // Clear undo/redo for new page
-    undoStack.current = [];
-    redoStack.current = [];
+    clearEditorHistory();
     // Show dots briefly while switching pages.
     setShowDots(true);
     clearTimeout(dotsTimeoutRef.current);
@@ -1518,8 +1544,7 @@ const WritingInterface = () => {
     setPageCount(result.pages.length);
     persistPageStructure(result.pages, newPage);
     editingTimerLineRef.current = null;
-    undoStack.current = [];
-    redoStack.current = [];
+    clearEditorHistory();
     setShowDots(true);
     clearTimeout(dotsTimeoutRef.current);
     dotsTimeoutRef.current = setTimeout(() => setShowDots(false), 500);
@@ -1531,7 +1556,7 @@ const WritingInterface = () => {
       const { lineIndex, offset } = getPageEndCursor(newContent);
       structuralUpdate(newContent, lineIndex, offset, !isTouchDevice);
     }
-  }, [persistPageStructure, showDeletedPageUndoNotice, structuralUpdate, isTouchDevice]);
+  }, [clearEditorHistory, persistPageStructure, showDeletedPageUndoNotice, structuralUpdate, isTouchDevice]);
 
   const restoreLastDeletedPage = useCallback(() => {
     const deletedPage = deletedPageUndoStack.current.pop();
@@ -1556,8 +1581,7 @@ const WritingInterface = () => {
     setPageCount(restored.pages.length);
     persistPageStructure(restored.pages, restored.restoredPage);
     editingTimerLineRef.current = null;
-    undoStack.current = [];
-    redoStack.current = [];
+    clearEditorHistory();
     setShowDots(true);
     clearTimeout(dotsTimeoutRef.current);
     dotsTimeoutRef.current = setTimeout(() => setShowDots(false), 500);
@@ -1568,7 +1592,28 @@ const WritingInterface = () => {
     const { lineIndex, offset } = getPageEndCursor(restoredContent);
     structuralUpdate(restoredContent, lineIndex, offset, !isTouchDevice, false);
     return true;
-  }, [persistPageStructure, showDeletedPageUndoNotice, structuralUpdate, isTouchDevice]);
+  }, [clearEditorHistory, persistPageStructure, showDeletedPageUndoNotice, structuralUpdate, isTouchDevice]);
+
+  const applyHistorySnapshot = useCallback((snapshot: EditorHistorySnapshot) => {
+    const lineIndex = snapshot.cursor?.lineIndex ?? 0;
+    const offset = snapshot.cursor?.offset ?? 0;
+    structuralUpdate(snapshot.content, lineIndex, offset, !isTouchDevice);
+  }, [structuralUpdate, isTouchDevice]);
+
+  const performUndo = useCallback(() => {
+    if (restoreLastDeletedPage()) return;
+    const snapshot = editorHistory.current.undo(captureHistorySnapshot());
+    if (!snapshot) return;
+    applyHistorySnapshot(snapshot);
+    bumpHistory();
+  }, [applyHistorySnapshot, bumpHistory, captureHistorySnapshot, restoreLastDeletedPage]);
+
+  const performRedo = useCallback(() => {
+    const snapshot = editorHistory.current.redo(captureHistorySnapshot());
+    if (!snapshot) return;
+    applyHistorySnapshot(snapshot);
+    bumpHistory();
+  }, [applyHistorySnapshot, bumpHistory, captureHistorySnapshot]);
 
   useEffect(() => {
     const handleGlobalPageDeleteUndo = (event: KeyboardEvent) => {
@@ -1614,8 +1659,7 @@ const WritingInterface = () => {
     currentPageRef.current = newCurrentPage;
     setIsPageEmpty(contentRef.current.trim() === '');
     setScratchpadOpen(false);
-    undoStack.current = [];
-    redoStack.current = [];
+    clearEditorHistory();
     editingTimerLineRef.current = null;
     const { lineIndex, offset } = getPageEndCursor(contentRef.current);
     structuralUpdate(contentRef.current, lineIndex, offset, !isTouchDevice, false);
@@ -1623,7 +1667,7 @@ const WritingInterface = () => {
       if (!isTouchDevice) editorRef.current?.focus();
       setPageTransition('none');
     }, 250);
-  }, [clearDeletedPageUndo, persistScratchpad, scratchpad, structuralUpdate, isTouchDevice]);
+  }, [clearDeletedPageUndo, clearEditorHistory, persistScratchpad, scratchpad, structuralUpdate, isTouchDevice]);
 
   const handleNewProject = useCallback(() => {
     if (editorRef.current) {
@@ -2321,9 +2365,17 @@ const WritingInterface = () => {
     return { lineIndex: foundIdx, offset, lineDiv: foundEl };
   };
 
+  getCursorInfoRef.current = () => {
+    const info = getCursorInfo();
+    return info ? { lineIndex: info.lineIndex, offset: info.offset } : null;
+  };
+
   // Handle input (text-only changes from user typing)
   const handleInput = useCallback(() => {
     if (!editorRef.current) return;
+    if (!suppressInputHistoryRef.current) {
+      pushUndo();
+    }
 
     // Detect raw text nodes at container level — if found, DOM is corrupted.
     // Re-render to fix structure. extractContent now captures raw text content.
@@ -2602,20 +2654,13 @@ const WritingInterface = () => {
     // Ctrl+Z
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
       e.preventDefault();
-      if (restoreLastDeletedPage()) return;
-      if (undoStack.current.length) {
-        redoStack.current.push(contentRef.current);
-        structuralUpdate(undoStack.current.pop()!, lineIndex, offset);
-      }
+      performUndo();
       return;
     }
     // Ctrl+Shift+Z / Ctrl+Y
     if ((e.ctrlKey || e.metaKey) && ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y')) {
       e.preventDefault();
-      if (redoStack.current.length) {
-        undoStack.current.push(contentRef.current);
-        structuralUpdate(redoStack.current.pop()!, lineIndex, offset);
-      }
+      performRedo();
       return;
     }
 
@@ -3711,6 +3756,10 @@ const WritingInterface = () => {
       : isDark ? { textShadow: visualMetrics.warmEditorGlow } : {}),
   };
 
+  void historyVersion;
+  const canContentUndo = editorHistory.current.canUndo;
+  const canContentRedo = editorHistory.current.canRedo;
+
   const syncConfigured = getSyncConfigStatus() === 'ready';
   if (isTouchDevice && syncConfigured && !syncSession) {
     return (
@@ -3892,6 +3941,17 @@ const WritingInterface = () => {
       </div>
 
 
+      {isTouchDevice && !scratchpadOpen && !slashPopup && (
+        <MobileHistoryControls
+          visible
+          canUndo={canContentUndo || deletedPageUndoCount > 0}
+          canRedo={canContentRedo}
+          onUndo={performUndo}
+          onRedo={performRedo}
+          top={mobileHistoryControlsTop}
+        />
+      )}
+
       {/* Floating / button — mobile only, inserts / to trigger command popup */}
       {isTouchDevice && !slashPopup && (
         <button
@@ -4032,6 +4092,7 @@ const WritingInterface = () => {
           onClose={() => setScratchpadOpen(false)}
           timerScope={`scratch:${activeProjectId ?? 'none'}`}
           onTimerComplete={handleTimerComplete}
+          isTouchDevice={isTouchDevice}
           slashCommands={getSlashCommands({
             imagesEnabled: false,
             sidetabEnabled: false,

@@ -37,11 +37,11 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="ezwrite" />
-    <meta name="theme-color" content="#7C3232" />
+    <meta name="theme-color" content="#171717" />
     <script>
       (function () {
         var stored = localStorage.getItem('ezwrite-color-theme');
-        var theme = stored === null ? 'red' : (['', 'blue', 'green', 'red'].indexOf(stored) >= 0 ? stored : '');
+        var theme = stored === null ? '' : (['', 'blue', 'green', 'red'].indexOf(stored) >= 0 ? stored : '');
         if (theme) document.documentElement.setAttribute('data-color-theme', theme);
       })();
     </script>

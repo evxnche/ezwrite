@@ -171,6 +171,29 @@ export const MOBILE_FLOATING_SLASH_BUTTON_SIZE_PX = 44;
 export const MOBILE_FLOATING_SLASH_BUTTON_MARGIN_PX = 8;
 
 /** Vertical `top` (viewport px) for the mobile floating / button beside the caret line. */
+/** Vertical `top` for the stacked mobile undo/redo controls beside the caret line. */
+export function getMobileFloatingHistoryControlsTop(params: {
+  caretTop: number;
+  caretBottom: number;
+  caretHeight: number;
+  viewportHeight: number;
+  keyboardHeight: number;
+  safeAreaTop?: number;
+  stackHeight?: number;
+  margin?: number;
+}): number {
+  return getMobileFloatingSlashButtonTop({
+    caretTop: params.caretTop,
+    caretBottom: params.caretBottom,
+    caretHeight: params.caretHeight,
+    viewportHeight: params.viewportHeight,
+    keyboardHeight: params.keyboardHeight,
+    safeAreaTop: params.safeAreaTop,
+    buttonSize: params.stackHeight,
+    margin: params.margin,
+  });
+}
+
 export function getMobileFloatingSlashButtonTop(params: {
   caretTop: number;
   caretBottom: number;
@@ -413,16 +436,36 @@ export interface FloatingSelectionRect {
   height: number;
 }
 
+interface FloatingSelectionViewport {
+  width: number;
+  height: number;
+}
+
 function isUsableFloatingSelectionRect(rect: FloatingSelectionRect): boolean {
   return rect.width > 0 && rect.height > 0;
+}
+
+function isFloatingSelectionRectVisible(rect: FloatingSelectionRect, viewport: FloatingSelectionViewport): boolean {
+  const right = rect.left + rect.width;
+  const bottom = rect.top + rect.height;
+  return rect.left < viewport.width && right > 0 && rect.top < viewport.height && bottom > 0;
 }
 
 export function pickFloatingSelectionAnchorRect<T extends FloatingSelectionRect>(
   selectionRects: readonly T[],
   focusAtStart: boolean,
+  viewport?: FloatingSelectionViewport | null,
   fallbackRect?: T | null,
 ): T | null {
   const usableRects = selectionRects.filter(isUsableFloatingSelectionRect);
+  const candidateRects = viewport
+    ? usableRects.filter((rect) => isFloatingSelectionRectVisible(rect, viewport))
+    : usableRects;
+
+  if (candidateRects.length > 0) {
+    return focusAtStart ? candidateRects[0] : candidateRects[candidateRects.length - 1];
+  }
+
   if (usableRects.length > 0) {
     return focusAtStart ? usableRects[0] : usableRects[usableRects.length - 1];
   }
@@ -434,6 +477,7 @@ export function getFloatingSelectionAnchorRect(selection: Selection, range: Rang
   return pickFloatingSelectionAnchorRect(
     Array.from(range.getClientRects()),
     selection.focusNode === range.startContainer && selection.focusOffset === range.startOffset,
+    typeof window === 'undefined' ? null : { width: window.innerWidth, height: window.innerHeight },
     range.getBoundingClientRect(),
   );
 }

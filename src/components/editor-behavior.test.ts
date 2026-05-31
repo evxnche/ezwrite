@@ -8,6 +8,7 @@ import {
   getFloatingSlashButtonCursor,
   pickFloatingSelectionAnchorRect,
   getMobileFloatingSlashButtonTop,
+  getMobileFloatingHistoryControlsTop,
   MOBILE_FLOATING_SLASH_BUTTON_SIZE_PX,
   getTouchGestureIntent,
   getPageEndCursor,
@@ -27,6 +28,7 @@ import {
   getExactSlashCommand,
   getClosestLineIndexForClick,
 } from './editor-behavior.ts';
+import { MOBILE_HISTORY_CONTROLS_STACK_HEIGHT_PX } from './editor-history.ts';
 
 test('normalizeEditorContent removes accidental leading regular spaces', () => {
   assert.equal(normalizeEditorContent(' hello'), 'hello');
@@ -508,6 +510,47 @@ test('WritingInterface makes page deletion undoable from Cmd+Z and the notice ac
   assert.equal(source.includes('undo.'), true);
 });
 
+test('WritingInterface exposes mobile undo/redo via EditorHistory and floating controls', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  assert.match(source, /import \{ EditorHistory/);
+  assert.match(source, /import MobileHistoryControls from '\.\/MobileHistoryControls'/);
+  assert.match(source, /const performUndo = useCallback/);
+  assert.match(source, /const performRedo = useCallback/);
+  assert.match(source, /<MobileHistoryControls/);
+  assert.match(source, /isTouchDevice && !scratchpadOpen && !slashPopup/);
+  assert.match(source, /onUndo=\{performUndo\}/);
+});
+
+test('ScratchpadPanel supports undo history and mobile floating controls', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/ScratchpadPanel.tsx'), 'utf8');
+  assert.match(source, /import \{ EditorHistory/);
+  assert.match(source, /import MobileHistoryControls from '\.\/MobileHistoryControls'/);
+  assert.match(source, /onBeforeInput=\{handleBeforeInput\}/);
+  assert.match(source, /performUndo\(\)/);
+  assert.match(source, /performRedo\(\)/);
+  assert.match(source, /isTouchDevice\?: boolean/);
+});
+
+test('WritingInterface passes isTouchDevice into ScratchpadPanel', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  assert.match(source, /isTouchDevice=\{isTouchDevice\}/);
+});
+
+test('getMobileFloatingHistoryControlsTop centers the undo/redo stack on the caret line', () => {
+  const top = getMobileFloatingHistoryControlsTop({
+    caretTop: 200,
+    caretBottom: 228,
+    caretHeight: 28,
+    viewportHeight: 800,
+    keyboardHeight: 0,
+    stackHeight: MOBILE_HISTORY_CONTROLS_STACK_HEIGHT_PX,
+  });
+  assert.equal(
+    top,
+    200 + 28 / 2 - MOBILE_HISTORY_CONTROLS_STACK_HEIGHT_PX / 2,
+  );
+});
+
 test('WritingInterface renders page switches without resaving target page content', () => {
   const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   assert.match(source, /const structuralUpdate = useCallback\(\([\s\S]*?persist = true,[\s\S]*?if \(persist\) saveContent\(content\);/);
@@ -644,9 +687,43 @@ test('pickFloatingSelectionAnchorRect uses the rendered line nearest the active 
   );
 });
 
+test('pickFloatingSelectionAnchorRect prefers visible highlighted lines for long selections', () => {
+  const topOffscreen = { top: -420, left: 120, width: 80, height: 20 };
+  const firstVisible = { top: 96, left: 120, width: 80, height: 20 };
+  const lastVisible = { top: 612, left: 120, width: 80, height: 20 };
+  const bottomOffscreen = { top: 1200, left: 120, width: 80, height: 20 };
+  const viewport = { width: 1440, height: 800 };
+
+  assert.deepEqual(
+    pickFloatingSelectionAnchorRect(
+      [topOffscreen, firstVisible, lastVisible, bottomOffscreen],
+      false,
+      viewport,
+    ),
+    lastVisible,
+  );
+  assert.deepEqual(
+    pickFloatingSelectionAnchorRect(
+      [topOffscreen, firstVisible, lastVisible, bottomOffscreen],
+      true,
+      viewport,
+    ),
+    firstVisible,
+  );
+});
+
 test('pickFloatingSelectionAnchorRect rejects an unusable viewport-origin fallback', () => {
   assert.equal(
-    pickFloatingSelectionAnchorRect([], false, { top: 0, left: 0, width: 0, height: 0 }),
+    pickFloatingSelectionAnchorRect([], false, null, { top: 0, left: 0, width: 0, height: 0 }),
     null,
   );
+});
+
+test('selection transfer buttons share stable viewport anchoring', () => {
+  const writingSource = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  const scratchpadSource = fs.readFileSync(path.join(process.cwd(), 'src/components/ScratchpadPanel.tsx'), 'utf8');
+
+  assert.equal(writingSource.includes('getFloatingSelectionAnchorRect(currentSel, currentSel.getRangeAt(0))'), true);
+  assert.equal(scratchpadSource.includes('getFloatingSelectionAnchorRect(sel, range)'), true);
+  assert.equal(writingSource.includes('className="fixed z-50 flex items-center justify-center'), true);
 });

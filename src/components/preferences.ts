@@ -1,7 +1,7 @@
 export const COLOR_THEMES = ['', 'blue', 'green', 'red'] as const;
 export type ColorTheme = (typeof COLOR_THEMES)[number];
 
-export const DEFAULT_COLOR_THEME: ColorTheme = 'red';
+export const DEFAULT_COLOR_THEME: ColorTheme = '';
 
 export const TIMER_ALERT_MODES = ['both', 'visual', 'audio', 'silent'] as const;
 export type TimerAlertMode = (typeof TIMER_ALERT_MODES)[number];
