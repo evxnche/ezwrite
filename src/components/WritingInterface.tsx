@@ -47,6 +47,9 @@ import {
   shouldAutoFocusAfterPageSwitch,
   splitExitedListLine,
   getFloatingSelectionAnchorRect,
+  getSelectedLineRange,
+  moveSelectedLineRange,
+  type SelectedLineRange,
   getMarkdownRangeForSelection,
   getExactSlashCommand,
   getClosestLineIndexForClick,
@@ -202,6 +205,8 @@ const VISUAL_METRICS = {
 } as const;
 
 const MOBILE_FIXED_UI_CLEARANCE_PX = 132;
+/** Breathing room (~2 lines) kept between the caret line and the keyboard. */
+const MOBILE_CARET_KEYBOARD_MARGIN_PX = 56;
 const MOBILE_EDITOR_BOTTOM_PADDING = 'calc(env(safe-area-inset-bottom, 0px) + 13rem)';
 const MOBILE_FOOTER_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 0.5rem)';
 const MOBILE_PAGE_DOTS_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 2.75rem)';
@@ -2116,7 +2121,13 @@ const WritingInterface = () => {
 
   const keepLineComfortablyVisible = useCallback((lineNode: HTMLElement, behavior: ScrollBehavior = 'smooth') => {
     const rect = lineNode.getBoundingClientRect();
-    const maxBottom = window.innerHeight - MOBILE_FIXED_UI_CLEARANCE_PX;
+    // When the keyboard is up, keep the caret line ~2 lines above it. With no
+    // keyboard, fall back to the fixed clearance for the bottom UI/footer.
+    const clearance = Math.max(
+      kbHeightRef.current + MOBILE_CARET_KEYBOARD_MARGIN_PX,
+      MOBILE_FIXED_UI_CLEARANCE_PX,
+    );
+    const maxBottom = window.innerHeight - clearance;
     if (rect.bottom <= maxBottom) return;
 
     window.scrollBy({
@@ -2600,6 +2611,71 @@ const WritingInterface = () => {
     openSlashPopup(lineIndex, filter);
   }, [openSlashPopup, pushUndo, structuralUpdate]);
 
+  const getEditorSelectedLineRange = useCallback((): SelectedLineRange | null => {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection || selection.isCollapsed || selection.rangeCount === 0) return null;
+
+    const range = selection.getRangeAt(0);
+    if (!editor.contains(range.commonAncestorContainer)) return null;
+    const lines = Array.from(editor.childNodes);
+    if (lines.length === 0) return null;
+
+    const getLinePoint = (container: Node, offset: number, isEnd: boolean) => {
+      if (container === editor) {
+        return {
+          lineIndex: Math.max(0, Math.min(offset, isEnd ? lines.length : lines.length - 1)),
+          offset: 0,
+        };
+      }
+
+      const lineIndex = lines.findIndex((line) => line === container || line.contains(container));
+      return lineIndex < 0 ? null : { lineIndex, offset };
+    };
+
+    const startPoint = getLinePoint(range.startContainer, range.startOffset, false);
+    const endPoint = getLinePoint(range.endContainer, range.endOffset, true);
+    return startPoint && endPoint ? getSelectedLineRange(startPoint, endPoint) : null;
+  }, []);
+
+  const selectEditorLineRange = useCallback((range: SelectedLineRange) => {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    const firstLine = editor?.childNodes[range.start];
+    const lastLine = editor?.childNodes[range.end];
+    if (!editor || !selection || !firstLine || !lastLine) return;
+
+    const domRange = document.createRange();
+    domRange.setStart(firstLine, 0);
+    domRange.setEnd(lastLine, lastLine.childNodes.length);
+    selection.removeAllRanges();
+    selection.addRange(domRange);
+  }, []);
+
+  const moveEditorLines = useCallback((
+    direction: 'up' | 'down',
+    lineIndex: number,
+    offset: number,
+  ) => {
+    if (!editorRef.current) return;
+
+    const selectedRange = getEditorSelectedLineRange();
+    const freshLines = extractContent(editorRef.current).split('\n');
+    const moved = moveSelectedLineRange(
+      freshLines,
+      selectedRange ?? { start: lineIndex, end: lineIndex },
+      direction,
+    );
+    if (!moved) return;
+
+    pushUndo(true);
+    structuralUpdate(moved.lines.join('\n'), moved.range.start, selectedRange ? 0 : offset);
+    if (selectedRange) {
+      selectEditorLineRange(moved.range);
+      requestAnimationFrame(() => selectEditorLineRange(moved.range));
+    }
+  }, [getEditorSelectedLineRange, pushUndo, selectEditorLineRange, structuralUpdate]);
+
   // Key handler
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     // Clear selection rect on any key down that isn't a modifier
@@ -2792,27 +2868,15 @@ const WritingInterface = () => {
       return;
     }
 
-    // Cmd/Ctrl+Arrow move line
+    // Cmd/Ctrl+Arrow move the selected lines together, or the current line.
     if ((e.metaKey || e.ctrlKey) && e.key === 'ArrowUp') {
       e.preventDefault();
-      if (lineIndex > 0) {
-        pushUndo(true);
-        const freshContent = extractContent(editorRef.current!);
-        const freshLines = freshContent.split('\n');
-        [freshLines[lineIndex], freshLines[lineIndex - 1]] = [freshLines[lineIndex - 1], freshLines[lineIndex]];
-        structuralUpdate(freshLines.join('\n'), lineIndex - 1, offset);
-      }
+      moveEditorLines('up', lineIndex, offset);
       return;
     }
     if ((e.metaKey || e.ctrlKey) && e.key === 'ArrowDown') {
       e.preventDefault();
-      if (lineIndex < lines.length - 1) {
-        pushUndo(true);
-        const freshContent = extractContent(editorRef.current!);
-        const freshLines = freshContent.split('\n');
-        [freshLines[lineIndex], freshLines[lineIndex + 1]] = [freshLines[lineIndex + 1], freshLines[lineIndex]];
-        structuralUpdate(freshLines.join('\n'), lineIndex + 1, offset);
-      }
+      moveEditorLines('down', lineIndex, offset);
       return;
     }
 
