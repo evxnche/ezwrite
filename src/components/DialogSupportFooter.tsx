@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { BRANDING_LINE } from '@/lib/app-links';
 import BugReportDialog from './BugReportDialog';
 
+const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
+const APP_COMMIT_SHA = typeof __APP_COMMIT_SHA__ !== 'undefined' ? __APP_COMMIT_SHA__ : 'unknown';
+
 type Props = {
   variant: 'help' | 'settings';
   bugContext?: Record<string, unknown>;
@@ -30,6 +33,9 @@ const DialogSupportFooter: React.FC<Props> = ({
           report a bug
         </button>
         <p>{BRANDING_LINE}</p>
+        <p className="text-muted-foreground/40 text-[10px] select-text">
+          v{APP_VERSION} · {APP_COMMIT_SHA}
+        </p>
       </div>
       <BugReportDialog
         open={bugOpen}
