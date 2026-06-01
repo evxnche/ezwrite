@@ -12,7 +12,8 @@ import {
   extractContent,
   getCleanLine,
   getLineType,
-  getRawOffsetUpTo,
+  getLineOffsetFromDOMPoint,
+  extractContentSliceForSelection,
   INDENT,
   isLineStruck,
   LIST_EXIT,
@@ -20,7 +21,6 @@ import {
   setCursorPosition,
   STRUCK_MARKER,
   markdownToContent,
-  extractSelectionWithLinks,
 } from './writing-helpers';
 import {
   autoInsertTimerArgSpace,
@@ -225,51 +225,9 @@ const ScratchpadPanel: React.FC<Props> = ({
     };
   }, [onResize]);
 
-  const getLineOffsetFromDOMPoint = useCallback((container: Node, domOffset: number): { lineIndex: number; offset: number } | null => {
+  const resolveLineOffsetFromDOMPoint = useCallback((container: Node, domOffset: number) => {
     if (!editorRef.current) return null;
-
-    const children = Array.from(editorRef.current.childNodes) as HTMLElement[];
-    let foundIdx = -1;
-    let foundEl: HTMLElement | null = null;
-
-    if (container === editorRef.current) {
-      foundIdx = Math.max(0, Math.min(domOffset > 0 ? domOffset - 1 : 0, children.length - 1));
-      foundEl = children[foundIdx] || null;
-    } else {
-      for (let i = 0; i < children.length; i++) {
-        if (children[i].contains(container)) {
-          foundIdx = i;
-          foundEl = children[i];
-          break;
-        }
-      }
-    }
-
-    if (foundIdx < 0 || !foundEl) return null;
-
-    let textContainer: Node = foundEl;
-    if (foundEl.dataset?.type === 'list-item') {
-      const textSpan = foundEl.querySelector('.ce-li-text');
-      if (textSpan) textContainer = textSpan;
-    }
-
-    let offset = 0;
-    try {
-      if (container === editorRef.current) {
-        offset = domOffset > foundIdx ? (foundEl.textContent?.length ?? 0) : 0;
-      } else {
-        const result = getRawOffsetUpTo(textContainer, container, domOffset);
-        offset = result.offset;
-      }
-    } catch {
-      offset = 0;
-    }
-
-    if (foundEl.dataset?.indent) offset += parseInt(foundEl.dataset.indent, 10) * INDENT.length;
-    if (foundEl.dataset?.quotePrefix) offset += 3;
-    if (foundEl.dataset?.headingPrefix) offset += parseInt(foundEl.dataset.headingPrefix, 10);
-
-    return { lineIndex: foundIdx, offset };
+    return getLineOffsetFromDOMPoint(editorRef.current, container, domOffset);
   }, []);
 
   const getCursorInfo = useCallback((): CursorInfo | null => {
@@ -277,13 +235,13 @@ const ScratchpadPanel: React.FC<Props> = ({
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return null;
     const range = sel.getRangeAt(0);
-    const point = getLineOffsetFromDOMPoint(range.startContainer, range.startOffset);
+    const point = resolveLineOffsetFromDOMPoint(range.startContainer, range.startOffset);
     if (!point) return null;
     return {
       ...point,
       lineDiv: editorRef.current.children[point.lineIndex] as HTMLElement | null,
     };
-  }, [getLineOffsetFromDOMPoint]);
+  }, [resolveLineOffsetFromDOMPoint]);
 
   const captureHistorySnapshot = useCallback((): EditorHistorySnapshot => {
     const tracked = pendingCursor.current ?? trackedCursor.current;
@@ -335,8 +293,8 @@ const ScratchpadPanel: React.FC<Props> = ({
       return;
     }
 
-    const startPoint = getLineOffsetFromDOMPoint(range.startContainer, range.startOffset);
-    const endPoint = getLineOffsetFromDOMPoint(range.endContainer, range.endOffset);
+    const startPoint = resolveLineOffsetFromDOMPoint(range.startContainer, range.startOffset);
+    const endPoint = resolveLineOffsetFromDOMPoint(range.endContainer, range.endOffset);
 
     let nextSelection = sel.toString();
     if (startPoint && endPoint) {
@@ -360,7 +318,7 @@ const ScratchpadPanel: React.FC<Props> = ({
       width: rect.width,
       height: rect.height,
     } : null);
-  }, [getLineOffsetFromDOMPoint]);
+  }, [resolveLineOffsetFromDOMPoint]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -368,7 +326,7 @@ const ScratchpadPanel: React.FC<Props> = ({
       const sel = window.getSelection();
       if (!sel || !editorRef.current) return;
       if (sel.isCollapsed) {
-        const point = getLineOffsetFromDOMPoint(sel.anchorNode ?? editorRef.current, sel.anchorOffset);
+        const point = resolveLineOffsetFromDOMPoint(sel.anchorNode ?? editorRef.current, sel.anchorOffset);
         if (point) trackedCursor.current = point;
       }
       if (editorRef.current.contains(sel.anchorNode) || editorRef.current.contains(sel.focusNode)) {
@@ -385,11 +343,15 @@ const ScratchpadPanel: React.FC<Props> = ({
   const handleMoveToEditor = useCallback(() => {
     const sel = window.getSelection();
     if (!editorRef.current || !sel || sel.isCollapsed) return;
-    const textToMove = extractSelectionWithLinks(sel);
+    const textToMove = extractContentSliceForSelection(
+      editorRef.current,
+      contentRef.current,
+      sel,
+    );
     if (!textToMove) return;
 
     const range = sel.rangeCount ? sel.getRangeAt(0) : null;
-    const startPoint = range ? getLineOffsetFromDOMPoint(range.startContainer, range.startOffset) : null;
+    const startPoint = range ? resolveLineOffsetFromDOMPoint(range.startContainer, range.startOffset) : null;
 
     onMoveToEditor(textToMove);
 
@@ -402,7 +364,7 @@ const ScratchpadPanel: React.FC<Props> = ({
 
     setSelectionText('');
     setSelectionRect(null);
-  }, [getLineOffsetFromDOMPoint, notesTransferMode, onMoveToEditor, structuralUpdate]);
+  }, [resolveLineOffsetFromDOMPoint, notesTransferMode, onMoveToEditor, structuralUpdate]);
 
   const runScratchpadLlmQuery = useCallback(async (lineIndex: number, prompt: string) => {
     llmAbortRef.current?.abort();
@@ -597,8 +559,8 @@ const ScratchpadPanel: React.FC<Props> = ({
 
     if (sel && sel.rangeCount && !sel.getRangeAt(0).collapsed && editorRef.current?.contains(sel.getRangeAt(0).commonAncestorContainer)) {
       const range = sel.getRangeAt(0);
-      const startInfo = getLineOffsetFromDOMPoint(range.startContainer, range.startOffset);
-      const endInfo = getLineOffsetFromDOMPoint(range.endContainer, range.endOffset);
+      const startInfo = resolveLineOffsetFromDOMPoint(range.startContainer, range.startOffset);
+      const endInfo = resolveLineOffsetFromDOMPoint(range.endContainer, range.endOffset);
       if (startInfo && endInfo && (startInfo.lineIndex !== endInfo.lineIndex || startInfo.offset !== endInfo.offset)) {
         const { lineIndex: sl, offset: so } = startInfo;
         const { lineIndex: el, offset: eo } = endInfo;
@@ -666,7 +628,7 @@ const ScratchpadPanel: React.FC<Props> = ({
           if (newContent !== contentRef.current) structuralUpdate(newContent);
         });
     });
-  }, [structuralUpdate, getCursorInfo, getLineOffsetFromDOMPoint]);
+  }, [structuralUpdate, getCursorInfo, resolveLineOffsetFromDOMPoint]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (slashPopup && filteredCommands.length > 0) {

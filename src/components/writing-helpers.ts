@@ -242,14 +242,117 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
   }).join('');
 }
 
+/** Map a DOM selection point to a line index + offset in the internal content string. */
+export function getLineOffsetFromDOMPoint(
+  editor: HTMLElement,
+  container: Node,
+  domOffset: number,
+): { lineIndex: number; offset: number } | null {
+  const children = Array.from(editor.childNodes) as HTMLElement[];
+  let lineIndex = -1;
+  let lineEl: HTMLElement | null = null;
+
+  if (container === editor) {
+    lineIndex = Math.max(0, Math.min(domOffset > 0 ? domOffset - 1 : 0, children.length - 1));
+    lineEl = children[lineIndex] || null;
+    if (!lineEl) return null;
+    return {
+      lineIndex,
+      offset: domOffset > lineIndex ? (lineEl.textContent?.length ?? 0) : 0,
+    };
+  }
+
+  for (let i = 0; i < children.length; i++) {
+    if (children[i].contains(container)) {
+      lineIndex = i;
+      lineEl = children[i];
+      break;
+    }
+  }
+
+  if (lineIndex < 0 || !lineEl) return null;
+
+  let textContainer: Node = lineEl;
+  if (lineEl.dataset?.type === 'list-item') {
+    const textSpan = lineEl.querySelector('.ce-li-text');
+    if (textSpan) textContainer = textSpan;
+  }
+
+  let offset = 0;
+  try {
+    const result = getRawOffsetUpTo(textContainer, container, domOffset);
+    offset = result.offset;
+  } catch {
+    offset = 0;
+  }
+
+  if (lineEl.dataset?.indent) offset += parseInt(lineEl.dataset.indent, 10) * INDENT.length;
+  if (lineEl.dataset?.quotePrefix) offset += 3;
+  if (lineEl.dataset?.headingPrefix) offset += parseInt(lineEl.dataset.headingPrefix, 10);
+
+  return { lineIndex, offset };
+}
+
+function orderLinePoints(
+  a: { lineIndex: number; offset: number },
+  b: { lineIndex: number; offset: number },
+): [{ lineIndex: number; offset: number }, { lineIndex: number; offset: number }] {
+  if (a.lineIndex < b.lineIndex || (a.lineIndex === b.lineIndex && a.offset <= b.offset)) {
+    return [a, b];
+  }
+  return [b, a];
+}
+
+/** Slice internal content for the current editor selection (preserves [text](url) markdown). */
+export function extractContentSliceForSelection(
+  editor: HTMLElement,
+  content: string,
+  selection: Selection,
+): string {
+  if (!selection.rangeCount) return '';
+  const range = selection.getRangeAt(0);
+  if (range.collapsed) return '';
+  if (!editor.contains(range.commonAncestorContainer)) return selection.toString();
+
+  const startPoint = getLineOffsetFromDOMPoint(editor, range.startContainer, range.startOffset);
+  const endPoint = getLineOffsetFromDOMPoint(editor, range.endContainer, range.endOffset);
+  if (!startPoint || !endPoint) return selection.toString();
+
+  const lines = content.split('\n');
+  let [first, last] = orderLinePoints(startPoint, endPoint);
+
+  // Selection ending at the start of the next line should not include that line.
+  if (last.offset === 0 && last.lineIndex > first.lineIndex) {
+    const endLine = last.lineIndex - 1;
+    last = { lineIndex: endLine, offset: lines[endLine]?.length ?? 0 };
+  }
+
+  if (first.lineIndex === last.lineIndex) {
+    return (lines[first.lineIndex] ?? '').slice(first.offset, last.offset);
+  }
+
+  const chunks: string[] = [];
+  chunks.push((lines[first.lineIndex] ?? '').slice(first.offset));
+  for (let i = first.lineIndex + 1; i < last.lineIndex; i++) {
+    chunks.push(lines[i] ?? '');
+  }
+  chunks.push((lines[last.lineIndex] ?? '').slice(0, last.offset));
+  return chunks.join('\n');
+}
+
 /** Extract selection text, preserving link markup as [text](url) or raw URL. */
-export function extractSelectionWithLinks(selection: Selection): string {
+export function extractSelectionWithLinks(
+  selection: Selection,
+  editor?: HTMLElement | null,
+  content?: string,
+): string {
+  if (editor && content != null) {
+    return extractContentSliceForSelection(editor, content, selection);
+  }
   if (!selection.rangeCount) return selection.toString();
   const range = selection.getRangeAt(0);
-  // Clone the range contents into a temp div (avoids DocumentFragment quirks)
   const temp = document.createElement('div');
   temp.appendChild(range.cloneContents());
-  // Only use DOM extraction if the selection actually contains links
   if (!temp.querySelector('.ce-link, a[href]')) {
     return selection.toString();
   }

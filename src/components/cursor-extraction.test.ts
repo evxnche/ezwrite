@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   extractContent,
+  extractContentSliceForSelection,
   getRawOffsetUpTo,
   setCursorPosition,
 } from './writing-helpers.ts';
@@ -446,6 +447,39 @@ test('reverse: cursor at end of line with titled ce-link lands after link', () =
   setCursorPosition(editor as unknown as HTMLElement, 0, 'See '.length + md.length);
   assert.equal(cap.startNode, line);
   assert.equal(cap.startOffset, 2);
+});
+
+test('extractContentSliceForSelection preserves markdown links instead of display text', () => {
+  const link = el({
+    tag: 'A',
+    classes: ['ce-link'],
+    contentEditable: 'false',
+    childNodes: [tx('Example Site')],
+  });
+  const line = el({ dataset: { type: 'text' }, childNodes: [link] });
+  const editor = el({ childNodes: [line] });
+  const content = '[Example Site](https://x.com)';
+
+  const selection = {
+    rangeCount: 1,
+    isCollapsed: false,
+    toString: () => 'Example Site',
+    getRangeAt: () => ({
+      collapsed: false,
+      startContainer: line,
+      startOffset: 0,
+      endContainer: line,
+      endOffset: 1,
+      commonAncestorContainer: line,
+    }),
+  };
+
+  const slice = extractContentSliceForSelection(
+    editor as unknown as HTMLElement,
+    content,
+    selection as unknown as Selection,
+  );
+  assert.equal(slice, content);
 });
 
 test('forward edge: target IS the line root — child-offset path counts hidden wrappers', () => {

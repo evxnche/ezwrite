@@ -59,7 +59,7 @@ import {
   getTimerArgs, getSlashCommands, INDENT,
   contentToHTML, extractContent, setCursorPosition,
   contentToMarkdown, markdownToContent, getRawOffsetUpTo, hasRenderableInlineMarkdown,
-  extractSelectionWithLinks,
+  extractContentSliceForSelection,
 } from './writing-helpers';
 import {
   isFileSystemSupported, getSavedHandle, pickSaveDirectory,
@@ -1221,9 +1221,11 @@ const WritingInterface = () => {
 
   const handleInsertFromScratchpad = useCallback((text: string) => {
     if (!text) return;
-    
-    // Attempt native insert first if editor is focused
-    if (document.activeElement === editorRef.current) {
+
+    const hasLinkMarkdown = /(\[[^\]]+\]\(https?:\/\/[^\s)]+\)|https?:\/\/\S+)/.test(text);
+
+    // Attempt native insert first if editor is focused (plain text only — insertText drops link markup)
+    if (!hasLinkMarkdown && document.activeElement === editorRef.current) {
       if (document.execCommand('insertText', false, text)) {
         if (editorRef.current) {
           const textContent = extractContent(editorRef.current);
@@ -1267,8 +1269,12 @@ const WritingInterface = () => {
 
   const moveToNotes = useCallback(() => {
     const sel = window.getSelection();
-    if (!sel || sel.isCollapsed) return;
-    const textToMove = extractSelectionWithLinks(sel);
+    if (!sel || sel.isCollapsed || !editorRef.current) return;
+    const textToMove = extractContentSliceForSelection(
+      editorRef.current,
+      contentRef.current,
+      sel,
+    );
     if (!textToMove) return;
 
     if (!scratchpadOpen) setScratchpadOpen(true);
