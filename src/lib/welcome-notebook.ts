@@ -169,7 +169,7 @@ it also summarizes most of what is in this demo.
 
 # help
 for any other issues you may have or would like to make a feature request, 
-check out the report bug+feature req button at the footer of both, the /settings and /help windows.`,
+check out the report bugs + feature req button at the footer of both, the /settings and /help windows.`,
 `a lot many things on ezwrite are intentionally invisible, and you get a hang of it as you use it.
 i've put in quite a lot thought and time into it, and tried my best to make everything feel as frictionless as possible. 
 please be patient with me wrt bugs and know i'm constantly working on it.

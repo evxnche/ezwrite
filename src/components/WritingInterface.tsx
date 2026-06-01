@@ -1267,11 +1267,11 @@ const WritingInterface = () => {
 
   const moveToNotes = useCallback(() => {
     const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || !selectionText) return;
+    if (!sel || sel.isCollapsed) return;
+    const textToMove = extractSelectionWithLinks(sel);
+    if (!textToMove) return;
 
     if (!scratchpadOpen) setScratchpadOpen(true);
-
-    const textToMove = extractSelectionWithLinks(sel);
 
     const newScratchpad = scratchpad.trim() 
       ? scratchpad + '\n\n' + textToMove
@@ -1306,7 +1306,7 @@ const WritingInterface = () => {
 
     setSelectionRect(null);
     setSelectionText('');
-  }, [scratchpad, selectionText, activeProjectId, saveContent, notesTransferMode, scratchpadOpen, structuralUpdate]);
+  }, [scratchpad, activeProjectId, saveContent, notesTransferMode, scratchpadOpen, structuralUpdate]);
 
   // --- Cursor normalizer ---
   // When structuralUpdate resets innerHTML, the browser can leave the cursor at the

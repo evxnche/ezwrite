@@ -80,7 +80,7 @@ const BugReportDialog: React.FC<Props> = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[90vw] sm:max-w-md bg-popover text-popover-foreground !rounded-2xl font-mono text-sm">
         <DialogHeader>
-          <DialogTitle className="font-mono text-base sm:text-lg lowercase">report bug+feature req</DialogTitle>
+          <DialogTitle className="font-mono text-base sm:text-lg lowercase">report bugs + feature req</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3 lowercase">
           <div>

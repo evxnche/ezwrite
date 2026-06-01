@@ -383,15 +383,15 @@ const ScratchpadPanel: React.FC<Props> = ({
   }, [open, updateSelection]);
 
   const handleMoveToEditor = useCallback(() => {
-    if (!editorRef.current || !selectionText) return;
-
     const sel = window.getSelection();
-    const range = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+    if (!editorRef.current || !sel || sel.isCollapsed) return;
+    const textToMove = extractSelectionWithLinks(sel);
+    if (!textToMove) return;
+
+    const range = sel.rangeCount ? sel.getRangeAt(0) : null;
     const startPoint = range ? getLineOffsetFromDOMPoint(range.startContainer, range.startOffset) : null;
 
-    const textToMove = extractSelectionWithLinks(sel!);
-
-    onMoveToEditor(textToMove || selectionText);
+    onMoveToEditor(textToMove);
 
     if (notesTransferMode === 'move' && range && editorRef.current.contains(range.commonAncestorContainer)) {
       range.deleteContents();
@@ -402,7 +402,7 @@ const ScratchpadPanel: React.FC<Props> = ({
 
     setSelectionText('');
     setSelectionRect(null);
-  }, [getLineOffsetFromDOMPoint, notesTransferMode, onMoveToEditor, selectionText, structuralUpdate]);
+  }, [getLineOffsetFromDOMPoint, notesTransferMode, onMoveToEditor, structuralUpdate]);
 
   const runScratchpadLlmQuery = useCallback(async (lineIndex: number, prompt: string) => {
     llmAbortRef.current?.abort();

@@ -246,13 +246,13 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
 export function extractSelectionWithLinks(selection: Selection): string {
   if (!selection.rangeCount) return selection.toString();
   const range = selection.getRangeAt(0);
-  const fragment = range.cloneContents();
-  // Only use slow DOM extraction if the selection actually contains links
-  if (!(fragment.querySelectorAll?.('.ce-link, a[href]').length)) {
+  // Clone the range contents into a temp div (avoids DocumentFragment quirks)
+  const temp = document.createElement('div');
+  temp.appendChild(range.cloneContents());
+  // Only use DOM extraction if the selection actually contains links
+  if (!temp.querySelector('.ce-link, a[href]')) {
     return selection.toString();
   }
-  const temp = document.createElement('div');
-  temp.appendChild(fragment.cloneNode(true));
   return extractContent(temp).replace(/\n$/, '');
 }
 
