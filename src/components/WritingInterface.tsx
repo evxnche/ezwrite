@@ -3988,6 +3988,7 @@ const WritingInterface = () => {
         <MobileEditorDock
           canUndo={canContentUndo || deletedPageUndoCount > 0}
           canRedo={canContentRedo}
+          keyboardHeight={kbHeight}
           onSlash={handleFloatingSlashButton}
           onUndo={performUndo}
           onRedo={performRedo}
