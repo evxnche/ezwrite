@@ -53,6 +53,7 @@ import {
   getMarkdownRangeForSelection,
   getExactSlashCommand,
   finalizeTimerSlashCommand,
+  autoInsertTimerArgSpace,
   getClosestLineIndexForClick,
 } from './editor-behavior';
 import {
@@ -2708,20 +2709,6 @@ const WritingInterface = () => {
       ? { lineIndex: _cursor.lineIndex, offset: _cursor.offset, lineDiv: editorRef.current?.children[_cursor.lineIndex] as HTMLElement ?? null }
       : getCursorInfo();
 
-    // Popup nav
-    if (slashPopup) {
-      if (e.key === 'ArrowDown') { e.preventDefault(); setPopupHighlight(h => Math.min(h + 1, filteredCommands.length - 1)); return; }
-      if (e.key === 'ArrowUp') { e.preventDefault(); setPopupHighlight(h => Math.max(h - 1, 0)); return; }
-      if (e.key === 'Enter') { e.preventDefault(); if (filteredCommands[popupHighlight]) handleSlashSelect(filteredCommands[popupHighlight].name); return; }
-      if (e.key === 'Escape') { e.preventDefault(); setSlashPopup(null); return; }
-      const num = parseInt(e.key);
-      if (!isNaN(num) && num >= 1 && num <= filteredCommands.length) {
-        e.preventDefault();
-        handleSlashSelect(filteredCommands[num - 1].name);
-        return;
-      }
-    }
-
     // Always prevent Enter/Tab from reaching the browser's contentEditable handler,
     // even if cursor info is unavailable — native handling corrupts the DOM structure.
     if (!info) {
@@ -2737,6 +2724,30 @@ const WritingInterface = () => {
     }
     const { lineIndex, offset } = info;
     const lines = contentRef.current.split('\n');
+    const currentLine = lines[lineIndex] || '';
+
+    const timerArgAutofill = autoInsertTimerArgSpace(currentLine, offset, e.key);
+    if (!e.metaKey && !e.ctrlKey && !e.altKey && timerArgAutofill) {
+      e.preventDefault();
+      pushUndo(true);
+      lines[lineIndex] = timerArgAutofill.line;
+      structuralUpdate(lines.join('\n'), lineIndex, timerArgAutofill.cursorOffset);
+      return;
+    }
+
+    // Popup nav
+    if (slashPopup) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setPopupHighlight(h => Math.min(h + 1, filteredCommands.length - 1)); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setPopupHighlight(h => Math.max(h - 1, 0)); return; }
+      if (e.key === 'Enter') { e.preventDefault(); if (filteredCommands[popupHighlight]) handleSlashSelect(filteredCommands[popupHighlight].name); return; }
+      if (e.key === 'Escape') { e.preventDefault(); setSlashPopup(null); return; }
+      const num = parseInt(e.key);
+      if (!isNaN(num) && num >= 1 && num <= filteredCommands.length) {
+        e.preventDefault();
+        handleSlashSelect(filteredCommands[num - 1].name);
+        return;
+      }
+    }
 
     // Ctrl+Z
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {

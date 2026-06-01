@@ -29,6 +29,7 @@ import {
   getMarkdownRangeForSelection,
   getExactSlashCommand,
   finalizeTimerSlashCommand,
+  autoInsertTimerArgSpace,
   getClosestLineIndexForClick,
 } from './editor-behavior.ts';
 import { MOBILE_HISTORY_CONTROLS_STACK_HEIGHT_PX } from './editor-history.ts';
@@ -680,6 +681,39 @@ test('finalizeTimerSlashCommand converts submitted timer arguments into timer li
   assert.deepEqual(finalizeTimerSlashCommand(['/timer 15:30'], 0), ['timer 15:30', '']);
   assert.deepEqual(finalizeTimerSlashCommand(['/timer 45 15', 'after'], 0), ['timer 45 15', 'after']);
   assert.equal(finalizeTimerSlashCommand(['/tim'], 0), null);
+});
+
+test('autoInsertTimerArgSpace inserts one space when typing args after /timer', () => {
+  assert.deepEqual(
+    autoInsertTimerArgSpace('/timer', 6, '1'),
+    { line: '/timer 1', cursorOffset: 8 },
+  );
+  assert.deepEqual(
+    autoInsertTimerArgSpace('/timer', 6, '2'),
+    { line: '/timer 2', cursorOffset: 8 },
+  );
+  assert.deepEqual(
+    autoInsertTimerArgSpace(`${LIST_EXIT}/timer`, 6, '4'),
+    { line: `${LIST_EXIT}/timer 4`, cursorOffset: 8 },
+  );
+});
+
+test('autoInsertTimerArgSpace does not run outside the exact /timer-at-cursor case', () => {
+  assert.equal(autoInsertTimerArgSpace('/timer ', 7, '2'), null);
+  assert.equal(autoInsertTimerArgSpace('/timer', 5, '2'), null);
+  assert.equal(autoInsertTimerArgSpace('/timer', 6, ' '), null);
+  assert.equal(autoInsertTimerArgSpace('/list', 5, '2'), null);
+});
+
+test('timer arg autofill runs before slash popup number shortcuts', () => {
+  const writingSource = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  const scratchpadSource = fs.readFileSync(path.join(process.cwd(), 'src/components/ScratchpadPanel.tsx'), 'utf8');
+  const writingAutofill = writingSource.indexOf('const timerArgAutofill = autoInsertTimerArgSpace(currentLine, offset, e.key);');
+  const writingPopup = writingSource.indexOf('if (slashPopup) {');
+  const scratchpadAutofill = scratchpadSource.indexOf('const timerArgAutofill = autoInsertTimerArgSpace(currentLine, offset, e.key);');
+  const scratchpadPopup = scratchpadSource.indexOf('if (slashPopup) {');
+  assert.ok(writingAutofill !== -1 && writingPopup !== -1 && writingAutofill < writingPopup);
+  assert.ok(scratchpadAutofill !== -1 && scratchpadPopup !== -1 && scratchpadAutofill < scratchpadPopup);
 });
 
 test('getMarkdownRangeForSelection excludes an untouched trailing line', () => {

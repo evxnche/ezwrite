@@ -440,6 +440,20 @@ export function finalizeTimerSlashCommand(lines: string[], lineIndex: number): s
   return nextLines;
 }
 
+export function autoInsertTimerArgSpace(line: string, cursorOffset: number, key: string): { line: string; cursorOffset: number } | null {
+  if (key.length !== 1 || /\s/.test(key)) return null;
+
+  const hasListExitPrefix = line.startsWith(LIST_EXIT);
+  const visibleLine = hasListExitPrefix ? line.slice(LIST_EXIT.length) : line;
+  if (visibleLine !== '/timer' || cursorOffset !== visibleLine.length) return null;
+
+  const updatedVisibleLine = `${visibleLine} ${key}`;
+  return {
+    line: hasListExitPrefix ? `${LIST_EXIT}${updatedVisibleLine}` : updatedVisibleLine,
+    cursorOffset: updatedVisibleLine.length,
+  };
+}
+
 export interface FloatingSelectionRect {
   top: number;
   left: number;
