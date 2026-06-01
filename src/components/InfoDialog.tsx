@@ -73,7 +73,7 @@ const InfoDialog: React.FC<Props> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[90vw] sm:max-w-2xl bg-popover text-popover-foreground !rounded-2xl">
+      <DialogContent className="max-w-[90vw] sm:max-w-2xl h-[min(82vh,34rem)] grid grid-rows-[auto_auto_minmax(0,1fr)_auto] bg-popover text-popover-foreground !rounded-2xl">
         <DialogHeader>
           <DialogTitle className="font-mono text-base sm:text-lg truncate lowercase">shortcuts &amp; commands</DialogTitle>
         </DialogHeader>
