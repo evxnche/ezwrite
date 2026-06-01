@@ -73,7 +73,7 @@ const InfoDialog: React.FC<Props> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[90vw] sm:max-w-2xl h-[min(82vh,34rem)] grid grid-rows-[auto_auto_minmax(0,1fr)_auto] bg-popover text-popover-foreground !rounded-2xl">
+      <DialogContent className="max-w-[90vw] sm:max-w-2xl h-[min(88vh,40rem)] grid grid-rows-[auto_auto_minmax(0,1fr)_auto] bg-popover text-popover-foreground !rounded-2xl">
         <DialogHeader>
           <DialogTitle className="font-mono text-base sm:text-lg truncate lowercase">shortcuts &amp; commands</DialogTitle>
         </DialogHeader>
@@ -97,7 +97,7 @@ const InfoDialog: React.FC<Props> = ({
           <div
             ref={scrollRef}
             onScroll={handleScroll}
-            className="font-mono space-y-5 text-sm leading-relaxed overflow-y-auto max-h-[50vh] sm:max-h-[60vh] lowercase"
+            className="font-mono space-y-5 text-sm leading-relaxed overflow-y-auto lowercase"
           >
             {activeTab === 'commands' && (
               <>
