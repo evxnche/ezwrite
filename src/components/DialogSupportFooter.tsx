@@ -30,7 +30,7 @@ const DialogSupportFooter: React.FC<Props> = ({
           onClick={() => setBugOpen(true)}
           className="block text-accent-foreground hover:underline transition-colors"
         >
-          report a bug
+          report bug+feature req
         </button>
         <p>{BRANDING_LINE}</p>
         <p className="text-muted-foreground/40 text-[10px] select-text">

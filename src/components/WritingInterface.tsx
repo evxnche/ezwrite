@@ -33,8 +33,6 @@ import {
   getTouchGestureIntent,
   getPageEndCursor,
   prepareFloatingSlashButtonCommand,
-  getMobileFloatingSlashButtonTop,
-  getMobileFloatingHistoryControlsTop,
   getShareCardLines,
   getShareCardPalette,
   normalizeClipboardPasteText,
@@ -61,6 +59,7 @@ import {
   getTimerArgs, getSlashCommands, INDENT,
   contentToHTML, extractContent, setCursorPosition,
   contentToMarkdown, markdownToContent, getRawOffsetUpTo, hasRenderableInlineMarkdown,
+  extractSelectionWithLinks,
 } from './writing-helpers';
 import {
   isFileSystemSupported, getSavedHandle, pickSaveDirectory,
@@ -108,8 +107,8 @@ import { runSequentialSyncBatch, toSyncError } from '@/lib/sync-retry';
 import { recordBugReportBreadcrumb, setBugReportRuntimeContext } from '@/lib/bug-report';
 import { loadSyncSession, saveSyncSession, clearSyncSession } from '@/lib/sync-session-store';
 import MobileSyncGate from './MobileSyncGate';
-import { EditorHistory, MOBILE_HISTORY_BUTTON_SIZE_PX, type EditorHistorySnapshot } from './editor-history';
-import MobileHistoryControls from './MobileHistoryControls';
+import { EditorHistory, type EditorHistorySnapshot } from './editor-history';
+import MobileEditorDock from './MobileEditorDock';
 
 
 const InfoDialog = lazy(() => import('./InfoDialog'));
@@ -215,7 +214,7 @@ const MOBILE_CARET_KEYBOARD_MARGIN_PX = 88;
 const MOBILE_EDITOR_BOTTOM_PADDING = 'calc(env(safe-area-inset-bottom, 0px) + 13rem)';
 const MOBILE_FOOTER_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 0.5rem)';
 const MOBILE_PAGE_DOTS_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 2.75rem)';
-const PAGE_DELETE_NOTICE_MS = 3000;
+const PAGE_DELETE_NOTICE_MS = 3500;
 
 function drawRoundedRect(
   ctx: CanvasRenderingContext2D,
@@ -423,7 +422,7 @@ const WritingInterface = () => {
   const [showDots, setShowDots] = useState(false);
   const dotsTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
-  // Touch device + keyboard height (for floating / button)
+  // Touch device + keyboard height
   const isTouchDevice = useState(() => {
     if (typeof window === 'undefined') return false;
     // ?mobile=1 forces the mobile experience (incl. the sign-in gate) on desktop for demos.
@@ -432,50 +431,7 @@ const WritingInterface = () => {
   })[0];
   const [kbHeight, setKbHeight] = useState(0);
   const kbHeightRef = useRef(0);
-  const [mobileSlashButtonTop, setMobileSlashButtonTop] = useState<number | null>(null);
-  const [mobileHistoryControlsTop, setMobileHistoryControlsTop] = useState<number | null>(null);
   const getCursorInfoRef = useRef<(() => { lineIndex: number; offset: number } | null)>(() => null);
-
-  const updateMobileFloatingControlsPosition = useCallback(() => {
-    if (!isTouchDevice) return;
-    const editor = editorRef.current;
-    const sel = window.getSelection();
-    if (!editor || !sel?.rangeCount) return;
-
-    const anchor = sel.anchorNode;
-    if (!anchor || !editor.contains(anchor)) return;
-
-    let rect: DOMRect;
-    try {
-      rect = sel.getRangeAt(0).getBoundingClientRect();
-    } catch {
-      return;
-    }
-
-    if (rect.height === 0 && rect.width === 0) {
-      const info = getCursorInfoRef.current() ?? trackedCursor.current;
-      if (info) {
-        const lineNode = editor.childNodes[info.lineIndex] as HTMLElement | undefined;
-        if (lineNode) rect = lineNode.getBoundingClientRect();
-      }
-    }
-
-    const caretParams = {
-      caretTop: rect.top,
-      caretBottom: rect.bottom,
-      caretHeight: rect.height,
-      viewportHeight: window.innerHeight,
-      keyboardHeight: kbHeightRef.current,
-    };
-
-    setMobileSlashButtonTop(getMobileFloatingSlashButtonTop(caretParams));
-    setMobileHistoryControlsTop(getMobileFloatingHistoryControlsTop({
-      ...caretParams,
-      // Undo/redo sit in a horizontal row, so anchor on a single button's
-      // height to line up with the slash button above the keyboard.
-      stackHeight: MOBILE_HISTORY_BUTTON_SIZE_PX,
-    }));
-  }, [isTouchDevice]);
 
   useEffect(() => {
     if (!isTouchDevice) return;
@@ -485,7 +441,6 @@ const WritingInterface = () => {
       const h = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
       kbHeightRef.current = h;
       setKbHeight(h);
-      updateMobileFloatingControlsPosition();
     };
     update();
     vv.addEventListener('resize', update);
@@ -494,14 +449,7 @@ const WritingInterface = () => {
       vv.removeEventListener('resize', update);
       vv.removeEventListener('scroll', update);
     };
-  }, [isTouchDevice, updateMobileFloatingControlsPosition]);
-
-  useEffect(() => {
-    if (!isTouchDevice) return;
-    const onScroll = () => updateMobileFloatingControlsPosition();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, [isTouchDevice, updateMobileFloatingControlsPosition]);
+  }, [isTouchDevice]);
 
   // Color theme toggle — cycles: '' → 'blue' → 'green' → 'red' → ''
   const [colorTheme, setColorTheme] = useState<ColorTheme>(() => getInitialColorTheme());
@@ -1323,9 +1271,11 @@ const WritingInterface = () => {
 
     if (!scratchpadOpen) setScratchpadOpen(true);
 
+    const textToMove = extractSelectionWithLinks(sel);
+
     const newScratchpad = scratchpad.trim() 
-      ? scratchpad + '\n\n' + selectionText 
-      : selectionText;
+      ? scratchpad + '\n\n' + textToMove
+      : textToMove;
     
     setScratchpad(newScratchpad);
     if (activeProjectId) {
@@ -1428,8 +1378,6 @@ const WritingInterface = () => {
       
       const info = getCursorInfo();
       if (info) trackedCursor.current = { lineIndex: info.lineIndex, offset: info.offset };
-      updateMobileFloatingControlsPosition();
-
       const sel = window.getSelection();
       if (!sel) return;
 
@@ -1463,7 +1411,7 @@ const WritingInterface = () => {
     };
     document.addEventListener('selectionchange', handler);
     return () => document.removeEventListener('selectionchange', handler);
-  }, [updateMobileFloatingControlsPosition]); // getCursorInfo only uses stable refs (editorRef) — closure is safe
+  }, []); // getCursorInfo only uses stable refs (editorRef) — closure is safe
 
   // Pre-warm heavy export chunks so first-click latency is negligible.
   useEffect(() => { void import('jspdf'); }, []);
@@ -4037,29 +3985,13 @@ const WritingInterface = () => {
 
 
       {isTouchDevice && !scratchpadOpen && !slashPopup && (
-        <MobileHistoryControls
-          visible
+        <MobileEditorDock
           canUndo={canContentUndo || deletedPageUndoCount > 0}
           canRedo={canContentRedo}
+          onSlash={handleFloatingSlashButton}
           onUndo={performUndo}
           onRedo={performRedo}
-          top={mobileHistoryControlsTop}
         />
-      )}
-
-      {/* Floating / button — mobile only, inserts / to trigger command popup */}
-      {isTouchDevice && !slashPopup && (
-        <button
-          onPointerDown={(e) => {
-            e.preventDefault(); // keep editor focused / keyboard up
-            handleFloatingSlashButton();
-          }}
-          className="fixed right-4 z-50 w-11 h-11 rounded-full bg-popover border border-border text-muted-foreground flex items-center justify-center shadow-lg transition-[top,colors]"
-          style={{ top: mobileSlashButtonTop ?? 'auto', bottom: mobileSlashButtonTop == null ? 'calc(env(safe-area-inset-bottom, 0px) + 1rem)' : 'auto' }}
-          aria-label="Insert slash command"
-        >
-          <span className="font-mono text-lg leading-none">/</span>
-        </button>
       )}
 
       {/* Footer */}

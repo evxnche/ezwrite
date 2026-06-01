@@ -528,7 +528,7 @@ test('WritingInterface makes page deletion undoable from Cmd+Z and the notice ac
   assert.equal(source.includes('deletePageFromList'), true);
   assert.equal(source.includes('restoreDeletedPageToList'), true);
   assert.equal(source.includes('restoreLastDeletedPage()'), true);
-  assert.equal(source.includes('const PAGE_DELETE_NOTICE_MS = 3000;'), true);
+  assert.equal(source.includes('const PAGE_DELETE_NOTICE_MS = 3500;'), true);
   assert.equal(source.includes('page deleted.'), true);
   assert.equal(source.includes('undo.'), true);
 });

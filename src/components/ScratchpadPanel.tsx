@@ -20,6 +20,7 @@ import {
   setCursorPosition,
   STRUCK_MARKER,
   markdownToContent,
+  extractSelectionWithLinks,
 } from './writing-helpers';
 import {
   autoInsertTimerArgSpace,
@@ -388,7 +389,9 @@ const ScratchpadPanel: React.FC<Props> = ({
     const range = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
     const startPoint = range ? getLineOffsetFromDOMPoint(range.startContainer, range.startOffset) : null;
 
-    onMoveToEditor(selectionText);
+    const textToMove = extractSelectionWithLinks(sel!);
+
+    onMoveToEditor(textToMove || selectionText);
 
     if (notesTransferMode === 'move' && range && editorRef.current.contains(range.commonAncestorContainer)) {
       range.deleteContents();

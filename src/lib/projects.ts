@@ -132,6 +132,9 @@ function runMigration() {
 }
 
 function ensureWelcomeNotebook(): void {
+  // Skip welcome notebook on touch devices — mobile sync gate handles onboarding separately
+  // and avoids duplicate walkthrough when synced from desktop.
+  if (typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches) return;
   if (localStorage.getItem(WELCOME_ROLLOUT_KEY) === WELCOME_ROLLOUT_VERSION) return;
 
   const now = Date.now();

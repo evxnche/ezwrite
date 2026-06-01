@@ -242,6 +242,20 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
   }).join('');
 }
 
+/** Extract selection text, preserving link markup as [text](url) or raw URL. */
+export function extractSelectionWithLinks(selection: Selection): string {
+  if (!selection.rangeCount) return selection.toString();
+  const range = selection.getRangeAt(0);
+  const fragment = range.cloneContents();
+  // Only use slow DOM extraction if the selection actually contains links
+  if (!(fragment.querySelectorAll?.('.ce-link, a[href]').length)) {
+    return selection.toString();
+  }
+  const temp = document.createElement('div');
+  temp.appendChild(fragment.cloneNode(true));
+  return extractContent(temp).replace(/\n$/, '');
+}
+
 export function extractContent(editor: HTMLElement): string {
   const lines: string[] = [];
   let looseText = '';
