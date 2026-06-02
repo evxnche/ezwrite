@@ -639,7 +639,11 @@ const ScratchpadPanel: React.FC<Props> = ({
     if (slashPopup && filteredCommands.length > 0) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setPopupHighlight((index) => Math.min(index + 1, filteredCommands.length - 1)); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); setPopupHighlight((index) => Math.max(index - 1, 0)); return; }
-      if (e.key === 'Enter') { e.preventDefault(); if (filteredCommands[popupHighlight]) applySlashCommand(filteredCommands[popupHighlight].name, slashPopup.lineIndex); return; }
+      if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) {
+        e.preventDefault();
+        if (filteredCommands[popupHighlight]) applySlashCommand(filteredCommands[popupHighlight].name, slashPopup.lineIndex);
+        return;
+      }
       if (e.key === 'Escape') { e.preventDefault(); setSlashPopup(null); return; }
 
       const num = parseInt(e.key, 10);
@@ -694,7 +698,11 @@ const ScratchpadPanel: React.FC<Props> = ({
     if (slashPopup) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setPopupHighlight(h => Math.min(h + 1, filteredCommands.length - 1)); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); setPopupHighlight(h => Math.max(h - 1, 0)); return; }
-      if (e.key === 'Enter') { e.preventDefault(); if (filteredCommands[popupHighlight]) handleSlashSelect(filteredCommands[popupHighlight].name); return; }
+      if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) {
+        e.preventDefault();
+        if (filteredCommands[popupHighlight]) handleSlashSelect(filteredCommands[popupHighlight].name);
+        return;
+      }
       if (e.key === 'Escape') { e.preventDefault(); setSlashPopup(null); return; }
       const num = parseInt(e.key);
       if (!isNaN(num) && num >= 1 && num <= filteredCommands.length) {

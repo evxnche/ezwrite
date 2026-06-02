@@ -103,7 +103,7 @@ const InfoDialog: React.FC<Props> = ({
               <>
                 <section>
                   <h3 className="font-semibold mb-1.5 text-accent-foreground">/ commands</h3>
-                  <p className="text-muted-foreground mb-1">type <kbd className="px-1 py-0.5 bg-background rounded text-xs">/</kbd> at the start of a line:</p>
+                  <p className="text-muted-foreground mb-1">type <kbd className="px-1 py-0.5 bg-background rounded text-xs">/</kbd> at the start of a line. use <kbd className="px-1 py-0.5 bg-background rounded text-xs">↑</kbd>/<kbd className="px-1 py-0.5 bg-background rounded text-xs">↓</kbd>, <kbd className="px-1 py-0.5 bg-background rounded text-xs">enter</kbd>, or <kbd className="px-1 py-0.5 bg-background rounded text-xs">tab</kbd> to pick a command:</p>
                   <ol className="space-y-1 text-muted-foreground ml-3 list-decimal list-outside">
                     <li className="pl-1"><span className="text-accent-foreground">/list</span> — checklist with checkboxes</li>
                     <li className="pl-1"><span className="text-accent-foreground">/line</span> — horizontal divider</li>
