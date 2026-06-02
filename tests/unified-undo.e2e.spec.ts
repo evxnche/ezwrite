@@ -68,7 +68,7 @@ test('cmd/ctrl+z undoes page delete then typing in order', async ({ page }) => {
   await expect(editor).toContainText('UNIFIEDMARKERXYZ', { timeout: TIMEOUT });
 });
 
-test('typing then page delete: undo restores page before reverting earlier typing', async ({ page }) => {
+test('typing on a page then deleting it: undo brings the page back with that text', async ({ page }) => {
   const editor = await openEditor(page);
   const dots = await pageDots(page);
 
@@ -87,8 +87,37 @@ test('typing then page delete: undo restores page before reverting earlier typin
   await page.waitForTimeout(500);
   await expect(dots).toHaveCount(countBeforeDelete);
   await expect(editor).toContainText('PHRASEBEFOREDELETE');
+});
+
+test('backspace on page 1 then delete page 2: both undos work', async ({ page }) => {
+  const editor = await openEditor(page);
+  const dots = await pageDots(page);
+
+  await dots.nth(0).click();
+  await editor.click();
+  await page.keyboard.press(`${modKey}+a`);
+  await page.keyboard.type('LONGTEXT');
+  await page.waitForTimeout(600);
+  for (let i = 0; i < 4; i++) {
+    await page.keyboard.press('Backspace');
+  }
+  await page.waitForTimeout(400);
+  await expect(editor).toContainText('LONG');
+
+  await dots.nth(1).click();
+  await page.waitForTimeout(300);
+  const countBefore = await dots.count();
+  await page.keyboard.press(`${modKey}+d`);
+  await page.waitForTimeout(500);
+  await expect(dots).toHaveCount(countBefore - 1);
 
   await page.keyboard.press(`${modKey}+z`);
-  await page.waitForTimeout(600);
-  await expect(editor).not.toContainText('PHRASEBEFOREDELETE', { timeout: TIMEOUT });
+  await page.waitForTimeout(500);
+  await expect(dots).toHaveCount(countBefore);
+
+  await page.keyboard.press(`${modKey}+z`);
+  await page.waitForTimeout(500);
+  await dots.nth(0).click();
+  await page.waitForTimeout(300);
+  await expect(editor).toContainText('LONGTEXT', { timeout: TIMEOUT });
 });

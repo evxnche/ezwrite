@@ -5,6 +5,7 @@ export type EditorHistorySnapshot = { content: string; cursor?: EditorCursor };
 
 export type EditorHistoryContentEntry = {
   type: 'content';
+  pageIndex: number;
   content: string;
   cursor?: EditorCursor;
 };
@@ -30,11 +31,16 @@ export type EditorHistoryPresent = EditorHistorySnapshot & {
   pages?: string[];
 };
 
+export type EditorHistoryPushOptions = {
+  force?: boolean;
+  pageIndex?: number;
+};
+
 const DEFAULT_DEBOUNCE_MS = 500;
 const DEFAULT_MAX_DEPTH = 50;
 
 function contentEntriesEqual(a: EditorHistoryContentEntry, b: EditorHistoryContentEntry): boolean {
-  if (a.content !== b.content) return false;
+  if (a.pageIndex !== b.pageIndex || a.content !== b.content) return false;
   const ac = a.cursor;
   const bc = b.cursor;
   if (!ac && !bc) return true;
@@ -42,12 +48,20 @@ function contentEntriesEqual(a: EditorHistoryContentEntry, b: EditorHistoryConte
   return ac.lineIndex === bc.lineIndex && ac.offset === bc.offset;
 }
 
-function snapshotToContentEntry(snapshot: EditorHistorySnapshot): EditorHistoryContentEntry {
-  return { type: 'content', content: snapshot.content, cursor: snapshot.cursor };
+function snapshotToContentEntry(
+  snapshot: EditorHistorySnapshot,
+  pageIndex: number,
+): EditorHistoryContentEntry {
+  return { type: 'content', pageIndex, content: snapshot.content, cursor: snapshot.cursor };
 }
 
 function presentToContentEntry(present: EditorHistoryPresent): EditorHistoryContentEntry {
-  return { type: 'content', content: present.content, cursor: present.cursor };
+  return {
+    type: 'content',
+    pageIndex: present.pageIndex ?? 0,
+    content: present.content,
+    cursor: present.cursor,
+  };
 }
 
 export function contentEntryToSnapshot(entry: EditorHistoryContentEntry): EditorHistorySnapshot {
@@ -58,6 +72,18 @@ export function isContentHistoryEntry(
   entry: EditorHistoryEntry,
 ): entry is EditorHistoryContentEntry {
   return entry.type === 'content';
+}
+
+function adjustContentPageIndices(
+  stack: EditorHistoryEntry[],
+  fromIndex: number,
+  delta: number,
+): void {
+  for (const entry of stack) {
+    if (entry.type === 'content' && entry.pageIndex >= fromIndex) {
+      entry.pageIndex += delta;
+    }
+  }
 }
 
 export class EditorHistory {
@@ -80,15 +106,48 @@ export class EditorHistory {
     return this.redoStack.length > 0;
   }
 
-  push(snapshot: EditorHistorySnapshot, opts?: { force?: boolean }): void {
-    this.pushEntry(snapshotToContentEntry(snapshot), opts);
+  push(snapshot: EditorHistorySnapshot, opts?: EditorHistoryPushOptions): void {
+    this.pushEntry(
+      snapshotToContentEntry(snapshot, opts?.pageIndex ?? 0),
+      opts,
+    );
+  }
+
+  /** Keep undo indices aligned when a page is removed (not when recording the delete step itself). */
+  notifyPageDeleted(deleted: DeletedPageSnapshot): void {
+    this.pruneContentEntriesForPage(deleted.index);
+    this.shiftContentPageIndicesAbove(deleted.index, -1);
   }
 
   pushPageDelete(deleted: DeletedPageSnapshot): void {
+    this.notifyPageDeleted(deleted);
     this.pushEntry({ type: 'page-delete', deleted }, { force: true });
   }
 
-  private pushEntry(entry: EditorHistoryEntry, opts?: { force?: boolean }): void {
+  /** Drop text-undo steps for a page that was removed (page delete undo restores full page content). */
+  private pruneContentEntriesForPage(pageIndex: number): void {
+    const keep = (entry: EditorHistoryEntry) =>
+      entry.type !== 'content' || entry.pageIndex !== pageIndex;
+    this.undoStack = this.undoStack.filter(keep);
+    this.redoStack = this.redoStack.filter(keep);
+  }
+
+  private shiftContentPageIndicesAbove(pageIndex: number, delta: number): void {
+    if (delta === 0) return;
+    if (delta < 0) {
+      adjustContentPageIndices(this.undoStack, pageIndex + 1, delta);
+      adjustContentPageIndices(this.redoStack, pageIndex + 1, delta);
+      return;
+    }
+    adjustContentPageIndices(this.undoStack, pageIndex, delta);
+    adjustContentPageIndices(this.redoStack, pageIndex, delta);
+  }
+
+  onPageRestored(restoredIndex: number): void {
+    this.shiftContentPageIndicesAbove(restoredIndex, 1);
+  }
+
+  private pushEntry(entry: EditorHistoryEntry, opts?: EditorHistoryPushOptions): void {
     const now = Date.now();
     if (!opts?.force && now - this.lastPushTime < this.debounceMs) return;
 

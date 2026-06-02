@@ -70,16 +70,37 @@ test('EditorHistory skips duplicate consecutive content snapshots', () => {
 
 test('EditorHistory interleaves page delete with content undo', () => {
   const history = new EditorHistory({ debounceMs: 0 });
-  history.push({ content: 'draft' }, { force: true });
+  history.push({ content: 'draft' }, { force: true, pageIndex: 0 });
   history.pushPageDelete({ index: 1, content: 'removed page' });
 
   const firstUndo = history.undo({ content: 'after delete', pageIndex: 0, pages: ['draft'] });
   assert.equal(firstUndo?.type, 'page-delete');
   assert.deepEqual(firstUndo, { type: 'page-delete', deleted: { index: 1, content: 'removed page' } });
 
+  history.onPageRestored(1);
   const secondUndo = history.undo({ content: 'after delete', pageIndex: 0, pages: ['draft', 'removed page'] });
   assert.ok(secondUndo && isContentHistoryEntry(secondUndo));
+  assert.equal(secondUndo.pageIndex, 0);
   assert.equal(secondUndo.content, 'draft');
+});
+
+test('EditorHistory preserves earlier-page text undo after navigating away and deleting another page', () => {
+  const history = new EditorHistory({ debounceMs: 0 });
+  history.push({ content: 'before backspace' }, { force: true, pageIndex: 0 });
+  history.pushPageDelete({ index: 1, content: 'page two' });
+
+  const restorePage = history.undo({ content: 'live two', pageIndex: 1, pages: ['before backspace'] });
+  assert.equal(restorePage?.type, 'page-delete');
+  history.onPageRestored(1);
+
+  const restoreText = history.undo({
+    content: 'before backspace',
+    pageIndex: 1,
+    pages: ['before backspace', 'page two'],
+  });
+  assert.ok(restoreText && isContentHistoryEntry(restoreText));
+  assert.equal(restoreText.pageIndex, 0);
+  assert.equal(restoreText.content, 'before backspace');
 });
 
 test('EditorHistory redo restores a page delete after undo', () => {

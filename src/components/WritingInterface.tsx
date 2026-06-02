@@ -111,6 +111,7 @@ import {
   EditorHistory,
   contentEntryToSnapshot,
   isContentHistoryEntry,
+  type EditorHistoryContentEntry,
   type EditorHistoryPresent,
   type EditorHistorySnapshot,
 } from './editor-history';
@@ -750,8 +751,11 @@ const WritingInterface = () => {
   const captureHistorySnapshot = useCallback((): EditorHistorySnapshot => {
     const tracked = pendingCursor.current ?? trackedCursor.current;
     const live = tracked ?? getCursorInfoRef.current();
+    const content = editorRef.current
+      ? extractContent(editorRef.current)
+      : contentRef.current;
     return {
-      content: contentRef.current,
+      content,
       cursor: live ? { lineIndex: live.lineIndex, offset: live.offset } : undefined,
     };
   }, []);
@@ -768,7 +772,10 @@ const WritingInterface = () => {
   }, [bumpHistory]);
 
   const pushUndo = useCallback((force = false) => {
-    editorHistory.current.push(captureHistorySnapshot(), { force });
+    editorHistory.current.push(captureHistorySnapshot(), {
+      force,
+      pageIndex: currentPageRef.current,
+    });
     bumpHistory();
   }, [captureHistorySnapshot, bumpHistory]);
 
@@ -1464,7 +1471,6 @@ const WritingInterface = () => {
     }
     // Clear timer editing
     editingTimerLineRef.current = null;
-    clearEditorHistory();
     // Show dots briefly while switching pages.
     setShowDots(true);
     clearTimeout(dotsTimeoutRef.current);
@@ -1556,6 +1562,7 @@ const WritingInterface = () => {
     setCurrentPage(restored.restoredPage);
     const { lineIndex, offset } = getPageEndCursor(restoredContent);
     structuralUpdate(restoredContent, lineIndex, offset, !isTouchDevice, false);
+    editorHistory.current.onPageRestored(deleted.index);
   }, [dismissPageDeleteNotice, persistPageStructure, structuralUpdate, isTouchDevice]);
 
   const applyPageDeleteRedo = useCallback((deleted: DeletedPageSnapshot) => {
@@ -1568,6 +1575,7 @@ const WritingInterface = () => {
     const result = deletePageFromList(pagesRef.current, pageIndex, current);
     if (!result) return;
 
+    editorHistory.current.notifyPageDeleted(result.deleted);
     pagesRef.current = result.pages;
     showPageDeleteNotice();
 
@@ -1595,10 +1603,41 @@ const WritingInterface = () => {
     structuralUpdate(snapshot.content, lineIndex, offset, !isTouchDevice);
   }, [structuralUpdate, isTouchDevice]);
 
+  const applyContentHistoryEntry = useCallback((entry: EditorHistoryContentEntry) => {
+    const targetPage = Math.max(0, Math.min(entry.pageIndex, pagesRef.current.length - 1));
+    if (editorRef.current) {
+      pagesRef.current[currentPageRef.current] = extractContent(editorRef.current);
+    }
+    pagesRef.current[targetPage] = entry.content;
+
+    const projectId = activeProjectIdRef.current;
+    if (projectId) {
+      saveProjectPages(projectId, pagesRef.current);
+    }
+
+    const lineIndex = entry.cursor?.lineIndex ?? 0;
+    const offset = entry.cursor?.offset ?? 0;
+
+    if (targetPage !== currentPageRef.current) {
+      editingTimerLineRef.current = null;
+      contentRef.current = entry.content;
+      currentPageRef.current = targetPage;
+      setCurrentPage(targetPage);
+      setIsPageEmpty(entry.content.trim() === '');
+      if (projectId) saveProjectLastPage(projectId, targetPage);
+      structuralUpdate(entry.content, lineIndex, offset, !isTouchDevice, false);
+      return;
+    }
+
+    contentRef.current = entry.content;
+    setIsPageEmpty(entry.content.trim() === '');
+    structuralUpdate(entry.content, lineIndex, offset, !isTouchDevice);
+  }, [structuralUpdate, isTouchDevice]);
+
   const applyHistoryEntry = useCallback((entry: ReturnType<EditorHistory['undo']>) => {
     if (!entry) return;
     if (entry.type === 'content') {
-      applyHistorySnapshot(contentEntryToSnapshot(entry));
+      applyContentHistoryEntry(entry);
       return;
     }
     if (entry.type === 'page-delete') {
@@ -1608,7 +1647,7 @@ const WritingInterface = () => {
     if (entry.type === 'page-delete-redo') {
       applyPageDeleteRedo(entry.deleted);
     }
-  }, [applyHistorySnapshot, applyPageDeleteRedo, applyPageRestore]);
+  }, [applyContentHistoryEntry, applyPageDeleteRedo, applyPageRestore]);
 
   const performUndo = useCallback(() => {
     const entry = editorHistory.current.undo(captureHistoryPresent());
@@ -2386,9 +2425,6 @@ const WritingInterface = () => {
   // Handle input (text-only changes from user typing)
   const handleInput = useCallback(() => {
     if (!editorRef.current) return;
-    if (!suppressInputHistoryRef.current) {
-      pushUndo();
-    }
 
     // Detect raw text nodes at container level — if found, DOM is corrupted.
     // Re-render to fix structure. extractContent now captures raw text content.
@@ -2402,6 +2438,19 @@ const WritingInterface = () => {
 
     const rawContent = extractContent(editorRef.current);
     const newContent = normalizeEditorContent(rawContent);
+    const prevContent = contentRef.current;
+    if (!suppressInputHistoryRef.current && newContent.length < prevContent.length) {
+      const tracked = pendingCursor.current ?? trackedCursor.current;
+      const live = tracked ?? getCursorInfoRef.current();
+      editorHistory.current.push(
+        {
+          content: prevContent,
+          cursor: live ? { lineIndex: live.lineIndex, offset: live.offset } : undefined,
+        },
+        { pageIndex: currentPageRef.current },
+      );
+      bumpHistory();
+    }
     getRemovedTimerStableIds(contentRef.current.split('\n'), newContent.split('\n'))
       .forEach((stableId) => clearTimerState(`main:${activeProjectIdRef.current ?? 'none'}:${currentPageRef.current}:${stableId}`));
 
@@ -2510,7 +2559,7 @@ const WritingInterface = () => {
     }
 
     if (slashPopup) setSlashPopup(null);
-  }, [slashCommands, slashPopup, pushUndo, structuralUpdate, saveContent, scrollToLine]);
+  }, [bumpHistory, slashCommands, slashPopup, structuralUpdate, saveContent, scrollToLine]);
 
   const applySlashCommand = useCallback((command: string, lineIndex: number) => {
     // Bug 7: use fresh DOM content instead of potentially stale contentRef
