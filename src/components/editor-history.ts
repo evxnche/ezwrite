@@ -1,10 +1,39 @@
+import type { DeletedPageSnapshot } from './editor-behavior.ts';
+
 export type EditorCursor = { lineIndex: number; offset: number };
 export type EditorHistorySnapshot = { content: string; cursor?: EditorCursor };
+
+export type EditorHistoryContentEntry = {
+  type: 'content';
+  content: string;
+  cursor?: EditorCursor;
+};
+
+export type EditorHistoryPageDeleteEntry = {
+  type: 'page-delete';
+  deleted: DeletedPageSnapshot;
+};
+
+/** State captured before undoing a page delete — used to redo the delete. */
+export type EditorHistoryPageDeleteRedoEntry = {
+  type: 'page-delete-redo';
+  deleted: DeletedPageSnapshot;
+};
+
+export type EditorHistoryEntry =
+  | EditorHistoryContentEntry
+  | EditorHistoryPageDeleteEntry
+  | EditorHistoryPageDeleteRedoEntry;
+
+export type EditorHistoryPresent = EditorHistorySnapshot & {
+  pageIndex?: number;
+  pages?: string[];
+};
 
 const DEFAULT_DEBOUNCE_MS = 500;
 const DEFAULT_MAX_DEPTH = 50;
 
-function snapshotsEqual(a: EditorHistorySnapshot, b: EditorHistorySnapshot): boolean {
+function contentEntriesEqual(a: EditorHistoryContentEntry, b: EditorHistoryContentEntry): boolean {
   if (a.content !== b.content) return false;
   const ac = a.cursor;
   const bc = b.cursor;
@@ -13,9 +42,27 @@ function snapshotsEqual(a: EditorHistorySnapshot, b: EditorHistorySnapshot): boo
   return ac.lineIndex === bc.lineIndex && ac.offset === bc.offset;
 }
 
+function snapshotToContentEntry(snapshot: EditorHistorySnapshot): EditorHistoryContentEntry {
+  return { type: 'content', content: snapshot.content, cursor: snapshot.cursor };
+}
+
+function presentToContentEntry(present: EditorHistoryPresent): EditorHistoryContentEntry {
+  return { type: 'content', content: present.content, cursor: present.cursor };
+}
+
+export function contentEntryToSnapshot(entry: EditorHistoryContentEntry): EditorHistorySnapshot {
+  return { content: entry.content, cursor: entry.cursor };
+}
+
+export function isContentHistoryEntry(
+  entry: EditorHistoryEntry,
+): entry is EditorHistoryContentEntry {
+  return entry.type === 'content';
+}
+
 export class EditorHistory {
-  private undoStack: EditorHistorySnapshot[] = [];
-  private redoStack: EditorHistorySnapshot[] = [];
+  private undoStack: EditorHistoryEntry[] = [];
+  private redoStack: EditorHistoryEntry[] = [];
   private lastPushTime = 0;
   private readonly debounceMs: number;
   private readonly maxDepth: number;
@@ -34,13 +81,23 @@ export class EditorHistory {
   }
 
   push(snapshot: EditorHistorySnapshot, opts?: { force?: boolean }): void {
+    this.pushEntry(snapshotToContentEntry(snapshot), opts);
+  }
+
+  pushPageDelete(deleted: DeletedPageSnapshot): void {
+    this.pushEntry({ type: 'page-delete', deleted }, { force: true });
+  }
+
+  private pushEntry(entry: EditorHistoryEntry, opts?: { force?: boolean }): void {
     const now = Date.now();
     if (!opts?.force && now - this.lastPushTime < this.debounceMs) return;
 
-    const top = this.undoStack[this.undoStack.length - 1];
-    if (top && snapshotsEqual(top, snapshot)) return;
+    if (entry.type === 'content') {
+      const top = this.undoStack[this.undoStack.length - 1];
+      if (top?.type === 'content' && contentEntriesEqual(top, entry)) return;
+    }
 
-    this.undoStack.push(snapshot);
+    this.undoStack.push(entry);
     if (this.undoStack.length > this.maxDepth) {
       this.undoStack.shift();
     }
@@ -48,19 +105,31 @@ export class EditorHistory {
     this.lastPushTime = now;
   }
 
-  undo(current: EditorHistorySnapshot): EditorHistorySnapshot | null {
+  undo(present: EditorHistoryPresent): EditorHistoryEntry | null {
     if (!this.undoStack.length) return null;
 
-    this.redoStack.push(current);
+    this.redoStack.push(presentToContentEntry(present));
     const previous = this.undoStack.pop()!;
+    if (previous.type === 'page-delete') {
+      this.redoStack[this.redoStack.length - 1] = {
+        type: 'page-delete-redo',
+        deleted: previous.deleted,
+      };
+    }
     return previous;
   }
 
-  redo(current: EditorHistorySnapshot): EditorHistorySnapshot | null {
+  redo(present: EditorHistoryPresent): EditorHistoryEntry | null {
     if (!this.redoStack.length) return null;
 
-    this.undoStack.push(current);
     const next = this.redoStack.pop()!;
+    if (next.type === 'page-delete-redo') {
+      this.undoStack.push({ type: 'page-delete', deleted: next.deleted });
+    } else if (next.type === 'content') {
+      this.undoStack.push(presentToContentEntry(present));
+    } else {
+      this.undoStack.push(next);
+    }
     return next;
   }
 

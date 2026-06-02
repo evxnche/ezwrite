@@ -523,23 +523,26 @@ test('WritingInterface hydrates the saved current page instead of overwriting it
   assert.equal(source.includes('const contentRef = useRef(getPageContent(0));'), false);
 });
 
-test('WritingInterface makes page deletion undoable from Cmd+Z and the notice action', () => {
+test('WritingInterface makes page deletion undoable from unified history', () => {
   const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   assert.equal(source.includes('deletePageFromList'), true);
   assert.equal(source.includes('restoreDeletedPageToList'), true);
-  assert.equal(source.includes('restoreLastDeletedPage()'), true);
+  assert.equal(source.includes('pushPageDelete'), true);
+  assert.equal(source.includes('applyPageRestore'), true);
   assert.equal(source.includes('const PAGE_DELETE_NOTICE_MS = 3500;'), true);
   assert.equal(source.includes('page deleted.'), true);
-  assert.equal(source.includes('undo.'), true);
+  assert.equal(source.includes('onClick={performUndo}'), true);
+  assert.equal(source.includes('restoreLastDeletedPage'), false);
+  assert.equal(source.includes('deletedPageUndoStack'), false);
 });
 
-test('WritingInterface exposes mobile undo/redo via EditorHistory and floating controls', () => {
+test('WritingInterface exposes mobile undo/redo via EditorHistory and editor dock', () => {
   const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
-  assert.match(source, /import \{ EditorHistory/);
-  assert.match(source, /import MobileHistoryControls from '\.\/MobileHistoryControls'/);
+  assert.match(source, /import \{[^}]*EditorHistory/);
+  assert.match(source, /import MobileEditorDock from '\.\/MobileEditorDock'/);
   assert.match(source, /const performUndo = useCallback/);
   assert.match(source, /const performRedo = useCallback/);
-  assert.match(source, /<MobileHistoryControls/);
+  assert.match(source, /<MobileEditorDock/);
   assert.match(source, /isTouchDevice && !scratchpadOpen && !slashPopup/);
   assert.match(source, /onUndo=\{performUndo\}/);
 });

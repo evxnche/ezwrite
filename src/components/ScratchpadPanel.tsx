@@ -33,7 +33,12 @@ import {
   renumberFollowingPlainNumberedListItems,
   splitExitedListLine,
 } from './editor-behavior';
-import { EditorHistory, type EditorHistorySnapshot } from './editor-history';
+import {
+  EditorHistory,
+  contentEntryToSnapshot,
+  isContentHistoryEntry,
+  type EditorHistorySnapshot,
+} from './editor-history';
 import MobileHistoryControls from './MobileHistoryControls';
 import { completeScratchpadPrompt } from '@/lib/openrouter';
 import {
@@ -264,16 +269,16 @@ const ScratchpadPanel: React.FC<Props> = ({
   }, [isTouchDevice, structuralUpdate]);
 
   const performUndo = useCallback(() => {
-    const snapshot = editorHistory.current.undo(captureHistorySnapshot());
-    if (!snapshot) return;
-    applyHistorySnapshot(snapshot);
+    const entry = editorHistory.current.undo(captureHistorySnapshot());
+    if (!entry || !isContentHistoryEntry(entry)) return;
+    applyHistorySnapshot(contentEntryToSnapshot(entry));
     bumpHistory();
   }, [applyHistorySnapshot, bumpHistory, captureHistorySnapshot]);
 
   const performRedo = useCallback(() => {
-    const snapshot = editorHistory.current.redo(captureHistorySnapshot());
-    if (!snapshot) return;
-    applyHistorySnapshot(snapshot);
+    const entry = editorHistory.current.redo(captureHistorySnapshot());
+    if (!entry || !isContentHistoryEntry(entry)) return;
+    applyHistorySnapshot(contentEntryToSnapshot(entry));
     bumpHistory();
   }, [applyHistorySnapshot, bumpHistory, captureHistorySnapshot]);
 

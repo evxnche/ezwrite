@@ -45,7 +45,7 @@ go on and try it now.`,
 `delete this page by hitting
 cmd/ctrl + d
 
-undo page deletions with cmd/ctrl+z`,
+undo with cmd/ctrl+z (typing, page deletes, and more)`,
 `okay, so now that you've got pages let's move on to notebooks.
 
 to navigate notebooks,
