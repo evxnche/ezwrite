@@ -75,7 +75,7 @@ const InfoDialog: React.FC<Props> = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[90vw] sm:max-w-2xl h-[min(88vh,40rem)] grid grid-rows-[auto_auto_minmax(0,1fr)_auto] bg-popover text-popover-foreground !rounded-2xl">
         <DialogHeader>
-          <DialogTitle className="font-mono text-base sm:text-lg truncate lowercase">shortcuts &amp; commands</DialogTitle>
+          <DialogTitle className="font-mono text-base sm:text-lg truncate lowercase">help</DialogTitle>
         </DialogHeader>
 
         <div className={SEGMENT_TRACK} role="tablist" aria-label="help sections">
@@ -142,7 +142,7 @@ const InfoDialog: React.FC<Props> = ({
                   <h3 className="font-semibold mb-1.5 text-accent-foreground">keyboard shortcuts</h3>
                   <ul className="space-y-1 text-muted-foreground ml-3">
                     <li><span className="text-foreground">cmd/ctrl+z</span> — undo</li>
-                    <li><span className="text-foreground">cmd/ctrl+shift+z</span> or <span className="text-foreground">cmd/ctrl+y</span> — redo</li>
+                    <li><span className="text-foreground">cmd/ctrl+shift+z</span> — redo</li>
                     <li><span className="text-foreground">cmd/ctrl+↑/↓</span> — move line up/down</li>
                     <li><span className="text-foreground">cmd/ctrl+←/→</span> — switch pages (when enabled in settings)</li>
                     <li><span className="text-foreground">cmd/ctrl+d</span> — delete current page</li>

@@ -27,7 +27,7 @@ const SLASH_COMMANDS_BASE = [
   { name: 'timer', description: 'Start a timer' },
   { name: 'sidetab', description: 'Toggle side tab' },
   { name: 'scratchpad', description: 'Toggle scratchpad' },
-  { name: 'help', description: 'Show shortcuts & commands' },
+  { name: 'help', description: 'Show help' },
   { name: 'settings', description: 'Open settings' },
 ] as const;
 
