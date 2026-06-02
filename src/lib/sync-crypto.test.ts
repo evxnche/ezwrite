@@ -74,8 +74,10 @@ test('a wrong password or username cannot decrypt', async () => {
 test('snapshot hash is stable and content-sensitive', async () => {
   const a = buildSyncProjectSnapshot({ projectId: 'n', title: 't', pages: ['one'], updatedAt: 1 });
   const aAgain = buildSyncProjectSnapshot({ projectId: 'n', title: 't', pages: ['one'], updatedAt: 1 });
+  const aWithDifferentTimestamp = buildSyncProjectSnapshot({ projectId: 'n', title: 't', pages: ['one'], updatedAt: 2 });
   const b = buildSyncProjectSnapshot({ projectId: 'n', title: 't', pages: ['two'], updatedAt: 1 });
 
   assert.equal(await hashSnapshot(a), await hashSnapshot(aAgain));
+  assert.equal(await hashSnapshot(a), await hashSnapshot(aWithDifferentTimestamp));
   assert.notEqual(await hashSnapshot(a), await hashSnapshot(b));
 });

@@ -1795,6 +1795,23 @@ const WritingInterface = () => {
       }
 
       const snapshot = await decryptRemoteSyncNote(row, session);
+      const remoteHash = await hashSnapshot(snapshot);
+
+      if (local && remoteChanged) {
+        const localSnapshot = buildSyncProjectSnapshot({
+          projectId,
+          title: getProjectTitle(projectId),
+          pages: projectId === activeProjectIdRef.current ? [...pagesRef.current] : getProjectPages(projectId),
+          scratchpad: projectId === activeProjectIdRef.current ? scratchpadRef.current : getProjectScratchpad(projectId),
+          updatedAt: local.updatedAt,
+        });
+        const localHash = await hashSnapshot(localSnapshot);
+
+        if (localHash === remoteHash) {
+          markProjectSynced(projectId, row.updated_at, local.updatedAt, remoteHash);
+          continue;
+        }
+      }
 
       if (local && remoteChanged && localChanged) {
         const conflictId = `${snapshot.projectId}-conflict-${Date.now().toString(36)}`;
@@ -1821,7 +1838,7 @@ const WritingInterface = () => {
           syncLastRemoteUpdatedAt: row.updated_at,
           syncLastPushedAt: snapshot.updatedAt,
           syncLastPulledAt: Date.now(),
-          syncLastPayloadHash: await hashSnapshot(snapshot),
+          syncLastPayloadHash: remoteHash,
         });
         touchedIds.add(snapshot.projectId);
       }

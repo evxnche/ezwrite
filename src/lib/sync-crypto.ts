@@ -156,12 +156,20 @@ export async function decryptSnapshotWithKey<T>(
   return JSON.parse(new TextDecoder().decode(plaintext)) as T;
 }
 
-// Stable hash of the plaintext snapshot (unlike ciphertext, which is salted per write).
-// Used to skip redundant pushes when content is unchanged.
+// Stable hash of the sync-relevant notebook content (unlike ciphertext, which is salted
+// per write). `updatedAt` is intentionally excluded so two devices with identical note
+// content do not manufacture conflicts just because they saved at different times.
 export async function hashSnapshot(snapshot: SyncProjectSnapshot): Promise<string> {
+  const comparableSnapshot = {
+    schemaVersion: snapshot.schemaVersion,
+    projectId: snapshot.projectId,
+    title: snapshot.title,
+    pages: snapshot.pages,
+    scratchpad: snapshot.scratchpad,
+  };
   const digest = await getCrypto().subtle.digest(
     'SHA-256',
-    new TextEncoder().encode(JSON.stringify(snapshot)),
+    new TextEncoder().encode(JSON.stringify(comparableSnapshot)),
   );
   return toBase64Url(new Uint8Array(digest));
 }

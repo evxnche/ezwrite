@@ -175,6 +175,24 @@ function ensureStoredProjectTitles(): void {
   if (changed) saveProjects(nextProjects);
 }
 
+function pruneRedundantConflictProjects(): void {
+  for (const project of listProjects()) {
+    const conflictMarker = '-conflict-';
+    const markerIndex = project.id.indexOf(conflictMarker);
+    if (markerIndex <= 0) continue;
+
+    const baseId = project.id.slice(0, markerIndex);
+    const baseProject = getProjectMeta(baseId);
+    if (!baseProject) continue;
+
+    const samePages = JSON.stringify(getProjectPages(project.id)) === JSON.stringify(getProjectPages(baseId));
+    const sameScratchpad = getProjectScratchpad(project.id) === getProjectScratchpad(baseId);
+    if (samePages && sameScratchpad) {
+      deleteProject(project.id);
+    }
+  }
+}
+
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
@@ -184,6 +202,7 @@ function generateId(): string {
 export function initProjects(): void {
   if (needsMigration()) runMigration();
   ensureStoredProjectTitles();
+  pruneRedundantConflictProjects();
   ensureWelcomeNotebook();
 }
 

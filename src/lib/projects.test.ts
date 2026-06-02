@@ -28,12 +28,17 @@ registerHooks({
 
 const {
   createProject,
+  createProjectWithId,
   getActiveProjectId,
+  getProjectMeta,
   getProjectPages,
+  getProjectScratchpad,
   getProjectTitle,
   initProjects,
   listProjects,
   renameProjectTitle,
+  saveProjectScratchpad,
+  saveProjectSnapshot,
   saveProjectPages,
 } = await import('./projects.ts');
 
@@ -112,4 +117,41 @@ test('welcome rollout delivers demo notebook to existing users', () => {
   assert.ok(getProjectPages(WELCOME_PROJECT_ID).length >= 10);
   assert.equal(getActiveProjectId(), WELCOME_PROJECT_ID);
   assert.equal(localStorageMock.getItem(WELCOME_ROLLOUT_KEY), WELCOME_ROLLOUT_VERSION);
+});
+
+test('initProjects removes redundant conflict notebooks when their stored content matches the base notebook', () => {
+  initProjects();
+  createProjectWithId('shared', 'hi.\ni am evan.', { title: 'hi.', updatedAt: 10 });
+  saveProjectScratchpad('shared', 'side');
+  saveProjectSnapshot({
+    id: 'shared-conflict-abc123',
+    title: 'hi. conflict',
+    pages: ['hi.\ni am evan.'],
+    scratchpad: 'side',
+    updatedAt: 20,
+    syncEnabled: false,
+  });
+
+  initProjects();
+
+  assert.equal(getProjectMeta('shared-conflict-abc123'), null);
+  assert.deepEqual(getProjectPages('shared'), ['hi.\ni am evan.']);
+  assert.equal(getProjectScratchpad('shared'), 'side');
+});
+
+test('initProjects keeps conflict notebooks when their stored content differs from the base notebook', () => {
+  initProjects();
+  createProjectWithId('shared', 'hi.\ni am evan.', { title: 'hi.', updatedAt: 10 });
+  saveProjectSnapshot({
+    id: 'shared-conflict-abc123',
+    title: 'hi. conflict',
+    pages: ['hi.\nif it solely were up to me to decid…'],
+    scratchpad: '',
+    updatedAt: 20,
+    syncEnabled: false,
+  });
+
+  initProjects();
+
+  assert.notEqual(getProjectMeta('shared-conflict-abc123'), null);
 });
