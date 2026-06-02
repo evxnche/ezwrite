@@ -3,6 +3,13 @@ import { expect, test } from '@playwright/test';
 const TIMEOUT = 30_000;
 
 async function openMobileEditor(page: import('@playwright/test').Page) {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('ezwrite-beta-access', 'granted');
+    } catch {
+      /* ignore */
+    }
+  });
   await page.goto('/?mobile=1');
 
   const gateVisible = await page
