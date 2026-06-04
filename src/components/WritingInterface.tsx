@@ -327,6 +327,8 @@ async function createCoverImageDataUrl(src: string, size: number, mimeType: stri
   return canvas.toDataURL(mimeType, 0.92);
 }
 
+const PAGE_SIGNIFIER_PERSIST_MS = 1000;
+
 const WritingInterface = () => {
   // --- Projects & Pages ---
   const initialProjectStateRef = useRef<{ projects: ProjectMeta[]; activeProjectId: string | null } | null>(null);
@@ -1474,7 +1476,7 @@ const WritingInterface = () => {
     // Show dots briefly while switching pages.
     setShowDots(true);
     clearTimeout(dotsTimeoutRef.current);
-    dotsTimeoutRef.current = setTimeout(() => setShowDots(false), 500);
+    dotsTimeoutRef.current = setTimeout(() => setShowDots(false), PAGE_SIGNIFIER_PERSIST_MS);
     // Transition animation
     setPageTransition(newPage > currentPageRef.current ? 'slide-left' : 'slide-right');
     contentRef.current = getPageContent(newPage);
@@ -1529,7 +1531,7 @@ const WritingInterface = () => {
     editingTimerLineRef.current = null;
     setShowDots(true);
     clearTimeout(dotsTimeoutRef.current);
-    dotsTimeoutRef.current = setTimeout(() => setShowDots(false), 500);
+    dotsTimeoutRef.current = setTimeout(() => setShowDots(false), PAGE_SIGNIFIER_PERSIST_MS);
     contentRef.current = newContent;
     currentPageRef.current = newPage;
     setIsPageEmpty(newContent.trim() === '');
@@ -1555,7 +1557,7 @@ const WritingInterface = () => {
     editingTimerLineRef.current = null;
     setShowDots(true);
     clearTimeout(dotsTimeoutRef.current);
-    dotsTimeoutRef.current = setTimeout(() => setShowDots(false), 500);
+    dotsTimeoutRef.current = setTimeout(() => setShowDots(false), PAGE_SIGNIFIER_PERSIST_MS);
     contentRef.current = restoredContent;
     currentPageRef.current = restored.restoredPage;
     setIsPageEmpty(restoredContent.trim() === '');
@@ -1586,7 +1588,7 @@ const WritingInterface = () => {
     editingTimerLineRef.current = null;
     setShowDots(true);
     clearTimeout(dotsTimeoutRef.current);
-    dotsTimeoutRef.current = setTimeout(() => setShowDots(false), 500);
+    dotsTimeoutRef.current = setTimeout(() => setShowDots(false), PAGE_SIGNIFIER_PERSIST_MS);
     contentRef.current = newContent;
     currentPageRef.current = newPage;
     setIsPageEmpty(newContent.trim() === '');

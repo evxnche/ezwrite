@@ -536,6 +536,15 @@ test('WritingInterface makes page deletion undoable from unified history', () =>
   assert.equal(source.includes('deletedPageUndoStack'), false);
 });
 
+test('WritingInterface keeps the page signifier visible for an extra half second before fading', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
+  assert.equal(source.includes('const PAGE_SIGNIFIER_PERSIST_MS = 1000;'), true);
+  assert.equal(
+    source.match(/setTimeout\(\(\) => setShowDots\(false\), PAGE_SIGNIFIER_PERSIST_MS\)/g)?.length,
+    4,
+  );
+});
+
 test('WritingInterface exposes mobile undo/redo via EditorHistory and editor dock', () => {
   const source = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   assert.match(source, /import \{[^}]*EditorHistory/);
