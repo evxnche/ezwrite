@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Connect } from 'vite';
 import { loadEnv } from 'vite';
 import { proxyOpenRouterChatCompletion } from './lib/openrouter-upstream';
+import { handleAgentRequest } from './lib/agent-upstream';
 
 function readRequestBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -21,7 +22,31 @@ function sendJson(res: ServerResponse, status: number, body: Record<string, unkn
 export function createOpenRouterProxyMiddleware(mode: string, root: string): Connect.NextHandleFunction {
   return async (req, res, next) => {
     const url = req.url ?? '';
-    
+
+    if (url.startsWith('/api/agent')) {
+      const env = loadEnv(mode, root, '');
+      const agentEnv = {
+        supabaseUrl: env.SUPABASE_URL || env.VITE_SUPABASE_URL || '',
+        serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY || '',
+        anonKey: env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY || '',
+        passkeyPepper: env.AGENT_PASSKEY_PEPPER || '',
+      };
+      const method = req.method ?? 'GET';
+      const body = method === 'POST' ? await readRequestBody(req) : '';
+      const header = (name: string): string | undefined => {
+        const value = req.headers[name.toLowerCase()];
+        return Array.isArray(value) ? value[0] : value;
+      };
+      try {
+        const result = await handleAgentRequest({ method, header, body }, agentEnv);
+        sendJson(res, result.status, result.body);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Agent request failed';
+        sendJson(res, 500, { error: message });
+      }
+      return;
+    }
+
     if (req.method === 'GET' && url.startsWith('/api/link-title')) {
       const urlObj = new URL(url, 'http://localhost');
       const targetUrl = urlObj.searchParams.get('url');

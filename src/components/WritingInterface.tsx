@@ -106,6 +106,8 @@ import { buildSyncProjectSnapshot, hashSnapshot } from '@/lib/sync-crypto';
 import { runSequentialSyncBatch, toSyncError } from '@/lib/sync-retry';
 import { recordBugReportBreadcrumb, setBugReportRuntimeContext } from '@/lib/bug-report';
 import { loadSyncSession, saveSyncSession, clearSyncSession } from '@/lib/sync-session-store';
+import { startAgentRelay, type AgentOp, type RelayHandle } from '@/lib/agent-relay';
+import { listPairings, hasActivePairing, type AgentPairing } from '@/lib/agent-pairing';
 import MobileSyncGate from './MobileSyncGate';
 import {
   EditorHistory,
@@ -180,6 +182,22 @@ function getUntitledFolderName(projectId: string): string {
   const untitledProjects = projects.filter(p => !p.title?.trim() || p.title.trim() === 'untitled');
   const index = untitledProjects.findIndex(p => p.id === projectId);
   return `Untitled_${String(index + 1).padStart(3, '0')}`;
+}
+
+// Apply a single-page agent edit op to a page's text. Pure — the caller decides
+// where the result goes (live editor vs storage for a background project).
+function transformPageForAgentOp(cur: string, op: AgentOp): string {
+  const text = op.text ?? '';
+  if (op.type === 'set_content') return op.content ?? '';
+  if (op.type === 'append') return cur ? `${cur}\n${text}` : text;
+  const lines = cur.split('\n');
+  const start = typeof op.start === 'number'
+    ? Math.max(0, Math.min(op.start, lines.length))
+    : lines.length;
+  if (op.type === 'insert_lines') { lines.splice(start, 0, ...text.split('\n')); return lines.join('\n'); }
+  if (op.type === 'delete_lines') { lines.splice(start, op.count ?? 1); return lines.join('\n'); }
+  if (op.type === 'replace_lines') { lines.splice(start, op.count ?? 1, ...text.split('\n')); return lines.join('\n'); }
+  return cur;
 }
 
 function getInitialProjectState(): { projects: ProjectMeta[]; activeProjectId: string | null } {
@@ -400,6 +418,10 @@ const WritingInterface = () => {
   const syncPushTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const syncQueueRef = useRef<Set<string>>(new Set());
   const syncSessionRef = useRef<SyncSession | null>(null);
+  const [agentPairings, setAgentPairings] = useState<AgentPairing[]>([]);
+  const agentRelayRef = useRef<RelayHandle | null>(null);
+  const [agentNotice, setAgentNotice] = useState<string | null>(null);
+  const agentNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const [timerAlert, setTimerAlert] = useState(false);
   const [pageTransition, setPageTransition] = useState<'none' | 'slide-left' | 'slide-right'>('none');
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
@@ -1765,6 +1787,143 @@ const WritingInterface = () => {
       }
     }
   }, [scheduleSyncPush, structuralUpdate]);
+
+  // --- Agent shared canvas ---
+  const showAgentNotice = useCallback((message: string) => {
+    setAgentNotice(message);
+    clearTimeout(agentNoticeTimeoutRef.current);
+    agentNoticeTimeoutRef.current = setTimeout(() => setAgentNotice(null), 3500);
+  }, []);
+
+  // Applies one agent op to the canvas, live. Edits to the open page go through
+  // structuralUpdate (same path as undo/redo); other pages/projects are written to
+  // storage and the active project is reloaded so the change shows immediately.
+  const applyAgentOp = useCallback((op: AgentOp) => {
+    const activeId = activeProjectIdRef.current;
+    const who = op.label?.trim() || 'an agent';
+
+    const resolveId = (): string | null => {
+      if (op.projectId) return op.projectId;
+      if (op.projectTitle) {
+        const wanted = op.projectTitle.toLowerCase();
+        const match = listProjects().find(p => (p.title ?? getProjectTitle(p.id)).toLowerCase() === wanted);
+        if (match) return match.id;
+      }
+      return activeId;
+    };
+
+    if (op.type === 'create_project') {
+      createProject(op.content ?? '', op.title);
+      setProjects(listProjects());
+      showAgentNotice(`${who} created "${op.title?.trim() || 'untitled'}"`);
+      return;
+    }
+    if (op.type === 'rename_project') {
+      const id = resolveId();
+      if (id && op.title) {
+        handleRenameProject(id, op.title);
+        showAgentNotice(`${who} renamed a doc`);
+      }
+      return;
+    }
+    if (op.type === 'delete_project') {
+      const id = resolveId();
+      if (id && getProjectMeta(id)) {
+        const wasActive = id === activeId;
+        deleteProject(id);
+        const remaining = listProjects();
+        setProjects(remaining);
+        if (wasActive) {
+          if (remaining.length > 0) switchToProject(remaining[0].id);
+          else { const created = createProject(''); setProjects([created]); switchToProject(created.id); }
+        }
+        showAgentNotice(`${who} deleted a doc`);
+      }
+      return;
+    }
+
+    const targetId = resolveId();
+    if (!targetId) return;
+    const isActive = targetId === activeId;
+
+    if (op.type === 'add_page') {
+      if (isActive) {
+        if (editorRef.current) pagesRef.current[currentPageRef.current] = extractContent(editorRef.current);
+        pagesRef.current.push(op.content ?? '');
+        saveProjectPages(targetId, pagesRef.current);
+        setPageCount(pagesRef.current.length);
+      } else {
+        const pages = getProjectPages(targetId);
+        pages.push(op.content ?? '');
+        saveProjectPages(targetId, pages);
+      }
+      scheduleSyncPush(targetId);
+      setProjects(listProjects());
+      showAgentNotice(`${who} added a page`);
+      return;
+    }
+
+    // text/line ops on a single page
+    if (isActive) {
+      const page = op.page ?? currentPageRef.current;
+      if (page === currentPageRef.current) {
+        const cur = editorRef.current ? extractContent(editorRef.current) : contentRef.current;
+        const next = transformPageForAgentOp(cur, op);
+        const lines = next.split('\n');
+        structuralUpdate(next, lines.length - 1, (lines[lines.length - 1] ?? '').length, false);
+      } else {
+        pagesRef.current[page] = transformPageForAgentOp(pagesRef.current[page] ?? '', op);
+        saveProjectPages(targetId, pagesRef.current);
+        setPageCount(pagesRef.current.length);
+        scheduleSyncPush(targetId);
+      }
+    } else {
+      const pages = getProjectPages(targetId);
+      const page = op.page ?? 0;
+      pages[page] = transformPageForAgentOp(pages[page] ?? '', op);
+      saveProjectPages(targetId, pages);
+      scheduleSyncPush(targetId);
+      setProjects(listProjects());
+    }
+    showAgentNotice(op.type === 'append' ? `${who} wrote to your canvas` : `${who} edited your canvas`);
+  }, [showAgentNotice, structuralUpdate, switchToProject, handleRenameProject, scheduleSyncPush]);
+
+  // Keep a live ref so the relay always calls the latest applyAgentOp without
+  // restarting the poll loop on every render.
+  const applyAgentOpRef = useRef(applyAgentOp);
+  applyAgentOpRef.current = applyAgentOp;
+
+  // Load the user's pairings whenever a session appears, and refresh after the
+  // settings dialog closes (where pairings are minted/revoked).
+  useEffect(() => {
+    if (!syncSession) { setAgentPairings([]); return; }
+    let cancelled = false;
+    listPairings(syncSession).then(p => { if (!cancelled) setAgentPairings(p); }).catch(() => { /* offline is fine */ });
+    return () => { cancelled = true; };
+  }, [syncSession]);
+
+  const prevSettingsOpenRef = useRef(settingsOpen);
+  useEffect(() => {
+    if (prevSettingsOpenRef.current && !settingsOpen && syncSessionRef.current) {
+      listPairings(syncSessionRef.current).then(setAgentPairings).catch(() => { /* ignore */ });
+    }
+    prevSettingsOpenRef.current = settingsOpen;
+  }, [settingsOpen]);
+
+  // Run the relay only while signed in with an active pairing.
+  useEffect(() => {
+    agentRelayRef.current?.stop();
+    agentRelayRef.current = null;
+    if (!syncSession || !hasActivePairing(agentPairings)) return;
+    const handle = startAgentRelay({
+      session: syncSession,
+      pairings: agentPairings,
+      applyOp: (op) => applyAgentOpRef.current(op),
+      onError: () => { /* transient network errors are retried next tick */ },
+    });
+    agentRelayRef.current = handle;
+    return () => { handle.stop(); agentRelayRef.current = null; };
+  }, [syncSession, agentPairings]);
 
   const handleOpenDocs = useCallback(() => {
     setScratchpadOpen(false);
@@ -4055,6 +4214,19 @@ const WritingInterface = () => {
         </div>
       )}
 
+      {agentNotice && (
+        <div
+          className="fixed left-0 right-0 z-50 flex justify-center pointer-events-none"
+          style={{ top: isTouchDevice ? 'calc(env(safe-area-inset-top, 0px) + 1rem)' : '1.25rem' }}
+          aria-live="polite"
+        >
+          <div className="pointer-events-none flex items-center gap-2 rounded-full bg-foreground/90 px-3 py-1 text-[11px] font-mono lowercase text-background shadow-sm">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent-foreground animate-pulse" />
+            {agentNotice}
+          </div>
+        </div>
+      )}
+
       {/* Pages */}
       <div
         className={`fixed bottom-10 left-0 right-0 flex justify-center items-center gap-2 pointer-events-none transition-opacity duration-500 ${showDots ? 'opacity-60' : 'opacity-0'}`}
@@ -4330,6 +4502,8 @@ const WritingInterface = () => {
               syncAccount={syncSession?.username}
               accessToken={syncSession?.accessToken}
               userId={syncSession?.userId}
+              activeProjectId={activeProjectId}
+              activeProjectTitle={activeProjectId ? getProjectTitle(activeProjectId) : undefined}
               syncPlan={syncSession?.plan ?? 'free'}
               syncBusy={syncBusy}
               syncStatus={syncStatus}
