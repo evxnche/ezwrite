@@ -25,7 +25,6 @@ export interface AgentPairing {
 export interface MintPairingOptions {
   label?: string;
   targetProjectId?: string | null;
-  canManageProjects?: boolean;
   expiresInMinutes?: number | null;
 }
 
@@ -35,7 +34,6 @@ export interface MintedPairing {
     id: string;
     label: string | null;
     targetProjectId: string | null;
-    canManageProjects: boolean;
     expiresAt: string | null;
   };
 }
@@ -66,7 +64,6 @@ export async function mintPairing(session: PairingAuth, opts: MintPairingOptions
       action: 'mint_pairing',
       label: opts.label,
       targetProjectId: opts.targetProjectId ?? null,
-      canManageProjects: opts.canManageProjects ?? false,
       expiresInMinutes: opts.expiresInMinutes ?? null,
     }),
   });

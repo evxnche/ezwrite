@@ -141,7 +141,8 @@ function pairingActive(p: PairingRow): boolean {
 const WRITE_OPS = new Set([
   'append', 'set_content', 'insert_lines', 'delete_lines', 'replace_lines', 'add_page',
 ]);
-const PROJECT_OPS = new Set(['create_project', 'rename_project', 'delete_project']);
+// Agents can create and rename docs, but never delete them.
+const PROJECT_OPS = new Set(['create_project', 'rename_project']);
 
 interface AgentOp {
   type: string;
@@ -177,11 +178,10 @@ function usageDoc(): Record<string, unknown> {
       delete_lines: '{ "action": "delete_lines", "start": number, "count"?: number, "projectId"? }',
       replace_lines: '{ "action": "replace_lines", "start": number, "count": number, "text": string, "projectId"? }',
       add_page: '{ "action": "add_page", "content"?: string, "projectId"? }',
-      create_project: '{ "action": "create_project", "title"?, "content"? }  (needs manage scope)',
-      rename_project: '{ "action": "rename_project", "projectId"|"projectTitle", "title": string }  (needs manage scope)',
-      delete_project: '{ "action": "delete_project", "projectId"|"projectTitle" }  (needs manage scope)',
+      create_project: '{ "action": "create_project", "title"?, "content"? }',
+      rename_project: '{ "action": "rename_project", "projectId"|"projectTitle", "title": string }',
     },
-    note: 'Writes appear live in the owner\'s open ezwrite tab. If no projectId/projectTitle is given, the project the owner is currently looking at is used.',
+    note: 'Writes appear live in the owner\'s open ezwrite tab. If no projectId is given, pass projectTitle (matched loosely against the owner\'s doc titles) or omit both to use the doc the owner is currently looking at. Agents cannot delete docs.',
   };
 }
 
@@ -212,7 +212,6 @@ export async function handleAgentRequest(req: AgentRequest, env: AgentEnv): Prom
     const label = typeof body.label === 'string' && body.label.trim() ? body.label.trim().slice(0, 60) : null;
     const targetProjectId = typeof body.targetProjectId === 'string' && body.targetProjectId
       ? body.targetProjectId : null;
-    const canManageProjects = body.canManageProjects === true;
     const expiresInMinutes = typeof body.expiresInMinutes === 'number' && body.expiresInMinutes > 0
       ? Math.min(body.expiresInMinutes, 60 * 24 * 30) : null;
     const expiresAt = expiresInMinutes ? new Date(Date.now() + expiresInMinutes * 60_000).toISOString() : null;
@@ -225,7 +224,7 @@ export async function handleAgentRequest(req: AgentRequest, env: AgentEnv): Prom
         passkey_hash: hashPasskey(passkey, env.passkeyPepper),
         label,
         target_project_id: targetProjectId,
-        can_manage_projects: canManageProjects,
+        can_manage_projects: true, // agents can create/rename, never delete
         expires_at: expiresAt,
       };
       try {
@@ -242,7 +241,6 @@ export async function handleAgentRequest(req: AgentRequest, env: AgentEnv): Prom
               id: inserted[0]?.id,
               label,
               targetProjectId,
-              canManageProjects,
               expiresAt,
             },
           },
@@ -286,11 +284,13 @@ export async function handleAgentRequest(req: AgentRequest, env: AgentEnv): Prom
     return { status: 200, body: { projectId: row.project_id, title: row.title ?? 'untitled', pages: row.pages } };
   }
 
+  // Agents are never allowed to delete docs.
+  if (action === 'delete_project') {
+    return { status: 403, body: { error: 'Agents cannot delete docs. Ask the owner to delete it.' } };
+  }
+
   // Writes enqueue an op for the browser to apply.
   if (WRITE_OPS.has(action) || PROJECT_OPS.has(action)) {
-    if (PROJECT_OPS.has(action) && !pairing.can_manage_projects) {
-      return { status: 403, body: { error: `This passkey can't manage projects (${action} denied).` } };
-    }
     const op: AgentOp = { type: action };
     // Scope: single-project pairings force the target.
     if (pairing.target_project_id) op.projectId = pairing.target_project_id;

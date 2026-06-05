@@ -266,3 +266,39 @@ test('contentToMarkdown default (plain) mode is unaffected by wysiwyg additions'
   assert.equal(md.includes(NBSP), false);
   assert.equal(/ {2}$/m.test(md.replace(/\n$/, '')), false);
 });
+
+test('contentToHTML and extractContent round-trip voice lines', () => {
+  const content = 'voice::vn1|meeting notes|42';
+  const html = contentToHTML(content);
+  assert.match(html, /data-type="voice"/);
+  assert.match(html, /data-voice-id="vn1"/);
+  assert.match(html, /data-voice-label="meeting notes"/);
+  assert.match(html, /data-voice-duration="42"/);
+
+  const root = element({
+    childNodes: [
+      element({
+        dataset: { type: 'voice', voiceId: 'vn1', voiceLabel: 'meeting notes', voiceDuration: '42' },
+        tagName: 'DIV',
+      }),
+    ],
+  });
+  assert.equal(extractContent(root as unknown as HTMLElement), content);
+});
+
+test('getSlashCommands includes voice when voicesEnabled', () => {
+  const withVoice = getSlashCommands({ voicesEnabled: true });
+  assert.equal(withVoice.some((c) => c.name === 'voice'), true);
+  const withoutVoice = getSlashCommands({ voicesEnabled: false });
+  assert.equal(withoutVoice.some((c) => c.name === 'voice'), false);
+});
+
+test('contentToMarkdown wysiwyg mode renders voice notes with paths or emoji fallback', () => {
+  const content = ['memo', 'voice::abc|standup|30'].join('\n');
+  const voicePaths = new Map([['abc', 'audio/abc.webm']]);
+  const withPath = contentToMarkdown(content, undefined, { wysiwyg: true, voicePaths });
+  assert.match(withPath, /\[standup \(30s\)\]\(audio\/abc\.webm\)/);
+
+  const fallback = contentToMarkdown(content, undefined, { wysiwyg: true });
+  assert.match(fallback, /🎙 standup \(30s\)/);
+});

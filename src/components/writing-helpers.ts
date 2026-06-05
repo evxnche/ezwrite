@@ -19,7 +19,7 @@ export function getListName(line: string): string {
   return match ? match[1] : 'rename list';
 }
 
-export type LineType = 'text' | 'heading1' | 'heading2' | 'list-header' | 'list-item' | 'divider' | 'timer' | 'quote' | 'image';
+export type LineType = 'text' | 'heading1' | 'heading2' | 'list-header' | 'list-item' | 'divider' | 'timer' | 'quote' | 'image' | 'voice';
 
 const SLASH_COMMANDS_BASE = [
   { name: 'list', description: 'Create a checklist' },
@@ -32,11 +32,13 @@ const SLASH_COMMANDS_BASE = [
 ] as const;
 
 const IMAGE_SLASH_COMMAND = { name: 'image', description: 'Insert an image' } as const;
+const VOICE_SLASH_COMMAND = { name: 'voice', description: 'Record a voice note' } as const;
 
 export type SlashCommand = { name: string; description: string };
 
 export interface SlashCommandOptions {
   imagesEnabled?: boolean;
+  voicesEnabled?: boolean;
   sidetabEnabled?: boolean;
   scratchpadEnabled?: boolean;
   listEnabled?: boolean;
@@ -52,6 +54,12 @@ export function getSlashCommands(options: SlashCommandOptions = {}): SlashComman
   if (options.imagesEnabled !== false) {
     const timerIndex = commands.findIndex(c => c.name === 'timer');
     commands.splice(timerIndex + 1, 0, IMAGE_SLASH_COMMAND);
+  }
+
+  if (options.voicesEnabled !== false) {
+    const imageIndex = commands.findIndex(c => c.name === 'image');
+    const insertAt = imageIndex >= 0 ? imageIndex + 1 : commands.findIndex(c => c.name === 'timer') + 1;
+    commands.splice(insertAt, 0, VOICE_SLASH_COMMAND);
   }
   
   if (options.sidetabEnabled === false) commands = commands.filter(c => c.name !== 'sidetab');
@@ -84,6 +92,7 @@ export function getLineType(lines: string[], index: number): LineType {
   if (lower === 'line') return 'divider';
   if (/^timer(\s|$)/i.test(lower)) return 'timer';
   if (/^polaroid::/.test(clean)) return 'image';
+  if (/^voice::/.test(clean)) return 'voice';
   if (/^## /.test(clean)) return 'heading2';
   if (/^# /.test(clean)) return 'heading1';
   if (/^>> /.test(clean) || clean === '>>') return 'quote';
@@ -93,7 +102,7 @@ export function getLineType(lines: string[], index: number): LineType {
     if (lines[i].startsWith(LIST_EXIT)) return 'text'; // explicit list break
     const c = getCleanLine(lines[i]).trim().toLowerCase();
     if (isListHeader(c)) return 'list-item';
-    if (c === 'line' || /^timer(\s|$)/i.test(c)) return 'text';
+    if (c === 'line' || /^timer(\s|$)/i.test(c) || /^polaroid::/.test(getCleanLine(lines[i]).trim()) || /^voice::/.test(getCleanLine(lines[i]).trim())) return 'text';
     if (/^##? /.test(getCleanLine(lines[i]).trim())) return 'text';
     if (c === '') {
       emptyCount++;
@@ -205,6 +214,13 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
         const width = m?.[3] ? escapeHTML(m[3]) : '';
         const widthAttr = width ? ` data-image-width="${width}"` : '';
         return `<div data-type="image" data-image-id="${id}" data-image-caption="${caption}"${widthAttr} data-image-slot="${i}" contenteditable="false" class="ce-image"></div>`;
+      }
+      case 'voice': {
+        const m = line.match(/^voice::([^|]+)\|?([^|]*)?\|?(.*)?$/);
+        const id = escapeHTML(m?.[1] ?? '');
+        const label = escapeHTML(m?.[2] ?? '');
+        const duration = escapeHTML(m?.[3] ?? '');
+        return `<div data-type="voice" data-voice-id="${id}" data-voice-label="${label}" data-voice-duration="${duration}" data-voice-slot="${i}" contenteditable="false" class="ce-voice"></div>`;
       }
       case 'quote': {
         const text = line.replace(/^>> ?/, '');
@@ -410,6 +426,13 @@ export function extractContent(editor: HTMLElement): string {
       const caption = el.dataset.imageCaption || '';
       const width = el.dataset.imageWidth || '';
       lines.push(width ? `polaroid::${id}|${caption}|${width}` : `polaroid::${id}|${caption}`);
+      return;
+    }
+    if (type === 'voice') {
+      const id = el.dataset.voiceId || '';
+      const label = el.dataset.voiceLabel || '';
+      const duration = el.dataset.voiceDuration || '';
+      lines.push(duration ? `voice::${id}|${label}|${duration}` : `voice::${id}|${label}`);
       return;
     }
     if (type === 'heading1' || type === 'heading2') {
@@ -654,6 +677,8 @@ export interface MarkdownExportOptions {
   wysiwyg?: boolean;
   // Maps image ids (polaroid::<id>) to a relative path written by the storage layer.
   imagePaths?: Map<string, string>;
+  // Maps voice ids (voice::<id>) to a relative path written by the storage layer.
+  voicePaths?: Map<string, string>;
 }
 
 export function contentToMarkdown(
@@ -668,7 +693,7 @@ export function contentToMarkdown(
     const rendered = lines.map((line, i) => {
       const type = getLineType(lines, i);
       if (type === 'divider') return '---';
-      if (type === 'timer' || type === 'list-header' || type === 'image') return '';
+      if (type === 'timer' || type === 'list-header' || type === 'image' || type === 'voice') return '';
       if (type === 'list-item') {
         const struck = isLineStruck(line);
         let clean = getCleanLine(line);
@@ -693,7 +718,8 @@ export function contentToMarkdown(
 
   // WYSIWYG mode — render-faithful markdown that mirrors the editor view.
   const imagePaths = opts.imagePaths;
-  type Kind = 'text' | 'list' | 'heading' | 'quote' | 'divider' | 'image' | 'label' | 'empty';
+  const voicePaths = opts.voicePaths;
+  type Kind = 'text' | 'list' | 'heading' | 'quote' | 'divider' | 'image' | 'voice' | 'label' | 'empty';
   const rendered = lines.map((line, i): { text: string; kind: Kind } => {
     const type = getLineType(lines, i);
     if (type === 'divider') return { text: '---', kind: 'divider' };
@@ -710,6 +736,15 @@ export function contentToMarkdown(
       const path = imagePaths?.get(id);
       if (!path) return { text: '', kind: 'empty' };
       return { text: `![${caption}](${path})`, kind: 'image' };
+    }
+    if (type === 'voice') {
+      const m = line.match(/^voice::([^|]+)\|?([^|]*)?\|?(.*)?$/);
+      const id = m?.[1] ?? '';
+      const label = m?.[2] ?? 'voice note';
+      const duration = m?.[3] ?? '';
+      const path = voicePaths?.get(id);
+      if (path) return { text: `[${label} (${duration || '?'}s)](${path})`, kind: 'voice' };
+      return { text: `🎙 ${label}${duration ? ` (${duration}s)` : ''}`, kind: 'voice' };
     }
     if (type === 'list-item') {
       const struck = isLineStruck(line);

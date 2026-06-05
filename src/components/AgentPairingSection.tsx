@@ -54,7 +54,6 @@ export default function AgentPairingSection({
   const [pairings, setPairings] = useState<AgentPairing[]>([]);
   const [label, setLabel] = useState('');
   const [scope, setScope] = useState<Scope>('any');
-  const [canManage, setCanManage] = useState(true);
   const [expiryIdx, setExpiryIdx] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -79,7 +78,6 @@ export default function AgentPairingSection({
       const result = await mintPairing(auth, {
         label: label.trim() || undefined,
         targetProjectId: scope === 'active' ? (activeProjectId ?? null) : null,
-        canManageProjects: canManage,
         expiresInMinutes: EXPIRY_OPTIONS[expiryIdx].minutes,
       });
       setPasskey(result.passkey);
@@ -128,8 +126,9 @@ export default function AgentPairingSection({
         ) : (
           <>
             <p className="text-[11px] text-muted-foreground lowercase leading-relaxed">
-              give an agent a passkey and it can write into your canvas live — no password needed.
-              shared docs pass through the server unencrypted; revoke anytime.
+              give an agent a passkey and it can write, edit, and create docs live — no password needed.
+              it can't delete docs, and you can roll back any change. shared docs pass through the
+              server unencrypted; revoke anytime.
             </p>
 
             <input
@@ -162,16 +161,8 @@ export default function AgentPairingSection({
               </button>
             </div>
 
-            <div className="flex items-center justify-between gap-2">
-              <label className="flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground lowercase cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={canManage}
-                  onChange={(e) => setCanManage(e.target.checked)}
-                  className="accent-current"
-                />
-                can create/delete docs
-              </label>
+            <div className="flex items-center gap-1.5 text-[11px] font-mono">
+              <span className="text-muted-foreground lowercase">expires</span>
               <select
                 value={expiryIdx}
                 onChange={(e) => setExpiryIdx(Number(e.target.value))}
@@ -219,7 +210,7 @@ export default function AgentPairingSection({
                     <span className="min-w-0 truncate text-foreground lowercase">
                       {p.label || 'agent'}
                       <span className="text-muted-foreground">
-                        {' · '}{p.targetProjectId ? 'one doc' : 'any doc'}{p.canManageProjects ? ' · manages' : ''}{' · '}{expiryLabel(p.expiresAt)}
+                        {' · '}{p.targetProjectId ? 'one doc' : 'any doc'}{' · '}{expiryLabel(p.expiresAt)}
                       </span>
                     </span>
                     <button
