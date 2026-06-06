@@ -224,7 +224,7 @@ const MOBILE_PAGE_DOTS_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 2.75rem
 const PAGE_DELETE_NOTICE_MS = 3500;
 // Cheat code: typing this anywhere in the editor toggles the ezwrite branding
 // (title + footer) and deletes itself. Persisted per-device.
-const REMOVE_BRANDING_CHEAT = '/ezwrite//';
+const REMOVE_BRANDING_CHEAT = '//ezwrite//';
 
 function drawRoundedRect(
   ctx: CanvasRenderingContext2D,
@@ -550,7 +550,7 @@ const WritingInterface = () => {
     });
   };
 
-  // Branding (ezwrite title + footer) hidden via the /ezwrite// cheat code (persisted)
+  // Branding (ezwrite title + footer) hidden via the //ezwrite// cheat code (persisted)
   const [brandingHidden, setBrandingHidden] = useState(() =>
     localStorage.getItem('ezwrite-branding-hidden') === 'true'
   );
@@ -2456,7 +2456,7 @@ const WritingInterface = () => {
     const rawContent = extractContent(editorRef.current);
     const newContent = normalizeEditorContent(rawContent);
 
-    // Cheat code: typing /ezwrite// toggles the ezwrite branding and deletes the
+    // Cheat code: typing //ezwrite// toggles the ezwrite branding and deletes the
     // code itself, leaving the cursor where the code was.
     const cheatIdx = newContent.indexOf(REMOVE_BRANDING_CHEAT);
     if (cheatIdx !== -1) {
