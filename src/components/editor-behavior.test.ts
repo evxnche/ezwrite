@@ -477,6 +477,14 @@ test('Timer autocomplete stays editable until the slash invocation is submitted'
   assert.match(scratchpadSource, /lines\[lineIndex\] = '\/timer ';\s+structuralUpdate\(lines\.join\('\\n'\), lineIndex, 7\);/);
 });
 
+test('Scratchpad keeps unnamed /list headers visible and collapses duplicate blank checklist rows', () => {
+  const scratchpadSource = fs.readFileSync(path.join(process.cwd(), 'src/components/ScratchpadPanel.tsx'), 'utf8');
+  const cssSource = fs.readFileSync(path.join(process.cwd(), 'src/index.css'), 'utf8');
+  assert.equal(scratchpadSource.includes('hideUnnamedListHeaders: true'), false);
+  assert.match(scratchpadSource, /while \(next \+ 1 < lines\.length && lines\[next\] === '' && lines\[next \+ 1\] === ''\) \{/);
+  assert.equal(cssSource.includes('.scratchpad-editor .ce-list-header[data-list-unnamed="1"]'), false);
+});
+
 test('scratchpad // LLM prompts are handled only in ScratchpadPanel', () => {
   const writingSource = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   const scratchpadSource = fs.readFileSync(path.join(process.cwd(), 'src/components/ScratchpadPanel.tsx'), 'utf8');

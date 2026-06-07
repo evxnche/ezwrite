@@ -6,8 +6,10 @@ import { Bot, Check, Copy, X } from 'lucide-react';
 import {
   mintPairing,
   listPairings,
+  probeAgentApiSetup,
   revokePairing,
   type AgentPairing,
+  type AgentApiSetupStatus,
 } from '@/lib/agent-pairing';
 
 const PANEL_SURFACE = 'rounded-xl border border-border/60';
@@ -59,6 +61,8 @@ export default function AgentPairingSection({
   const [error, setError] = useState('');
   const [passkey, setPasskey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [setupStatus, setSetupStatus] = useState<AgentApiSetupStatus>({ ready: true, code: 'ready', message: '' });
+  const [checkingSetup, setCheckingSetup] = useState(false);
 
   const refresh = useCallback(() => {
     if (!auth) return;
@@ -66,6 +70,24 @@ export default function AgentPairingSection({
   }, [auth]);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!syncUnlocked) {
+      setSetupStatus({ ready: true, code: 'ready', message: '' });
+      setCheckingSetup(false);
+      return;
+    }
+    setCheckingSetup(true);
+    probeAgentApiSetup()
+      .then((status) => {
+        if (!cancelled) setSetupStatus(status);
+      })
+      .finally(() => {
+        if (!cancelled) setCheckingSetup(false);
+      });
+    return () => { cancelled = true; };
+  }, [syncUnlocked]);
 
   if (!syncConfigured) return null;
 
@@ -110,6 +132,8 @@ export default function AgentPairingSection({
     }
   };
 
+  const mintDisabled = busy || checkingSetup || !setupStatus.ready;
+
   return (
     <div className="space-y-2">
       <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">agents</h3>
@@ -130,6 +154,18 @@ export default function AgentPairingSection({
               it can't delete docs, and you can roll back any change. shared docs pass through the
               server unencrypted; revoke anytime.
             </p>
+
+            {checkingSetup && (
+              <div className="text-[10px] text-muted-foreground lowercase">
+                checking shared-canvas setup…
+              </div>
+            )}
+
+            {!checkingSetup && !setupStatus.ready && (
+              <div className="text-[10px] text-destructive lowercase whitespace-pre-wrap">
+                {setupStatus.message}
+              </div>
+            )}
 
             <input
               type="text"
@@ -177,10 +213,10 @@ export default function AgentPairingSection({
 
             <button
               onClick={handleMint}
-              disabled={busy}
+              disabled={mintDisabled}
               className="px-2.5 py-1.5 rounded-lg text-xs font-mono bg-accent/20 text-accent-foreground disabled:opacity-40"
             >
-              {busy ? 'generating…' : 'generate passkey'}
+              {busy ? 'generating…' : checkingSetup ? 'checking…' : 'generate passkey'}
             </button>
 
             {passkey && (

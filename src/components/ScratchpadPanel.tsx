@@ -146,7 +146,6 @@ const ScratchpadPanel: React.FC<Props> = ({
     suppressInputHistoryRef.current = true;
     editorRef.current.innerHTML = contentToHTML(nextContent, {
       editingTimerLine: editingTimerLineRef.current ?? undefined,
-      hideUnnamedListHeaders: true,
     });
 
     const lines = nextContent.split('\n');
@@ -434,9 +433,12 @@ const ScratchpadPanel: React.FC<Props> = ({
       structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
     } else if (command === 'list') {
       lines[lineIndex] = 'list';
-      if (lineIndex >= lines.length - 1 || lines[lineIndex + 1] !== '') {
-        lines.splice(lineIndex + 1, 0, '');
+      // Collapse consecutive empty lines below to prevent multiple empty checkboxes
+      const next = lineIndex + 1;
+      while (next + 1 < lines.length && lines[next] === '' && lines[next + 1] === '') {
+        lines.splice(next, 1);
       }
+      if (lineIndex >= lines.length - 1) lines.splice(lineIndex + 1, 0, '');
       structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
     }
 

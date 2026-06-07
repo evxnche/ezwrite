@@ -7,8 +7,13 @@ export interface PairingAuth {
   userId: string;
 }
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+type AgentPairingEnv = {
+  VITE_SUPABASE_URL?: string;
+  VITE_SUPABASE_ANON_KEY?: string;
+};
+
+let agentPairingEnvOverride: AgentPairingEnv | null = null;
+
 const PAIRINGS_TABLE = 'ezwrite_agent_pairings';
 
 export interface AgentPairing {
@@ -38,10 +43,43 @@ export interface MintedPairing {
   };
 }
 
+export type AgentApiSetupCode =
+  | 'ready'
+  | 'server-env-missing'
+  | 'schema-missing'
+  | 'route-missing'
+  | 'unavailable'
+  | 'unreachable';
+
+export interface AgentApiSetupStatus {
+  ready: boolean;
+  code: AgentApiSetupCode;
+  message: string;
+}
+
+const ROUTE_MISSING_MESSAGE =
+  'this build does not expose /api/agent. demo shared canvas from `npm run dev` or a deployed server build.';
+
+export function setAgentPairingEnvForTests(env: AgentPairingEnv | null): void {
+  agentPairingEnvOverride = env;
+}
+
+function getAgentPairingEnv(): AgentPairingEnv {
+  if (agentPairingEnvOverride) return agentPairingEnvOverride;
+  if (typeof import.meta !== 'undefined' && import.meta.env) {
+    return {
+      VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL as string | undefined,
+      VITE_SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined,
+    };
+  }
+  return {};
+}
+
 function restHeaders(accessToken: string, extra: Record<string, string> = {}): HeadersInit {
-  if (!SUPABASE_ANON_KEY) throw new Error('Missing VITE_SUPABASE_ANON_KEY');
+  const { VITE_SUPABASE_ANON_KEY } = getAgentPairingEnv();
+  if (!VITE_SUPABASE_ANON_KEY) throw new Error('Missing VITE_SUPABASE_ANON_KEY');
   return {
-    apikey: SUPABASE_ANON_KEY,
+    apikey: VITE_SUPABASE_ANON_KEY,
     Authorization: `Bearer ${accessToken}`,
     'Content-Type': 'application/json',
     ...extra,
@@ -49,8 +87,71 @@ function restHeaders(accessToken: string, extra: Record<string, string> = {}): H
 }
 
 function restUrl(path: string): string {
-  if (!SUPABASE_URL) throw new Error('Missing VITE_SUPABASE_URL');
-  return `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/${path}`;
+  const { VITE_SUPABASE_URL } = getAgentPairingEnv();
+  if (!VITE_SUPABASE_URL) throw new Error('Missing VITE_SUPABASE_URL');
+  return `${VITE_SUPABASE_URL.replace(/\/$/, '')}/rest/v1/${path}`;
+}
+
+function readErrorText(body: unknown): string {
+  if (!body) return '';
+  if (typeof body === 'string') return body.trim();
+  if (typeof body === 'object' && typeof (body as { error?: unknown }).error === 'string') {
+    return (body as { error: string }).error.trim();
+  }
+  return '';
+}
+
+function detectAgentApiFailureCode(status: number, body: unknown, contentType?: string | null): AgentApiSetupCode {
+  const error = readErrorText(body);
+  if (status === 404 || /text\/html/i.test(contentType ?? '')) return 'route-missing';
+  if (/missing server env|SUPABASE_SERVICE_ROLE_KEY|AGENT_PASSKEY_PEPPER/i.test(error)) return 'server-env-missing';
+  if (/ezwrite_agent_(pairings|events|canvas)|schema cache|relation .*ezwrite_agent_/i.test(error)) return 'schema-missing';
+  return 'unavailable';
+}
+
+export function describeAgentApiFailure(status: number, body: unknown, contentType?: string | null): string {
+  const code = detectAgentApiFailureCode(status, body, contentType);
+  const error = readErrorText(body);
+  if (code === 'route-missing') return ROUTE_MISSING_MESSAGE;
+  if (code === 'server-env-missing') {
+    return 'shared canvas is not set up on this app yet. add SUPABASE_SERVICE_ROLE_KEY and AGENT_PASSKEY_PEPPER to the server env, then restart the dev server or redeploy.';
+  }
+  if (code === 'schema-missing') {
+    return 'shared canvas tables are missing. run docs/supabase-agents.sql in Supabase, then try again.';
+  }
+  if (/invalid or expired session/i.test(error)) {
+    return 'your sync session expired. sign out and back in, then try again.';
+  }
+  return error || `Could not create passkey (${status})`;
+}
+
+async function readApiBody(res: Response): Promise<unknown> {
+  const text = await res.text().catch(() => '');
+  if (!text) return {};
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return { error: text };
+  }
+}
+
+export async function probeAgentApiSetup(): Promise<AgentApiSetupStatus> {
+  try {
+    const res = await fetch('/api/agent', { method: 'GET' });
+    if (res.ok) return { ready: true, code: 'ready', message: '' };
+    const body = await readApiBody(res);
+    return {
+      ready: false,
+      code: detectAgentApiFailureCode(res.status, body, res.headers.get('content-type')),
+      message: describeAgentApiFailure(res.status, body, res.headers.get('content-type')),
+    };
+  } catch {
+    return {
+      ready: false,
+      code: 'unreachable',
+      message: 'could not reach /api/agent. make sure the dev server or deployment is running.',
+    };
+  }
 }
 
 export async function mintPairing(session: PairingAuth, opts: MintPairingOptions = {}): Promise<MintedPairing> {
@@ -67,8 +168,8 @@ export async function mintPairing(session: PairingAuth, opts: MintPairingOptions
       expiresInMinutes: opts.expiresInMinutes ?? null,
     }),
   });
-  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!res.ok) throw new Error((data.error as string) || `Could not create passkey (${res.status})`);
+  const data = await readApiBody(res);
+  if (!res.ok) throw new Error(describeAgentApiFailure(res.status, data, res.headers.get('content-type')));
   return data as unknown as MintedPairing;
 }
 
