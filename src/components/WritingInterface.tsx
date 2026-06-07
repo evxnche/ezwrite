@@ -127,6 +127,7 @@ import MobileEditorDock from './MobileEditorDock';
 
 const InfoDialog = lazy(() => import('./InfoDialog'));
 const SettingsDialog = lazy(() => import('./SettingsDialog'));
+const AgentSetupDialog = lazy(() => import('./AgentSetupDialog'));
 const NotesPanel = lazy(() => import('./NotesPanel'));
 const ScratchpadPanel = lazy(() => import('./ScratchpadPanel'));
 
@@ -197,6 +198,10 @@ function getUntitledFolderName(projectId: string): string {
   const index = untitledProjects.findIndex(p => p.id === projectId);
   return `Untitled_${String(index + 1).padStart(3, '0')}`;
 }
+
+// Cheat code: typing this anywhere in the editor opens the hidden agent setup
+// window and deletes itself. Keeps the agent feature invisible to normal users.
+const AGENT_SETUP_CHEAT = '//agent//';
 
 // Apply a single-page agent edit op to a page's text. Pure — the caller decides
 // where the result goes (live editor vs storage for a background project).
@@ -436,6 +441,8 @@ const WritingInterface = () => {
   const agentRelayRef = useRef<RelayHandle | null>(null);
   const [agentNotice, setAgentNotice] = useState<{ message: string; projectId: string | null } | null>(null);
   const agentNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  // Hidden agent setup window, opened by the //agent// cheat code (see handleInput).
+  const [agentSetupOpen, setAgentSetupOpen] = useState(false);
   // Tracks the last agent edit time per doc so a burst of edits shares one checkpoint.
   const agentBurstRef = useRef<Map<string, number>>(new Map());
   // Set after refreshActiveProjectFromStorage is defined (avoids a forward ref).
@@ -2694,6 +2701,24 @@ const WritingInterface = () => {
 
     const rawContent = extractContent(editorRef.current);
     const newContent = normalizeEditorContent(rawContent);
+
+    // Cheat code: typing //agent// opens the hidden agent setup window and deletes
+    // the code itself, leaving the cursor where it was typed.
+    const agentCheatIdx = newContent.indexOf(AGENT_SETUP_CHEAT);
+    if (agentCheatIdx !== -1) {
+      const stripped =
+        newContent.slice(0, agentCheatIdx) +
+        newContent.slice(agentCheatIdx + AGENT_SETUP_CHEAT.length);
+      const before = stripped.slice(0, agentCheatIdx);
+      const lineIndex = (before.match(/\n/g) || []).length;
+      const offset = before.length - (before.lastIndexOf('\n') + 1);
+      setAgentSetupOpen(true);
+      setSlashPopup(null);
+      structuralUpdate(stripped, lineIndex, offset);
+      triggerTyping();
+      return;
+    }
+
     const prevContent = contentRef.current;
     if (!suppressInputHistoryRef.current && newContent.length < prevContent.length) {
       const tracked = pendingCursor.current ?? trackedCursor.current;
@@ -4676,8 +4701,6 @@ const WritingInterface = () => {
               syncAccount={syncSession?.username}
               accessToken={syncSession?.accessToken}
               userId={syncSession?.userId}
-              activeProjectId={activeProjectId}
-              activeProjectTitle={activeProjectId ? getProjectTitle(activeProjectId) : undefined}
               syncPlan={syncSession?.plan ?? 'free'}
               syncBusy={syncBusy}
               syncStatus={syncStatus}
@@ -4704,6 +4727,21 @@ const WritingInterface = () => {
               onScratchpadLLMConfigChange={handleScratchpadLLMConfigChange}
             />
           </>
+        )}
+      </Suspense>
+
+      <Suspense fallback={null}>
+        {agentSetupOpen && (
+          <AgentSetupDialog
+            open={agentSetupOpen}
+            onOpenChange={setAgentSetupOpen}
+            accessToken={syncSession?.accessToken}
+            userId={syncSession?.userId}
+            syncConfigured={getSyncConfigStatus() === 'ready'}
+            syncUnlocked={Boolean(syncSession)}
+            activeProjectId={activeProjectId}
+            activeProjectTitle={activeProjectId ? getProjectTitle(activeProjectId) : undefined}
+          />
         )}
       </Suspense>
 

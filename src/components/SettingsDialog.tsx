@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Cloud, Copy, Eye, EyeOff, FolderOpen, Lock, RefreshCw } from 'lucide-react';
 import DialogSupportFooter from './DialogSupportFooter';
-import AgentPairingSection from './AgentPairingSection';
 import { BUG_REPORT_EMAIL } from '@/lib/bug-report';
 import { copyLandingPageUrl, getLandingPageDisplayLabel, getLandingPageUrl } from '@/lib/app-links';
 import type { ColorTheme } from './preferences';
@@ -135,8 +134,6 @@ interface Props {
   onToggleActiveProjectSync?: () => void;
   accessToken?: string;
   userId?: string;
-  activeProjectId?: string | null;
-  activeProjectTitle?: string;
   scratchpadLLMConfig?: ScratchpadLLMConfig;
   onScratchpadLLMConfigChange?: (config: ScratchpadLLMConfig) => void;
 }
@@ -209,8 +206,6 @@ export const SettingsDialog: React.FC<Props> = ({
   onToggleActiveProjectSync,
   accessToken,
   userId,
-  activeProjectId,
-  activeProjectTitle,
   autoPairBrackets,
   onToggleAutoPairBrackets,
   scratchpadLLMConfig,
@@ -554,15 +549,6 @@ export const SettingsDialog: React.FC<Props> = ({
                   )}
                 </div>
               </div>
-
-              <AgentPairingSection
-                accessToken={accessToken}
-                userId={userId}
-                syncConfigured={syncConfigured}
-                syncUnlocked={syncUnlocked}
-                activeProjectId={activeProjectId}
-                activeProjectTitle={activeProjectTitle}
-              />
 
               <div className="space-y-2">
                 <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">scratchpad ai — byok</h3>

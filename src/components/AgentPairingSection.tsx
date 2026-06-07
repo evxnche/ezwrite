@@ -121,7 +121,7 @@ export default function AgentPairingSection({
 
         {!syncUnlocked ? (
           <div className="text-xs text-muted-foreground lowercase">
-            sign in above to let an agent write into your canvas
+            sign in first (settings → sync), then reopen this to connect an agent
           </div>
         ) : (
           <>
