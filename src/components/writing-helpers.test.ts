@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 
 import {
   contentToHTML,
@@ -202,6 +204,12 @@ test('hasRenderableInlineMarkdown detects complete visible inline markers only',
   assert.equal(hasRenderableInlineMarkdown('I am **bold**'), true);
   assert.equal(hasRenderableInlineMarkdown('I am **not closed'), false);
   assert.equal(hasRenderableInlineMarkdown(String.raw`escaped \**bold**`), false);
+});
+
+test('editor loads a real bold IBM Plex Mono face', () => {
+  const css = fs.readFileSync(path.join(process.cwd(), 'src/index.css'), 'utf8');
+  assert.match(css, /IBM\+Plex\+Mono:wght@400;700/);
+  assert.match(css, /\.ce-editor strong\s*\{[^}]*font-weight:\s*700;/s);
 });
 
 

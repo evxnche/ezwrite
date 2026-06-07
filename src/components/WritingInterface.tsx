@@ -259,6 +259,9 @@ const MOBILE_EDITOR_BOTTOM_PADDING = 'calc(env(safe-area-inset-bottom, 0px) + 13
 const MOBILE_FOOTER_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 0.5rem)';
 const MOBILE_PAGE_DOTS_BOTTOM = 'calc(env(safe-area-inset-bottom, 0px) + 2.75rem)';
 const PAGE_DELETE_NOTICE_MS = 3500;
+// Cheat code: typing this anywhere in the editor toggles the ezwrite branding
+// (title + footer) and deletes itself. Persisted per-device.
+const REMOVE_BRANDING_CHEAT = '//ezwrite//';
 
 function drawRoundedRect(
   ctx: CanvasRenderingContext2D,
@@ -591,6 +594,18 @@ const WritingInterface = () => {
     setShowStats(v => {
       const next = !v;
       localStorage.setItem('ezwrite-show-stats', String(next));
+      return next;
+    });
+  };
+
+  // Branding (ezwrite title + footer) hidden via the //ezwrite// cheat code (persisted)
+  const [brandingHidden, setBrandingHidden] = useState(() =>
+    localStorage.getItem('ezwrite-branding-hidden') === 'true'
+  );
+  const toggleBranding = () => {
+    setBrandingHidden(v => {
+      const next = !v;
+      localStorage.setItem('ezwrite-branding-hidden', String(next));
       return next;
     });
   };
@@ -2719,6 +2734,23 @@ const WritingInterface = () => {
       return;
     }
 
+    // Cheat code: typing //ezwrite// toggles the ezwrite branding and deletes the
+    // code itself, leaving the cursor where the code was.
+    const cheatIdx = newContent.indexOf(REMOVE_BRANDING_CHEAT);
+    if (cheatIdx !== -1) {
+      const stripped =
+        newContent.slice(0, cheatIdx) +
+        newContent.slice(cheatIdx + REMOVE_BRANDING_CHEAT.length);
+      const before = stripped.slice(0, cheatIdx);
+      const lineIndex = (before.match(/\n/g) || []).length;
+      const offset = before.length - (before.lastIndexOf('\n') + 1);
+      toggleBranding();
+      setSlashPopup(null);
+      structuralUpdate(stripped, lineIndex, offset);
+      triggerTyping();
+      return;
+    }
+
     const prevContent = contentRef.current;
     if (!suppressInputHistoryRef.current && newContent.length < prevContent.length) {
       const tracked = pendingCursor.current ?? trackedCursor.current;
@@ -4251,12 +4283,14 @@ const WritingInterface = () => {
 
       {/* Header */}
       <div className="flex justify-between items-center px-4 py-4 sm:px-[64px] sm:pt-[64px] sm:pb-6 bg-background">
-        <span
-          className="brand-title text-xl sm:text-2xl text-foreground"
-          style={{ ...titleGlow, letterSpacing: '-0.04em', fontFamily: "'Instrument Serif', serif", fontSize: '26px' }}
-        >
-          ezwrite.
-        </span>
+        {!brandingHidden && (
+          <span
+            className="brand-title text-xl sm:text-2xl text-foreground"
+            style={{ ...titleGlow, letterSpacing: '-0.04em', fontFamily: "'Instrument Serif', serif", fontSize: '26px' }}
+          >
+            ezwrite.
+          </span>
+        )}
       </div>
 
       {/* Floating Actions */}
@@ -4429,17 +4463,19 @@ const WritingInterface = () => {
       )}
 
       {/* Footer */}
-      <div
-        className="fixed bottom-3 left-0 right-0 text-center pointer-events-none opacity-40 hover:opacity-70 transition-opacity duration-300"
-        style={isTouchDevice ? { bottom: MOBILE_FOOTER_BOTTOM } : undefined}
-      >
-        <span
-          className="font-playfair text-xs sm:text-sm text-foreground tracking-wide pointer-events-auto"
-          style={titleGlow}
+      {!brandingHidden && (
+        <div
+          className="fixed bottom-3 left-0 right-0 text-center pointer-events-none opacity-40 hover:opacity-70 transition-opacity duration-300"
+          style={isTouchDevice ? { bottom: MOBILE_FOOTER_BOTTOM } : undefined}
         >
-          built by evan :)
-        </span>
-      </div>
+          <span
+            className="font-playfair text-xs sm:text-sm text-foreground tracking-wide pointer-events-auto"
+            style={titleGlow}
+          >
+            built by evan :)
+          </span>
+        </div>
+      )}
 
       {/* Slash popup */}
       {slashPopup && filteredCommands.length > 0 && (
