@@ -136,6 +136,7 @@ interface Props {
   userId?: string;
   scratchpadLLMConfig?: ScratchpadLLMConfig;
   onScratchpadLLMConfigChange?: (config: ScratchpadLLMConfig) => void;
+  byokUnlocked?: boolean;
 }
 
 export const SettingsDialog: React.FC<Props> = ({
@@ -210,6 +211,7 @@ export const SettingsDialog: React.FC<Props> = ({
   onToggleAutoPairBrackets,
   scratchpadLLMConfig,
   onScratchpadLLMConfigChange,
+  byokUnlocked,
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('storage');
   const [landingCopied, setLandingCopied] = useState(false);
@@ -382,7 +384,9 @@ export const SettingsDialog: React.FC<Props> = ({
                 <SettingsToggle label="side tab" checked={sidetabEnabled} onToggle={onToggleSidetab} />
                 <SettingsToggle label="scratchpad" checked={scratchpadEnabled} onToggle={onToggleScratchpad} />
                 <SettingsToggle label="insert images" checked={imagesEnabled} onToggle={onToggleImages} />
-                <SettingsToggle label="record voice notes" checked={voicesEnabled} onToggle={onToggleVoices} />
+                {voicesEnabled && (
+                  <SettingsToggle label="record voice notes" checked={voicesEnabled} onToggle={onToggleVoices} />
+                )}
                 <SettingsToggle label="help" checked={helpEnabled} onToggle={onToggleHelp} />
                 <SettingsToggle label="settings" checked={settingsCommandEnabled} onToggle={onToggleSettingsCommand} />
               </div>
@@ -550,6 +554,7 @@ export const SettingsDialog: React.FC<Props> = ({
                 </div>
               </div>
 
+              {byokUnlocked && (
               <div className="space-y-2">
                 <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">scratchpad ai — byok</h3>
                 <div className={`${PANEL_SURFACE} bg-muted/10 p-3 space-y-2`}>
@@ -643,6 +648,7 @@ export const SettingsDialog: React.FC<Props> = ({
                   </div>
                 </div>
               </div>
+              )}
             </div>
           )}
 

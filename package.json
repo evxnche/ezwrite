@@ -1,7 +1,7 @@
 {
   "name": "ezwrite",
   "private": true,
-  "version": "0.1.28",
+  "version": "0.1.30",
   "type": "module",
   "scripts": {
     "dev": "./node_modules/.bin/vite",

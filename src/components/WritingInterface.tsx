@@ -199,9 +199,11 @@ function getUntitledFolderName(projectId: string): string {
   return `Untitled_${String(index + 1).padStart(3, '0')}`;
 }
 
-// Cheat code: typing this anywhere in the editor opens the hidden agent setup
-// window and deletes itself. Keeps the agent feature invisible to normal users.
-const AGENT_SETUP_CHEAT = '//agent//';
+// Cheat codes: typed anywhere in the editor, each toggles a hidden experimental
+// feature and deletes itself. Keeps these features invisible to normal users.
+const AGENT_SETUP_CHEAT = '//agent//';   // opens the agent setup window
+const VOICE_CHEAT = '//voice//';         // toggles voice notes
+const BYOK_CHEAT = '//byok//';           // reveals bring-your-own-key scratchpad settings
 
 // Apply a single-page agent edit op to a page's text. Pure — the caller decides
 // where the result goes (live editor vs storage for a background project).
@@ -634,13 +636,25 @@ const WritingInterface = () => {
     });
   };
 
+  // Voice notes are hidden by default (experimental) — enabled via the //voice// cheat.
   const [voicesEnabled, setVoicesEnabled] = useState(() =>
-    localStorage.getItem('ezwrite-voices-enabled') !== 'false'
+    localStorage.getItem('ezwrite-voices-enabled') === 'true'
   );
   const handleToggleVoices = () => {
     setVoicesEnabled(v => {
       const next = !v;
       localStorage.setItem('ezwrite-voices-enabled', String(next));
+      return next;
+    });
+  };
+  // BYOK scratchpad settings are hidden by default — revealed via the //byok// cheat.
+  const [byokUnlocked, setByokUnlocked] = useState(() =>
+    localStorage.getItem('ezwrite-byok-unlocked') === 'true'
+  );
+  const toggleByokUnlocked = () => {
+    setByokUnlocked(v => {
+      const next = !v;
+      localStorage.setItem('ezwrite-byok-unlocked', String(next));
       return next;
     });
   };
@@ -2751,6 +2765,40 @@ const WritingInterface = () => {
       return;
     }
 
+    // Cheat code: //voice// toggles the hidden voice-notes feature.
+    const voiceCheatIdx = newContent.indexOf(VOICE_CHEAT);
+    if (voiceCheatIdx !== -1) {
+      const stripped =
+        newContent.slice(0, voiceCheatIdx) +
+        newContent.slice(voiceCheatIdx + VOICE_CHEAT.length);
+      const before = stripped.slice(0, voiceCheatIdx);
+      const lineIndex = (before.match(/\n/g) || []).length;
+      const offset = before.length - (before.lastIndexOf('\n') + 1);
+      handleToggleVoices();
+      showAgentNotice(voicesEnabled ? 'voice notes off' : 'voice notes on');
+      setSlashPopup(null);
+      structuralUpdate(stripped, lineIndex, offset);
+      triggerTyping();
+      return;
+    }
+
+    // Cheat code: //byok// reveals the bring-your-own-key scratchpad settings.
+    const byokCheatIdx = newContent.indexOf(BYOK_CHEAT);
+    if (byokCheatIdx !== -1) {
+      const stripped =
+        newContent.slice(0, byokCheatIdx) +
+        newContent.slice(byokCheatIdx + BYOK_CHEAT.length);
+      const before = stripped.slice(0, byokCheatIdx);
+      const lineIndex = (before.match(/\n/g) || []).length;
+      const offset = before.length - (before.lastIndexOf('\n') + 1);
+      toggleByokUnlocked();
+      showAgentNotice(byokUnlocked ? 'byok settings hidden' : 'byok settings unlocked — see settings');
+      setSlashPopup(null);
+      structuralUpdate(stripped, lineIndex, offset);
+      triggerTyping();
+      return;
+    }
+
     const prevContent = contentRef.current;
     if (!suppressInputHistoryRef.current && newContent.length < prevContent.length) {
       const tracked = pendingCursor.current ?? trackedCursor.current;
@@ -4761,6 +4809,7 @@ const WritingInterface = () => {
               onToggleNotesTransferMode={handleToggleNotesTransferMode}
               scratchpadLLMConfig={scratchpadLLMConfig}
               onScratchpadLLMConfigChange={handleScratchpadLLMConfigChange}
+              byokUnlocked={byokUnlocked}
             />
           </>
         )}
