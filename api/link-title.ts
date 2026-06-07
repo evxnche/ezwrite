@@ -1,8 +1,16 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-
 export const config = {
   maxDuration: 10,
 };
+
+interface VercelRequest {
+  method?: string;
+  query?: Record<string, string | string[] | undefined>;
+}
+
+interface VercelResponse {
+  status: (code: number) => VercelResponse;
+  json: (body: Record<string, unknown>) => void;
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {

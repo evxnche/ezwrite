@@ -1,4 +1,4 @@
-import { handleAgentRequest, type AgentEnv } from '../lib/agent-upstream';
+import { handleAgentRequest, type AgentEnv } from '../lib/agent-upstream.js';
 
 export const config = {
   maxDuration: 30,
