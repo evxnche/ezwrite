@@ -3,6 +3,7 @@
 
 import { contentToMarkdown, scratchpadTextToContent } from '@/components/writing-helpers';
 import { loadImage } from '@/lib/imageStore';
+import { loadVoice, voiceMimeToExt } from '@/lib/voiceStore';
 
 const IDB_DB = 'ezwrite-storage';
 const IDB_STORE = 'handles';
@@ -78,6 +79,34 @@ async function collectImages(contents: string[]): Promise<ProjectImage[]> {
   return result;
 }
 
+interface ProjectVoice {
+  id: string;
+  fileName: string;
+  blob: Blob;
+}
+
+async function collectVoices(contents: string[]): Promise<ProjectVoice[]> {
+  const ids = new Set<string>();
+  for (const c of contents) {
+    if (!c) continue;
+    for (const line of c.split('\n')) {
+      const m = line.match(/^voice::([^|]+)/);
+      if (m) ids.add(m[1]);
+    }
+  }
+  const result: ProjectVoice[] = [];
+  for (const id of ids) {
+    const voice = await loadVoice(id);
+    if (!voice) continue;
+    result.push({
+      id,
+      fileName: `${id}.${voiceMimeToExt(voice.mimeType)}`,
+      blob: voice.blob,
+    });
+  }
+  return result;
+}
+
 async function syncProjectDirectory(
   projectDir: FileSystemDirectoryHandle,
   projectId: string,
@@ -86,12 +115,16 @@ async function syncProjectDirectory(
   title?: string,
 ): Promise<void> {
   const scratchpadContent = scratchpad.trim() ? scratchpadTextToContent(scratchpad) : '';
-  const images = await collectImages([...pages, scratchpadContent]);
+  const allContents = [...pages, scratchpadContent];
+  const images = await collectImages(allContents);
+  const voices = await collectVoices(allContents);
   const imagePaths = new Map(images.map((im) => [im.id, `images/${im.fileName}`]));
+  const voicePaths = new Map(voices.map((voice) => [voice.id, `audio/${voice.fileName}`]));
+  const markdownOpts = { wysiwyg: true as const, imagePaths, voicePaths };
 
-  const markdowns = pages.map((page) => contentToMarkdown(page, undefined, { wysiwyg: true, imagePaths }));
+  const markdowns = pages.map((page) => contentToMarkdown(page, undefined, markdownOpts));
   const scratchpadMd = scratchpadContent
-    ? contentToMarkdown(scratchpadContent, undefined, { wysiwyg: true, imagePaths })
+    ? contentToMarkdown(scratchpadContent, undefined, markdownOpts)
     : '';
 
   const expectedNames = new Set<string>(['project.json']);
@@ -129,6 +162,23 @@ async function syncProjectDirectory(
     }
   } else {
     try { await projectDir.removeEntry('images', { recursive: true }); } catch { /* no images dir to remove */ }
+  }
+
+  if (voices.length > 0) {
+    const audioDir = await projectDir.getDirectoryHandle('audio', { create: true });
+    const expectedAudio = new Set<string>();
+    await Promise.all(voices.map(async (voice) => {
+      expectedAudio.add(voice.fileName);
+      const fileHandle = await audioDir.getFileHandle(voice.fileName, { create: true });
+      const writable = await (fileHandle as FileSystemFileHandle & WritableHandle).createWritable();
+      await writable.write(voice.blob);
+      await writable.close();
+    }));
+    for await (const [name] of (audioDir as IterableDirectoryHandle).entries()) {
+      if (!expectedAudio.has(name)) await audioDir.removeEntry(name);
+    }
+  } else {
+    try { await projectDir.removeEntry('audio', { recursive: true }); } catch { /* no audio dir to remove */ }
   }
 
   const metaHandle = await projectDir.getFileHandle('project.json', { create: true });

@@ -16,8 +16,11 @@ import TimerWidget from './TimerWidget';
 import { clearTimerState } from './timer-storage';
 import PolaroidImage from './PolaroidImage';
 import NormalImage from './NormalImage';
+import VoiceNote from './VoiceNote';
+import VoiceRecorderDialog from './VoiceRecorderDialog';
 import { useImagePicker } from './useImagePicker';
 import { saveImage, loadImage, processImageForStorage, gcOrphanImages } from '@/lib/imageStore';
+import { gcOrphanVoices } from '@/lib/voiceStore';
 import ImageDropDialog from './ImageDropDialog';
 import { recognizeImage } from '@/lib/ocr';
 import {
@@ -56,7 +59,7 @@ import {
 } from './editor-behavior';
 import {
   STRUCK_MARKER, LIST_EXIT, getCleanLine, isLineStruck, getLineType,
-  getTimerArgs, getSlashCommands, INDENT,
+  getTimerArgs, getSlashCommands, getExecutableSlashCommands, INDENT,
   contentToHTML, extractContent, setCursorPosition,
   contentToMarkdown, markdownToContent, getRawOffsetUpTo, hasRenderableInlineMarkdown,
   extractContentSliceForSelection,
@@ -108,6 +111,7 @@ import { recordBugReportBreadcrumb, setBugReportRuntimeContext } from '@/lib/bug
 import { loadSyncSession, saveSyncSession, clearSyncSession } from '@/lib/sync-session-store';
 import { startAgentRelay, type AgentOp, type RelayHandle } from '@/lib/agent-relay';
 import { listPairings, hasActivePairing, type AgentPairing } from '@/lib/agent-pairing';
+import { getScratchpadLLMConfig, setScratchpadLLMConfig, type ScratchpadLLMConfig } from '@/lib/scratchpad-llm';
 import { saveAgentCheckpoint, popAgentCheckpoint, hasAgentCheckpoint } from '@/lib/agent-checkpoints';
 import MobileSyncGate from './MobileSyncGate';
 import {
@@ -136,6 +140,15 @@ function buildImageSlots(lines: string[]): Array<{ id: string; caption: string; 
     const m = line.match(/^polaroid::([^|]+)\|?([^|]*)?\|?(.*)?$/);
     if (!m) return [];
     return [{ id: m[1], caption: m[2] ?? '', width: m[3] ?? '', lineIndex: i }];
+  });
+}
+
+function buildVoiceSlots(lines: string[]): Array<{ id: string; label: string; durationSec: number; lineIndex: number }> {
+  return lines.flatMap((line, i) => {
+    const m = line.match(/^voice::([^|]+)\|?([^|]*)?\|?(.*)?$/);
+    if (!m) return [];
+    const durationSec = parseInt(m[3] ?? '', 10);
+    return [{ id: m[1], label: m[2] ?? '', durationSec: Number.isFinite(durationSec) ? durationSec : 0, lineIndex: i }];
   });
 }
 
@@ -450,6 +463,7 @@ const WritingInterface = () => {
         allContent.push(getProjectScratchpad(p.id));
       }
       gcOrphanImages(allContent);
+      void gcOrphanVoices(allContent);
     }, 1500);
     return () => window.clearTimeout(timer);
   }, []);
@@ -598,6 +612,17 @@ const WritingInterface = () => {
     });
   };
 
+  const [voicesEnabled, setVoicesEnabled] = useState(() =>
+    localStorage.getItem('ezwrite-voices-enabled') !== 'false'
+  );
+  const handleToggleVoices = () => {
+    setVoicesEnabled(v => {
+      const next = !v;
+      localStorage.setItem('ezwrite-voices-enabled', String(next));
+      return next;
+    });
+  };
+
   const [scratchpadEnabled, setScratchpadEnabled] = useState(() =>
     localStorage.getItem('ezwrite-scratchpad-enabled') !== 'false'
   );
@@ -607,6 +632,12 @@ const WritingInterface = () => {
       localStorage.setItem('ezwrite-scratchpad-enabled', String(next));
       return next;
     });
+  };
+
+  const [scratchpadLLMConfig, setScratchpadLLMConfigState] = useState<ScratchpadLLMConfig>(() => getScratchpadLLMConfig());
+  const handleScratchpadLLMConfigChange = (next: ScratchpadLLMConfig) => {
+    setScratchpadLLMConfig(next);
+    setScratchpadLLMConfigState(getScratchpadLLMConfig());
   };
 
   const [sidetabEnabled, setSidetabEnabled] = useState(() =>
@@ -652,6 +683,7 @@ const WritingInterface = () => {
 
   const slashCommands = useMemo(() => getSlashCommands({
     imagesEnabled,
+    voicesEnabled,
     sidetabEnabled,
     scratchpadEnabled,
     listEnabled,
@@ -661,6 +693,7 @@ const WritingInterface = () => {
     settingsCommandEnabled,
   }), [
     imagesEnabled,
+    voicesEnabled,
     sidetabEnabled,
     scratchpadEnabled,
     listEnabled,
@@ -669,6 +702,12 @@ const WritingInterface = () => {
     helpEnabled,
     settingsCommandEnabled,
   ]);
+
+  // All commands that can be executed by typing (ignores visibility toggles, respects capability flags)
+  const executableSlashCommands = useMemo(() => getExecutableSlashCommands({
+    imagesEnabled,
+    voicesEnabled,
+  }), [imagesEnabled, voicesEnabled]);
 
   // Timer alert mode (persisted)
   const [timerAlertMode, setTimerAlertMode] = useState<'visual' | 'audio' | 'both' | 'silent'>(() =>
@@ -754,6 +793,10 @@ const WritingInterface = () => {
   // Track image (polaroid) slots for portal rendering
   const [imageSlots, setImageSlots] = useState<Array<{ id: string; caption: string; width: string; lineIndex: number }>>([]);
   const imageContainers = useRef<Map<string, HTMLElement>>(new Map());
+  const [voiceSlots, setVoiceSlots] = useState<Array<{ id: string; label: string; durationSec: number; lineIndex: number }>>([]);
+  const voiceContainers = useRef<Map<string, HTMLElement>>(new Map());
+  const [voiceRecorderOpen, setVoiceRecorderOpen] = useState(false);
+  const voiceInsertLineRef = useRef(0);
   const { pickImage } = useImagePicker();
   const pickImageRef = useRef(pickImage);
   pickImageRef.current = pickImage;
@@ -763,6 +806,7 @@ const WritingInterface = () => {
   // Continuously tracked cursor from selectionchange — fallback when pendingCursor is null
   // and getCursorInfo() might return stale state (e.g. cursor at container level after innerHTML reset).
   const trackedCursor = useRef<{ lineIndex: number; offset: number } | null>(null);
+  const cursorRestoreFrameRef = useRef<number | null>(null);
   // True while structuralUpdate is resetting innerHTML — suppresses selectionchange tracking.
   const isResettingDOM = useRef(false);
   // Undo / Redo
@@ -1191,6 +1235,7 @@ const WritingInterface = () => {
     shouldFocus = true,
     persist = true,
   ) => {
+    if (cursorRestoreFrameRef.current !== null) cancelAnimationFrame(cursorRestoreFrameRef.current);
     contentRef.current = content;
     setIsPageEmpty(content.trim() === '');
     if (persist) saveContent(content);
@@ -1239,6 +1284,21 @@ const WritingInterface = () => {
     });
     setImageSlots(images);
 
+    const voices = buildVoiceSlots(lines);
+    const activeVoiceIds = new Set<string>();
+    voices.forEach(({ id, lineIndex: voiceLine }) => {
+      activeVoiceIds.add(id);
+      if (!voiceContainers.current.has(id)) {
+        voiceContainers.current.set(id, document.createElement('div'));
+      }
+      const voiceSlot = editorRef.current!.querySelector(`[data-voice-slot="${voiceLine}"]`) as HTMLElement;
+      if (voiceSlot) voiceSlot.appendChild(voiceContainers.current.get(id)!);
+    });
+    Array.from(voiceContainers.current.keys()).forEach((id) => {
+      if (!activeVoiceIds.has(id)) voiceContainers.current.delete(id);
+    });
+    setVoiceSlots(voices);
+
     // Restore cursor and record where it should be so handleKeyDown can use it
     // if Enter fires before the RAF (browser sometimes overrides sync restore)
     if (cursorLine !== undefined) {
@@ -1247,7 +1307,8 @@ const WritingInterface = () => {
       if (shouldFocus && document.activeElement === editorRef.current) {
         setCursorPosition(editorRef.current, cursorLine, cursorOffset ?? 0);
       }
-      requestAnimationFrame(() => {
+      cursorRestoreFrameRef.current = requestAnimationFrame(() => {
+        cursorRestoreFrameRef.current = null;
         if (shouldFocus && editorRef.current) {
           editorRef.current.focus({ preventScroll: true });
           setCursorPosition(editorRef.current, cursorLine, cursorOffset ?? 0);
@@ -1256,7 +1317,8 @@ const WritingInterface = () => {
         suppressInputHistoryRef.current = false;
       });
     } else {
-      requestAnimationFrame(() => {
+      cursorRestoreFrameRef.current = requestAnimationFrame(() => {
+        cursorRestoreFrameRef.current = null;
         suppressInputHistoryRef.current = false;
       });
     }
@@ -2613,6 +2675,12 @@ const WritingInterface = () => {
   // Handle input (text-only changes from user typing)
   const handleInput = useCallback(() => {
     if (!editorRef.current) return;
+    if (cursorRestoreFrameRef.current !== null) {
+      cancelAnimationFrame(cursorRestoreFrameRef.current);
+      cursorRestoreFrameRef.current = null;
+      pendingCursor.current = null;
+      suppressInputHistoryRef.current = false;
+    }
 
     // Detect raw text nodes at container level — if found, DOM is corrupted.
     // Re-render to fix structure. extractContent now captures raw text content.
@@ -2788,6 +2856,14 @@ const WritingInterface = () => {
         structuralUpdate(ls.join('\n'), lineIndex + 1, 0);
       })();
       return;
+    } else if (command === 'voice') {
+      if (!voicesEnabled) return;
+      lines[lineIndex] = '';
+      structuralUpdate(lines.join('\n'), lineIndex, 0, false);
+      setSlashPopup(null);
+      voiceInsertLineRef.current = lineIndex;
+      setVoiceRecorderOpen(true);
+      return;
     } else if (command === 'timer') {
       lines[lineIndex] = '/timer ';
       structuralUpdate(lines.join('\n'), lineIndex, 7);
@@ -2804,7 +2880,7 @@ const WritingInterface = () => {
       structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
     }
     setSlashPopup(null);
-  }, [handleToggleSideTab, imagesEnabled, pushUndo, structuralUpdate]);
+  }, [handleToggleSideTab, handleOpenScratchpad, imagesEnabled, voicesEnabled, pushUndo, structuralUpdate]);
 
   // Slash command select
   const handleSlashSelect = useCallback((command: string) => {
@@ -3185,7 +3261,7 @@ const WritingInterface = () => {
         scrollToLine(li + 1);
         return;
       }
-      const exactSlashCommand = getExactSlashCommand(currentLine, slashCommands);
+      const exactSlashCommand = getExactSlashCommand(currentLine, executableSlashCommands);
       if (exactSlashCommand) {
         applySlashCommand(exactSlashCommand, li);
         return;
@@ -3498,6 +3574,30 @@ const WritingInterface = () => {
       saveContent(contentRef.current);
     }
   }, [saveContent]);
+
+  const handleVoiceLabelChange = useCallback((id: string, newLabel: string) => {
+    const slot = editorRef.current?.querySelector(`[data-voice-id="${id}"]`) as HTMLElement | null;
+    if (slot) slot.dataset.voiceLabel = newLabel;
+    const ls = contentRef.current.split('\n');
+    const idx = ls.findIndex(l => l.startsWith(`voice::${id}|`));
+    if (idx >= 0) {
+      const parts = ls[idx].split('|');
+      const duration = parts[2] ?? '';
+      ls[idx] = duration ? `voice::${id}|${newLabel}|${duration}` : `voice::${id}|${newLabel}`;
+      contentRef.current = ls.join('\n');
+      saveContent(contentRef.current);
+    }
+  }, [saveContent]);
+
+  const handleVoiceSave = useCallback(({ id, durationSec }: { id: string; durationSec: number }) => {
+    pushUndo(true);
+    const lineIndex = voiceInsertLineRef.current;
+    const cur = editorRef.current ? extractContent(editorRef.current) : contentRef.current;
+    const ls = cur.split('\n');
+    ls[lineIndex] = `voice::${id}||${durationSec}`;
+    if (lineIndex >= ls.length - 1) ls.push('');
+    structuralUpdate(ls.join('\n'), lineIndex + 1, 0);
+  }, [pushUndo, structuralUpdate]);
 
   const processDroppedFiles = useCallback(async (files: FileList | null, clientY: number) => {
     if (!imagesEnabled || !files) return;
@@ -4387,6 +4487,40 @@ const WritingInterface = () => {
         );
       })}
 
+      {voiceSlots.map(({ id, label, durationSec, lineIndex }) => {
+        const container = voiceContainers.current.get(id);
+        if (!container) return null;
+
+        const handleRemove = () => {
+          pushUndo(true);
+          const ls = contentRef.current.split('\n');
+          const idx = ls.findIndex(l => l.startsWith(`voice::${id}`));
+          if (idx >= 0) {
+            ls.splice(idx, 1);
+            if (!ls.length) ls.push('');
+            structuralUpdate(ls.join('\n'), Math.min(idx, ls.length - 1), 0);
+          }
+        };
+
+        return createPortal(
+          <VoiceNote
+            key={id}
+            voiceId={id}
+            initialLabel={label}
+            durationSec={durationSec}
+            onLabelChange={(newLabel) => handleVoiceLabelChange(id, newLabel)}
+            onRemove={handleRemove}
+          />,
+          container
+        );
+      })}
+
+      <VoiceRecorderDialog
+        open={voiceRecorderOpen}
+        onClose={() => setVoiceRecorderOpen(false)}
+        onSave={handleVoiceSave}
+      />
+
       {/* Docs panel */}
       <Suspense fallback={null}>
         <NotesPanel
@@ -4429,6 +4563,7 @@ const WritingInterface = () => {
           timerScope={`scratch:${activeProjectId ?? 'none'}`}
           onTimerComplete={handleTimerComplete}
           isTouchDevice={isTouchDevice}
+          scratchpadLLMConfig={scratchpadLLMConfig}
           slashCommands={getSlashCommands({
             imagesEnabled: false,
             sidetabEnabled: false,
@@ -4484,6 +4619,7 @@ const WritingInterface = () => {
               onClearFolder={handleClearFolder}
               onInstall={handleInstall}
               imagesEnabled={imagesEnabled}
+              voicesEnabled={voicesEnabled}
               accessToken={syncSession?.accessToken}
               userId={syncSession?.userId}
             />
@@ -4507,6 +4643,8 @@ const WritingInterface = () => {
               onToggleCmdArrowPageNav={handleToggleCmdArrowPageNav}
               imagesEnabled={imagesEnabled}
               onToggleImages={handleToggleImages}
+              voicesEnabled={voicesEnabled}
+              onToggleVoices={handleToggleVoices}
               sidetabEnabled={sidetabEnabled}
               onToggleSidetab={handleToggleSidetab}
               scratchpadEnabled={scratchpadEnabled}
@@ -4562,6 +4700,8 @@ const WritingInterface = () => {
               }}
               notesTransferMode={notesTransferMode}
               onToggleNotesTransferMode={handleToggleNotesTransferMode}
+              scratchpadLLMConfig={scratchpadLLMConfig}
+              onScratchpadLLMConfigChange={handleScratchpadLLMConfigChange}
             />
           </>
         )}

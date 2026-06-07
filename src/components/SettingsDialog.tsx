@@ -6,6 +6,7 @@ import AgentPairingSection from './AgentPairingSection';
 import { BUG_REPORT_EMAIL } from '@/lib/bug-report';
 import { copyLandingPageUrl, getLandingPageDisplayLabel, getLandingPageUrl } from '@/lib/app-links';
 import type { ColorTheme } from './preferences';
+import type { ScratchpadLLMConfig } from '@/lib/scratchpad-llm';
 
 const THEMES = [
   { id: '' as ColorTheme, label: 'orig', swatch: 'bg-[#171717] dark:bg-[#fafaf9]' },
@@ -83,6 +84,8 @@ interface Props {
   onToggleCmdArrowPageNav?: () => void;
   imagesEnabled?: boolean;
   onToggleImages?: () => void;
+  voicesEnabled?: boolean;
+  onToggleVoices?: () => void;
   sidetabEnabled?: boolean;
   onToggleSidetab?: () => void;
   scratchpadEnabled?: boolean;
@@ -134,6 +137,8 @@ interface Props {
   userId?: string;
   activeProjectId?: string | null;
   activeProjectTitle?: string;
+  scratchpadLLMConfig?: ScratchpadLLMConfig;
+  onScratchpadLLMConfigChange?: (config: ScratchpadLLMConfig) => void;
 }
 
 export const SettingsDialog: React.FC<Props> = ({
@@ -155,6 +160,8 @@ export const SettingsDialog: React.FC<Props> = ({
   onToggleCmdArrowPageNav,
   imagesEnabled,
   onToggleImages,
+  voicesEnabled,
+  onToggleVoices,
   sidetabEnabled,
   onToggleSidetab,
   scratchpadEnabled,
@@ -206,10 +213,13 @@ export const SettingsDialog: React.FC<Props> = ({
   activeProjectTitle,
   autoPairBrackets,
   onToggleAutoPairBrackets,
+  scratchpadLLMConfig,
+  onScratchpadLLMConfigChange,
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('storage');
   const [landingCopied, setLandingCopied] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showOrKey, setShowOrKey] = useState(false);
   const landingPageUrl = getLandingPageUrl();
   const landingPageLabel = getLandingPageDisplayLabel();
 
@@ -377,6 +387,7 @@ export const SettingsDialog: React.FC<Props> = ({
                 <SettingsToggle label="side tab" checked={sidetabEnabled} onToggle={onToggleSidetab} />
                 <SettingsToggle label="scratchpad" checked={scratchpadEnabled} onToggle={onToggleScratchpad} />
                 <SettingsToggle label="insert images" checked={imagesEnabled} onToggle={onToggleImages} />
+                <SettingsToggle label="record voice notes" checked={voicesEnabled} onToggle={onToggleVoices} />
                 <SettingsToggle label="help" checked={helpEnabled} onToggle={onToggleHelp} />
                 <SettingsToggle label="settings" checked={settingsCommandEnabled} onToggle={onToggleSettingsCommand} />
               </div>
@@ -552,6 +563,100 @@ export const SettingsDialog: React.FC<Props> = ({
                 activeProjectId={activeProjectId}
                 activeProjectTitle={activeProjectTitle}
               />
+
+              <div className="space-y-2">
+                <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">scratchpad ai — byok</h3>
+                <div className={`${PANEL_SURFACE} bg-muted/10 p-3 space-y-2`}>
+                  <div className="text-[10px] text-muted-foreground lowercase">
+                    add your own api key
+                  </div>
+
+                  {/* Provider */}
+                  <select
+                    value={scratchpadLLMConfig?.provider || 'openai-compatible'}
+                    onChange={(e) => onScratchpadLLMConfigChange?.({
+                      ...scratchpadLLMConfig,
+                      provider: e.target.value as 'openai-compatible' | 'anthropic'
+                    })}
+                    className="w-full rounded-lg border border-border bg-background px-2 py-1 text-xs font-mono outline-none focus:border-accent-foreground/50"
+                  >
+                    <option value="openai-compatible">openai-compatible (openai / groq / together / openrouter...)</option>
+                    <option value="anthropic">anthropic (claude)</option>
+                  </select>
+
+                  {/* API Key */}
+                  <div className="relative">
+                    <input
+                      type={showOrKey ? 'text' : 'password'}
+                      value={scratchpadLLMConfig?.apiKey ?? ''}
+                      onChange={(e) => onScratchpadLLMConfigChange?.({ ...scratchpadLLMConfig, apiKey: e.target.value })}
+                      placeholder="sk-... or or-..."
+                      spellCheck={false}
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                      className="w-full rounded-lg border border-border bg-background px-2 py-1.5 pr-8 font-mono text-xs outline-none focus:border-accent-foreground/50"
+                    />
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onClick={() => setShowOrKey((v) => !v)}
+                      aria-label={showOrKey ? 'hide key' : 'show key'}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showOrKey ? <EyeOff size={13} /> : <Eye size={13} />}
+                    </button>
+                  </div>
+
+                  {/* Base URL (for other providers) */}
+                  <input
+                    type="text"
+                    value={scratchpadLLMConfig?.baseURL ?? ''}
+                    onChange={(e) => onScratchpadLLMConfigChange?.({ ...scratchpadLLMConfig, baseURL: e.target.value || undefined })}
+                    placeholder="base url (optional — defaults per provider)"
+                    spellCheck={false}
+                    autoCorrect="off"
+                    className="w-full rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-xs outline-none focus:border-accent-foreground/50"
+                  />
+
+                  {/* Model override */}
+                  <input
+                    type="text"
+                    value={scratchpadLLMConfig?.model ?? ''}
+                    onChange={(e) => onScratchpadLLMConfigChange?.({ ...scratchpadLLMConfig, model: e.target.value || undefined })}
+                    placeholder="model (optional — e.g. llama-3.3-70b-versatile)"
+                    spellCheck={false}
+                    autoCorrect="off"
+                    className="w-full rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-xs outline-none focus:border-accent-foreground/50"
+                  />
+
+                  <div className="flex items-center justify-between gap-2">
+                    {(scratchpadLLMConfig?.apiKey || scratchpadLLMConfig?.baseURL || scratchpadLLMConfig?.model) ? (
+                      <button
+                        type="button"
+                        onClick={() => onScratchpadLLMConfigChange?.({})}
+                        className="text-xs text-muted-foreground hover:text-foreground font-mono"
+                      >
+                        clear
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                    <span className="text-[10px] text-muted-foreground lowercase">
+                      {scratchpadLLMConfig?.provider === 'anthropic'
+                        ? 'anthropic direct'
+                        : scratchpadLLMConfig?.baseURL
+                          ? 'custom provider (direct)'
+                          : scratchpadLLMConfig?.apiKey
+                            ? 'your key (direct)'
+                            : 'using shared key'}
+                    </span>
+                  </div>
+
+                  <div className="text-[10px] text-muted-foreground">
+                    key stays in browser only. pick anthropic for claude keys. openai-compatible also supported.
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 

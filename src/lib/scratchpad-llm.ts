@@ -5,6 +5,17 @@ export interface ScratchpadModelEntry {
   webSearch: boolean;
 }
 
+export interface ScratchpadLLMConfig {
+  /** API key for the provider. Never sent to ezwrite servers. */
+  apiKey?: string;
+  /** Base URL. For anthropic leave empty to default to https://api.anthropic.com */
+  baseURL?: string;
+  /** Specific model id. */
+  model?: string;
+  /** Provider type. 'anthropic' for Claude keys. Defaults to openai-compatible when baseURL present. */
+  provider?: 'openai-compatible' | 'anthropic';
+}
+
 /** Default order when no live web search is needed. */
 const FAST_MODEL_CHAIN: ScratchpadModelEntry[] = [
   { id: 'deepseek/deepseek-v4-flash:free', webSearch: false },
@@ -134,4 +145,70 @@ export function splitScratchpadLlmResponse(text: string): string[] {
   const normalized = text.replace(/\r\n/g, '\n').trim();
   if (!normalized) return ['(empty response)'];
   return normalized.split('\n');
+}
+
+const LLM_CONFIG_STORAGE_KEY = 'ezwrite-scratchpad-llm';
+const LEGACY_OPENROUTER_KEY = 'ezwrite-openrouter-key';
+
+/** Returns the full scratchpad LLM config (BYOK). Supports migration from old single-key storage. */
+export function getScratchpadLLMConfig(): ScratchpadLLMConfig {
+  try {
+    const raw = localStorage.getItem(LLM_CONFIG_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    }
+
+    // one-time migration from previous single OpenRouter key
+    const old = localStorage.getItem(LEGACY_OPENROUTER_KEY);
+    if (old && old.trim()) {
+      const cfg: ScratchpadLLMConfig = { apiKey: old.trim() };
+      localStorage.setItem(LLM_CONFIG_STORAGE_KEY, JSON.stringify(cfg));
+      localStorage.removeItem(LEGACY_OPENROUTER_KEY);
+      return cfg;
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+export function setScratchpadLLMConfig(config: ScratchpadLLMConfig): void {
+  try {
+    const hasAny = !!(config && (config.apiKey || config.baseURL || config.model));
+    if (hasAny) {
+      localStorage.setItem(LLM_CONFIG_STORAGE_KEY, JSON.stringify(config));
+    } else {
+      localStorage.removeItem(LLM_CONFIG_STORAGE_KEY);
+    }
+  } catch {
+    /* localStorage unavailable or quota */
+  }
+}
+
+export function clearScratchpadLLMConfig(): void {
+  try {
+    localStorage.removeItem(LLM_CONFIG_STORAGE_KEY);
+  } catch {
+    /* localStorage unavailable */
+  }
+}
+
+/** Legacy helper — returns just the apiKey for compatibility during transition. */
+export function getScratchpadOpenRouterKey(): string | null {
+  return getScratchpadLLMConfig().apiKey || null;
+}
+
+export function setScratchpadOpenRouterKey(key: string): void {
+  const cfg = getScratchpadLLMConfig();
+  setScratchpadLLMConfig({ ...cfg, apiKey: key.trim() || undefined });
+}
+
+export function clearScratchpadOpenRouterKey(): void {
+  const cfg = getScratchpadLLMConfig();
+  if (cfg.baseURL || cfg.model) {
+    setScratchpadLLMConfig({ baseURL: cfg.baseURL, model: cfg.model });
+  } else {
+    clearScratchpadLLMConfig();
+  }
 }

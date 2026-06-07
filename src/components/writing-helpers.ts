@@ -73,6 +73,24 @@ export function getSlashCommands(options: SlashCommandOptions = {}): SlashComman
   return commands;
 }
 
+/** Build the full list of executable slash commands (ignores visibility toggles, respects capability flags). */
+export function getExecutableSlashCommands(options: Pick<SlashCommandOptions, 'imagesEnabled' | 'voicesEnabled'> = {}): SlashCommand[] {
+  let commands: SlashCommand[] = [...SLASH_COMMANDS_BASE];
+
+  if (options.imagesEnabled !== false) {
+    const timerIndex = commands.findIndex(c => c.name === 'timer');
+    commands.splice(timerIndex + 1, 0, IMAGE_SLASH_COMMAND);
+  }
+
+  if (options.voicesEnabled !== false) {
+    const imageIndex = commands.findIndex(c => c.name === 'image');
+    const insertAt = imageIndex >= 0 ? imageIndex + 1 : commands.findIndex(c => c.name === 'timer') + 1;
+    commands.splice(insertAt, 0, VOICE_SLASH_COMMAND);
+  }
+
+  return commands;
+}
+
 /** Default slash commands (all on) for modules that don't read user prefs. */
 export const SLASH_COMMANDS = getSlashCommands();
 
@@ -639,9 +657,10 @@ export function setCursorPosition(editor: HTMLElement, lineIndex: number, offset
       const prefix = getInlineWrapperWidth(tag);
 
       if (remaining <= prefix) {
-         range.setStart(node, 0);
-         range.collapse(true);
-         return true;
+        if (prefix > 0) range.setStartBefore(node);
+        else range.setStart(node, 0);
+        range.collapse(true);
+        return true;
       }
       remaining -= prefix;
 
@@ -650,9 +669,10 @@ export function setCursorPosition(editor: HTMLElement, lineIndex: number, offset
       }
 
       if (remaining <= prefix) {
-         range.setStart(node, node.childNodes.length);
-         range.collapse(true);
-         return true;
+        if (prefix > 0) range.setStartAfter(node);
+        else range.setStart(node, node.childNodes.length);
+        range.collapse(true);
+        return true;
       }
       remaining -= prefix;
     }

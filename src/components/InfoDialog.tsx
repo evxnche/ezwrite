@@ -24,6 +24,7 @@ interface Props {
   onClearFolder?: () => void;
   onInstall?: () => void;
   imagesEnabled?: boolean;
+  voicesEnabled?: boolean;
   contactEmail?: string;
   accessToken?: string;
   userId?: string;
@@ -36,6 +37,7 @@ const InfoDialog: React.FC<Props> = ({
   onClearFolder,
   onInstall,
   imagesEnabled = true,
+  voicesEnabled = true,
   contactEmail,
   accessToken,
   userId,
@@ -110,6 +112,9 @@ const InfoDialog: React.FC<Props> = ({
                     <li className="pl-1"><span className="text-accent-foreground">/timer</span> — start a timer</li>
                     {imagesEnabled && (
                       <li className="pl-1"><span className="text-accent-foreground">/image</span> — insert an image</li>
+                    )}
+                    {voicesEnabled && (
+                      <li className="pl-1"><span className="text-accent-foreground">/voice</span> — record a voice note</li>
                     )}
                     <li className="pl-1"><span className="text-accent-foreground">/sidetab</span> — toggle side tab</li>
                     <li className="pl-1"><span className="text-accent-foreground">/scratchpad</span> — toggle scratchpad</li>

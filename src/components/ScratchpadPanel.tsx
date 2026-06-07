@@ -45,6 +45,7 @@ import {
   parseScratchpadLlmPrompt,
   SCRATCHPAD_LLM_LOADING_LINE,
   splitScratchpadLlmResponse,
+  type ScratchpadLLMConfig,
 } from '@/lib/scratchpad-llm';
 
 interface Props {
@@ -63,6 +64,8 @@ interface Props {
   /** Fires when a scratchpad timer completes a phase / finishes — used to alert the main editor. */
   onTimerComplete?: () => void;
   isTouchDevice?: boolean;
+  /** BYOK config for scratchpad // LLM calls (any OpenAI-compatible provider). */
+  scratchpadLLMConfig?: ScratchpadLLMConfig;
 }
 
 interface CursorInfo {
@@ -88,6 +91,7 @@ const ScratchpadPanel: React.FC<Props> = ({
   timerScope,
   onTimerComplete,
   isTouchDevice = false,
+  scratchpadLLMConfig,
 }) => {
   const isResizingRef = useRef(false);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -97,6 +101,7 @@ const ScratchpadPanel: React.FC<Props> = ({
   const editingTimerLineRef = useRef<number | null>(null);
   const trackedCursor = useRef<{ lineIndex: number; offset: number } | null>(null);
   const pendingCursor = useRef<{ lineIndex: number; offset: number } | null>(null);
+  const cursorRestoreFrameRef = useRef<number | null>(null);
   const llmAbortRef = useRef<AbortController | null>(null);
   const editorHistory = useRef(new EditorHistory());
   const suppressInputHistoryRef = useRef(false);
@@ -132,6 +137,7 @@ const ScratchpadPanel: React.FC<Props> = ({
     shouldFocus = true,
     emit = true,
   ) => {
+    if (cursorRestoreFrameRef.current !== null) cancelAnimationFrame(cursorRestoreFrameRef.current);
     if (emit) emitContent(nextContent);
     else contentRef.current = nextContent;
 
@@ -169,7 +175,8 @@ const ScratchpadPanel: React.FC<Props> = ({
         setCursorPosition(editorRef.current, cursorLine, cursorOffset ?? 0);
       }
 
-      requestAnimationFrame(() => {
+      cursorRestoreFrameRef.current = requestAnimationFrame(() => {
+        cursorRestoreFrameRef.current = null;
         if (shouldFocus && editorRef.current) {
           editorRef.current.focus({ preventScroll: true });
           setCursorPosition(editorRef.current, cursorLine, cursorOffset ?? 0);
@@ -178,7 +185,8 @@ const ScratchpadPanel: React.FC<Props> = ({
         suppressInputHistoryRef.current = false;
       });
     } else {
-      requestAnimationFrame(() => {
+      cursorRestoreFrameRef.current = requestAnimationFrame(() => {
+        cursorRestoreFrameRef.current = null;
         suppressInputHistoryRef.current = false;
       });
     }
@@ -383,7 +391,7 @@ const ScratchpadPanel: React.FC<Props> = ({
     structuralUpdate(lines.join('\n'), loadingIndex, SCRATCHPAD_LLM_LOADING_LINE.length);
 
     try {
-      const { text: answer } = await completeScratchpadPrompt(prompt, controller.signal);
+      const { text: answer } = await completeScratchpadPrompt(prompt, controller.signal, scratchpadLLMConfig);
       if (controller.signal.aborted) return;
 
       const fresh = contentRef.current.split('\n');
@@ -410,7 +418,7 @@ const ScratchpadPanel: React.FC<Props> = ({
       fresh.splice(insertAt, 1, `// error: ${message}`, '');
       structuralUpdate(fresh.join('\n'), insertAt + 1, 0);
     }
-  }, [pushUndo, structuralUpdate]);
+  }, [pushUndo, structuralUpdate, scratchpadLLMConfig]);
 
   const applySlashCommand = useCallback((command: string, lineIndex: number) => {
     const lines = contentRef.current.split('\n');
@@ -441,6 +449,12 @@ const ScratchpadPanel: React.FC<Props> = ({
 
   const handleInput = useCallback(() => {
     if (!editorRef.current) return;
+    if (cursorRestoreFrameRef.current !== null) {
+      cancelAnimationFrame(cursorRestoreFrameRef.current);
+      cursorRestoreFrameRef.current = null;
+      pendingCursor.current = null;
+      suppressInputHistoryRef.current = false;
+    }
     if (!suppressInputHistoryRef.current) {
       pushUndo();
     }
