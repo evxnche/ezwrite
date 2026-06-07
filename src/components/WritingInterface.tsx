@@ -56,7 +56,7 @@ import {
 } from './editor-behavior';
 import {
   STRUCK_MARKER, LIST_EXIT, getCleanLine, isLineStruck, getLineType,
-  getTimerArgs, getSlashCommands, INDENT,
+  getTimerArgs, getSlashCommands, getExecutableSlashCommands, INDENT,
   contentToHTML, extractContent, setCursorPosition,
   contentToMarkdown, markdownToContent, getRawOffsetUpTo, hasRenderableInlineMarkdown,
   extractContentSliceForSelection,
@@ -657,6 +657,11 @@ const WritingInterface = () => {
     helpEnabled,
     settingsCommandEnabled,
   ]);
+
+  // All commands that can be executed by typing (ignores visibility toggles, respects capability flags)
+  const executableSlashCommands = useMemo(() => getExecutableSlashCommands({
+    imagesEnabled,
+  }), [imagesEnabled]);
 
   // Timer alert mode (persisted)
   const [timerAlertMode, setTimerAlertMode] = useState<'visual' | 'audio' | 'both' | 'silent'>(() =>
@@ -3032,7 +3037,7 @@ const WritingInterface = () => {
         scrollToLine(li + 1);
         return;
       }
-      const exactSlashCommand = getExactSlashCommand(currentLine, slashCommands);
+      const exactSlashCommand = getExactSlashCommand(currentLine, executableSlashCommands);
       if (exactSlashCommand) {
         applySlashCommand(exactSlashCommand, li);
         return;

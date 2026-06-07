@@ -65,6 +65,18 @@ export function getSlashCommands(options: SlashCommandOptions = {}): SlashComman
   return commands;
 }
 
+/** Build the full list of executable slash commands (ignores visibility toggles, respects capability flags). */
+export function getExecutableSlashCommands(options: Pick<SlashCommandOptions, 'imagesEnabled'> = {}): SlashCommand[] {
+  let commands: SlashCommand[] = [...SLASH_COMMANDS_BASE];
+
+  if (options.imagesEnabled !== false) {
+    const timerIndex = commands.findIndex(c => c.name === 'timer');
+    commands.splice(timerIndex + 1, 0, IMAGE_SLASH_COMMAND);
+  }
+
+  return commands;
+}
+
 /** Default slash commands (all on) for modules that don't read user prefs. */
 export const SLASH_COMMANDS = getSlashCommands();
 
