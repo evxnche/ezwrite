@@ -540,6 +540,70 @@ const ScratchpadPanel: React.FC<Props> = ({
       return;
     }
 
+    if (actionTarget.dataset.action === 'rename-list') {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const span = actionTarget;
+      const lineIndex = parseInt(span.dataset.line || '-1', 10);
+      if (lineIndex < 0) return;
+
+      const originalName = span.textContent || 'rename list';
+      const headerDiv = span.closest('.ce-list-header');
+      if (headerDiv) headerDiv.classList.add('ce-lh-editing');
+
+      span.contentEditable = 'true';
+      if (originalName === 'rename list') {
+        span.textContent = '';
+      }
+      span.focus();
+
+      const range = document.createRange();
+      range.selectNodeContents(span);
+      range.collapse(false);
+      const sel = window.getSelection();
+      if (sel) {
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+
+      const commitRename = () => {
+        span.contentEditable = 'false';
+        if (headerDiv) headerDiv.classList.remove('ce-lh-editing');
+        const newName = (span.textContent || '').trim() || 'rename list';
+        span.textContent = newName;
+        pushUndo(true);
+        const lines = contentRef.current.split('\n');
+        lines[lineIndex] = newName.toLowerCase() === 'rename list' ? 'list' : `list::${newName}`;
+        structuralUpdate(lines.join('\n'));
+      };
+
+      const handleBlur = () => {
+        span.removeEventListener('blur', handleBlur);
+        span.removeEventListener('keydown', handleKeyDown);
+        commitRename();
+      };
+
+      const handleKeyDown = (ev: Event) => {
+        const ke = ev as KeyboardEvent;
+        if (ke.key === 'Enter') {
+          ke.preventDefault();
+          span.blur();
+        } else if (ke.key === 'Escape') {
+          ke.preventDefault();
+          span.textContent = originalName;
+          span.removeEventListener('blur', handleBlur);
+          span.removeEventListener('keydown', handleKeyDown);
+          span.contentEditable = 'false';
+          if (headerDiv) headerDiv.classList.remove('ce-lh-editing');
+        }
+      };
+
+      span.addEventListener('blur', handleBlur);
+      span.addEventListener('keydown', handleKeyDown);
+      return;
+    }
+
     const toggle = target.closest('[data-action="toggle"]') as HTMLElement | null;
     if (!toggle) return;
 

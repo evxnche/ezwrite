@@ -485,6 +485,13 @@ test('Scratchpad keeps unnamed /list headers visible and collapses duplicate bla
   assert.equal(cssSource.includes('.scratchpad-editor .ce-list-header[data-list-unnamed="1"]'), false);
 });
 
+test('Scratchpad supports inline relabeling for /list headers', () => {
+  const scratchpadSource = fs.readFileSync(path.join(process.cwd(), 'src/components/ScratchpadPanel.tsx'), 'utf8');
+  assert.match(scratchpadSource, /if \(actionTarget\.dataset\.action === 'rename-list'\) \{/);
+  assert.match(scratchpadSource, /span\.contentEditable = 'true';/);
+  assert.match(scratchpadSource, /lines\[lineIndex\] = newName\.toLowerCase\(\) === 'rename list' \? 'list' : `list::\$\{newName\}`;/);
+});
+
 test('scratchpad // LLM prompts are handled only in ScratchpadPanel', () => {
   const writingSource = fs.readFileSync(path.join(process.cwd(), 'src/components/WritingInterface.tsx'), 'utf8');
   const scratchpadSource = fs.readFileSync(path.join(process.cwd(), 'src/components/ScratchpadPanel.tsx'), 'utf8');
