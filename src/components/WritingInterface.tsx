@@ -1957,16 +1957,25 @@ const WritingInterface = () => {
     }
     if (op.type === 'rename_project') {
       const id = resolveId();
-      if (id && op.title) {
-        checkpointBeforeAgentEdit(id, who);
-        handleRenameProject(id, op.title);
-        showAgentNotice(`${who} renamed a doc`, id);
+      if (!id || !op.title) return;
+      if (!getProjectMeta(id)) {
+        // The doc lives only in the canvas snapshot, not on this device — we can't
+        // rename what we don't hold. Surface it instead of silently no-oping.
+        showAgentNotice(`${who} referenced a doc that isn't on this device`);
+        return;
       }
+      checkpointBeforeAgentEdit(id, who);
+      handleRenameProject(id, op.title);
+      showAgentNotice(`${who} renamed a doc`, id);
       return;
     }
 
     const targetId = resolveId();
     if (!targetId) return;
+    if (!getProjectMeta(targetId)) {
+      showAgentNotice(`${who} referenced a doc that isn't on this device`);
+      return;
+    }
     const isActive = targetId === activeId;
     checkpointBeforeAgentEdit(targetId, who);
 
@@ -2044,10 +2053,11 @@ const WritingInterface = () => {
       pairings: agentPairings,
       applyOp: (op) => applyAgentOpRef.current(op),
       onError: () => { /* transient network errors are retried next tick */ },
+      onOpDropped: () => showAgentNotice('an agent edit could not be applied and was skipped'),
     });
     agentRelayRef.current = handle;
     return () => { handle.stop(); agentRelayRef.current = null; };
-  }, [syncSession, agentPairings]);
+  }, [syncSession, agentPairings, showAgentNotice]);
 
   const handleOpenDocs = useCallback(() => {
     setScratchpadOpen(false);
