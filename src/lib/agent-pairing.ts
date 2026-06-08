@@ -113,19 +113,21 @@ export function buildAgentHandoffInstructions({
   targetProjectTitle,
   expiresAt,
 }: AgentHandoffOptions): string {
-  const lines = [
-    'Use ezwrite shared canvas.',
-    '',
-    ...(label ? ['Agent label:', label, ''] : []),
-    'API endpoint:',
-    AGENT_API_ENDPOINT,
-    '',
-    'Passkey:',
-    passkey,
-    '',
-    'Scope:',
-    describeScope(targetProjectId, targetProjectTitle),
-    '',
+  const lines = ['Use ezwrite shared canvas.', ''];
+
+  if (label) {
+    lines.push('Agent label:', label, '');
+  }
+
+  lines.push('API endpoint:', AGENT_API_ENDPOINT, '');
+  lines.push('Passkey:', passkey, '');
+
+  if (expiresAt) {
+    lines.push('Expires:', expiresAt, '');
+  }
+
+  lines.push('Scope:', describeScope(targetProjectId, targetProjectTitle), '');
+  lines.push(
     'How to use it:',
     '- Send POST requests to the endpoint',
     `- Include header: X-EZ-Passkey: ${passkey}`,
@@ -142,11 +144,7 @@ export function buildAgentHandoffInstructions({
     '- Agents can read, edit, create, and rename docs.',
     '- Agents cannot delete docs.',
     '- If no projectId is given, the API may use the currently open doc.',
-  ];
-
-  if (expiresAt) {
-    lines.splice(9, 0, 'Expires:', expiresAt, '');
-  }
+  );
 
   return lines.join('\n');
 }

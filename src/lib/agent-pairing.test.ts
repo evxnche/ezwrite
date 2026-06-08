@@ -73,6 +73,8 @@ test('buildAgentHandoffInstructions includes endpoint passkey and usage guidance
   assert.match(instructions, /noble-lynx-96/);
   assert.match(instructions, /X-EZ-Passkey: noble-lynx-96/);
   assert.match(instructions, /\{"action":"list_projects"\}/);
+  assert.match(instructions, /Passkey:\s*noble-lynx-96/);
+  assert.match(instructions, /Expires:\s*2026-06-09T12:00:00.000Z\s*Scope:/);
   assert.match(instructions, /Scope:\s*one doc only \(biology notes\)/);
   assert.match(instructions, /Keep the owner's ezwrite tab open for live writes\./);
 });
