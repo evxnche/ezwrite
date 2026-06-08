@@ -4,12 +4,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bot, Check, Copy, X } from 'lucide-react';
 import {
+  buildAgentHandoffInstructions,
   mintPairing,
   listPairings,
   probeAgentApiSetup,
   revokePairing,
   type AgentPairing,
   type AgentApiSetupStatus,
+  type MintedPairing,
 } from '@/lib/agent-pairing';
 
 const PANEL_SURFACE = 'rounded-xl border border-border/60';
@@ -59,7 +61,7 @@ export default function AgentPairingSection({
   const [expiryIdx, setExpiryIdx] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [passkey, setPasskey] = useState<string | null>(null);
+  const [mintedPairing, setMintedPairing] = useState<MintedPairing | null>(null);
   const [copied, setCopied] = useState(false);
   const [setupStatus, setSetupStatus] = useState<AgentApiSetupStatus>({ ready: true, code: 'ready', message: '' });
   const [checkingSetup, setCheckingSetup] = useState(false);
@@ -95,14 +97,14 @@ export default function AgentPairingSection({
     if (!auth) return;
     setBusy(true);
     setError('');
-    setPasskey(null);
+    setMintedPairing(null);
     try {
       const result = await mintPairing(auth, {
         label: label.trim() || undefined,
         targetProjectId: scope === 'active' ? (activeProjectId ?? null) : null,
         expiresInMinutes: EXPIRY_OPTIONS[expiryIdx].minutes,
       });
-      setPasskey(result.passkey);
+      setMintedPairing(result);
       setCopied(false);
       setLabel('');
       refresh();
@@ -114,9 +116,16 @@ export default function AgentPairingSection({
   };
 
   const handleCopy = async () => {
-    if (!passkey) return;
+    if (!mintedPairing) return;
     try {
-      await navigator.clipboard.writeText(passkey);
+      const instructions = buildAgentHandoffInstructions({
+        passkey: mintedPairing.passkey,
+        label: mintedPairing.pairing.label,
+        targetProjectId: mintedPairing.pairing.targetProjectId,
+        targetProjectTitle: mintedPairing.pairing.targetProjectId === activeProjectId ? activeProjectTitle : undefined,
+        expiresAt: mintedPairing.pairing.expiresAt,
+      });
+      await navigator.clipboard.writeText(instructions);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch { /* clipboard blocked — user can select manually */ }
@@ -219,21 +228,21 @@ export default function AgentPairingSection({
               {busy ? 'generating…' : checkingSetup ? 'checking…' : 'generate passkey'}
             </button>
 
-            {passkey && (
+            {mintedPairing && (
               <div className={`${PANEL_SURFACE} border-2 border-dashed border-accent-foreground/40 bg-accent/10 p-3 space-y-1.5`}>
                 <div className="text-[10px] text-muted-foreground lowercase">give this to your agent — shown once:</div>
                 <div className="flex items-center justify-between gap-2">
-                  <code className="font-mono text-base font-bold text-foreground tracking-wide select-all">{passkey}</code>
+                  <code className="font-mono text-base font-bold text-foreground tracking-wide select-all">{mintedPairing.passkey}</code>
                   <button
                     onClick={handleCopy}
                     className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-mono text-muted-foreground hover:text-foreground"
                   >
                     {copied ? <Check size={13} /> : <Copy size={13} />}
-                    {copied ? 'copied' : 'copy'}
+                    {copied ? 'copied instructions' : 'copy agent instructions'}
                   </button>
                 </div>
                 <div className="text-[10px] text-muted-foreground lowercase leading-relaxed">
-                  the agent sends it as the <code>X-EZ-Passkey</code> header to <code>/api/agent</code>. keep this tab open to see edits arrive live.
+                  copies the endpoint, passkey, starter requests, and usage notes your agent needs. keep this tab open to see edits arrive live.
                 </div>
               </div>
             )}

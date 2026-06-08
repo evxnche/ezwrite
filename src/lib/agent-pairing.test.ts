@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 
 import {
+  buildAgentHandoffInstructions,
   describeAgentApiFailure,
   probeAgentApiSetup,
   setAgentPairingEnvForTests,
@@ -55,4 +58,27 @@ test('probeAgentApiSetup reports ready when the backend route responds', async (
   const status = await probeAgentApiSetup();
 
   assert.deepEqual(status, { ready: true, code: 'ready', message: '' });
+});
+
+test('buildAgentHandoffInstructions includes endpoint passkey and usage guidance', () => {
+  const instructions = buildAgentHandoffInstructions({
+    passkey: 'noble-lynx-96',
+    label: 'poke',
+    targetProjectId: 'doc-123',
+    targetProjectTitle: 'biology notes',
+    expiresAt: '2026-06-09T12:00:00.000Z',
+  });
+
+  assert.match(instructions, /https:\/\/ezwrite\.xyz\/api\/agent/);
+  assert.match(instructions, /noble-lynx-96/);
+  assert.match(instructions, /X-EZ-Passkey: noble-lynx-96/);
+  assert.match(instructions, /\{"action":"list_projects"\}/);
+  assert.match(instructions, /Scope:\s*one doc only \(biology notes\)/);
+  assert.match(instructions, /Keep the owner's ezwrite tab open for live writes\./);
+});
+
+test('AgentPairingSection exposes a single copy-agent-instructions button after minting', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/AgentPairingSection.tsx'), 'utf8');
+  assert.match(source, /buildAgentHandoffInstructions/);
+  assert.match(source, /copy agent instructions/);
 });

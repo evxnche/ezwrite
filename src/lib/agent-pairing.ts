@@ -15,6 +15,7 @@ type AgentPairingEnv = {
 let agentPairingEnvOverride: AgentPairingEnv | null = null;
 
 const PAIRINGS_TABLE = 'ezwrite_agent_pairings';
+export const AGENT_API_ENDPOINT = 'https://ezwrite.xyz/api/agent';
 
 export interface AgentPairing {
   id: string;
@@ -41,6 +42,14 @@ export interface MintedPairing {
     targetProjectId: string | null;
     expiresAt: string | null;
   };
+}
+
+interface AgentHandoffOptions {
+  expiresAt?: string | null;
+  label?: string | null;
+  passkey: string;
+  targetProjectId?: string | null;
+  targetProjectTitle?: string | null;
 }
 
 export type AgentApiSetupCode =
@@ -90,6 +99,56 @@ function restUrl(path: string): string {
   const { VITE_SUPABASE_URL } = getAgentPairingEnv();
   if (!VITE_SUPABASE_URL) throw new Error('Missing VITE_SUPABASE_URL');
   return `${VITE_SUPABASE_URL.replace(/\/$/, '')}/rest/v1/${path}`;
+}
+
+function describeScope(targetProjectId?: string | null, targetProjectTitle?: string | null): string {
+  if (!targetProjectId) return 'any doc';
+  return targetProjectTitle ? `one doc only (${targetProjectTitle})` : 'one doc only';
+}
+
+export function buildAgentHandoffInstructions({
+  passkey,
+  label,
+  targetProjectId,
+  targetProjectTitle,
+  expiresAt,
+}: AgentHandoffOptions): string {
+  const lines = [
+    'Use ezwrite shared canvas.',
+    '',
+    ...(label ? ['Agent label:', label, ''] : []),
+    'API endpoint:',
+    AGENT_API_ENDPOINT,
+    '',
+    'Passkey:',
+    passkey,
+    '',
+    'Scope:',
+    describeScope(targetProjectId, targetProjectTitle),
+    '',
+    'How to use it:',
+    '- Send POST requests to the endpoint',
+    `- Include header: X-EZ-Passkey: ${passkey}`,
+    '- Send JSON request bodies',
+    '- Start with: {"action":"list_projects"}',
+    '- Then use actions like:',
+    '  {"action":"read","projectId":"..."}',
+    '  {"action":"append","projectId":"...","text":"..."}',
+    '  {"action":"set_content","projectId":"...","content":"..."}',
+    '',
+    'Important:',
+    '- Use the API directly; you do not need to browse the website UI',
+    "- Keep the owner's ezwrite tab open for live writes.",
+    '- Agents can read, edit, create, and rename docs.',
+    '- Agents cannot delete docs.',
+    '- If no projectId is given, the API may use the currently open doc.',
+  ];
+
+  if (expiresAt) {
+    lines.splice(9, 0, 'Expires:', expiresAt, '');
+  }
+
+  return lines.join('\n');
 }
 
 function readErrorText(body: unknown): string {
