@@ -96,8 +96,11 @@ async function adminFetch<T>(
     const text = await res.text().catch(() => '');
     throw new Error(`supabase ${res.status}: ${text || res.statusText}`);
   }
+  // A successful write with `Prefer: return=minimal` comes back as 201/204 with
+  // an empty body. Don't JSON.parse that — it throws "Unexpected end of JSON input".
   if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 async function verifyUserId(env: AgentEnv, accessToken: string): Promise<string | null> {
