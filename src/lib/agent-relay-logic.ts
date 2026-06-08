@@ -1,53 +1,5 @@
 // Pure decision logic for the agent relay (no Vite env / DOM / localStorage deps)
-// so it can be unit-tested under node:test. agent-relay.ts wires these into fetch
-// and the live canvas; everything here is deterministic given its inputs.
-
-export const MAX_OP_ATTEMPTS = 3;
-
-// --- draining: which queued events to consume, retry, or drop --------------
-
-export interface OpOutcome {
-  id: number;
-  ok: boolean; // applyOp returned without throwing
-  error?: string; // failure message when !ok
-}
-
-export interface DrainDecision {
-  consumedIds: number[]; // mark consumed: applied cleanly OR dead-lettered
-  deadLettered: { id: number; error: string }[]; // surface these to the owner
-}
-
-// An op that applies cleanly is consumed. An op that throws is treated as a
-// transient failure: left un-consumed so the next tick retries it — but only up
-// to maxAttempts, after which it is dead-lettered (consumed + reported) so one
-// poison op can never wedge the queue forever. `attempts` carries retry counts
-// across ticks and is mutated here (incremented on failure, cleared when done).
-export function decideDrain(
-  outcomes: OpOutcome[],
-  attempts: Map<number, number>,
-  maxAttempts: number = MAX_OP_ATTEMPTS,
-): DrainDecision {
-  const consumedIds: number[] = [];
-  const deadLettered: { id: number; error: string }[] = [];
-  for (const o of outcomes) {
-    if (o.ok) {
-      attempts.delete(o.id);
-      consumedIds.push(o.id);
-      continue;
-    }
-    const next = (attempts.get(o.id) ?? 0) + 1;
-    if (next >= maxAttempts) {
-      attempts.delete(o.id);
-      consumedIds.push(o.id);
-      deadLettered.push({ id: o.id, error: o.error ?? 'apply failed' });
-    } else {
-      attempts.set(o.id, next);
-    }
-  }
-  return { consumedIds, deadLettered };
-}
-
-// --- pruning: stale orphan snapshot rows -----------------------------------
+// so it can be unit-tested under node:test. agent-relay.ts wires this into fetch.
 
 export interface SnapshotRow {
   project_id: string;

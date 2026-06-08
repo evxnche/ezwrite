@@ -1,38 +1,38 @@
-// Browser relay for the agent shared-canvas feature.
+// Browser half of the agent shared-canvas feature.
 //
-// While signed in with at least one active pairing, this:
-//   1. drains agent -> canvas commands (ezwrite_agent_events) and hands each to
-//      applyOp(), which mutates the canvas live;
-//   2. publishes the current canvas (ezwrite_agent_canvas) so agents can read/list.
+// The server applies agent writes to ezwrite_agent_canvas directly (see
+// lib/agent-upstream.ts), so this no longer drains a command queue. While signed
+// in with an active pairing it two-way-syncs that plaintext canvas with local
+// storage:
+//   1. PULL canvas rows changed since a cursor -> reconcileCanvasRows (merge,
+//      forking a -conflict- doc when the owner also edited);
+//   2. PUSH the owner's locally-changed docs back up;
+//   3. PRUNE snapshot rows for docs abandoned by a since-closed tab.
 //
-// It deliberately uses the same hand-rolled Supabase REST style as sync-client.ts
-// (no @supabase/supabase-js). Polling only runs when a pairing is active.
+// Same hand-rolled Supabase REST style as sync-client.ts. Polling only runs when
+// a pairing is active.
 
 import type { SyncSession } from './sync-client';
 import type { AgentPairing } from './agent-pairing';
-import { listProjects, getProjectPages, getProjectTitle } from './projects';
-import { decideDrain, selectOrphanSnapshotIds, type OpOutcome, type SnapshotRow } from './agent-relay-logic';
+import { listProjects } from './projects';
+import { selectOrphanSnapshotIds, type SnapshotRow } from './agent-relay-logic';
+import { getCanvasCursor, setCanvasCursor } from './agent-canvas-merge';
+import {
+  reconcileCanvasRows,
+  collectCanvasPushes,
+  markCanvasPushed,
+  type ActiveDocContext,
+  type CanvasRow,
+  type ReconcileResult,
+} from './agent-canvas-sync';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-const EVENTS_TABLE = 'ezwrite_agent_events';
 const CANVAS_TABLE = 'ezwrite_agent_canvas';
 const POLL_MS = 800;
+const PUSH_EVERY_TICKS = 4; // push local edits ~every 3.2s, not on every poll
 const STALE_PRUNE_MS = 10 * 60 * 1000; // a snapshot row this old with no matching local doc is an orphan
 const PRUNE_EVERY_MS = 60 * 1000; // reap orphaned snapshot rows at most once a minute
-
-export interface AgentOp {
-  type: string;
-  projectId?: string;
-  projectTitle?: string;
-  page?: number;
-  text?: string;
-  content?: string;
-  title?: string;
-  start?: number;
-  count?: number;
-  label?: string | null; // pairing label, for attribution toasts
-}
 
 export interface RelayHandle {
   stop: () => void;
@@ -59,56 +59,59 @@ function inScopeProjectIds(pairings: AgentPairing[]): Set<string> | 'all' {
   return new Set(active.map((p) => p.targetProjectId).filter((id): id is string => Boolean(id)));
 }
 
-interface EventRow {
-  id: number;
-  op: AgentOp;
-  ezwrite_agent_pairings: { label: string | null } | null;
-}
-
-async function markConsumed(session: SyncSession, ids: number[]): Promise<void> {
-  if (ids.length === 0) return;
-  const patchParams = new URLSearchParams({ id: `in.(${ids.join(',')})`, user_id: `eq.${session.userId}` });
-  await fetch(restUrl(`${EVENTS_TABLE}?${patchParams}`), {
-    method: 'PATCH',
-    headers: headers(session, { Prefer: 'return=minimal' }),
-    body: JSON.stringify({ consumed: true }),
-  });
-}
-
-async function drainEvents(
+// PULL: fetch canvas rows changed since our cursor and merge them into local
+// storage. Our own pushes echo back here but reconcile skips them (hashes match).
+async function pullCanvas(
   session: SyncSession,
-  applyOp: (op: AgentOp) => void,
-  attempts: Map<number, number>,
-  onOpDropped?: (info: { id: number; error: string }) => void,
+  scope: Set<string> | 'all',
+  getContext: () => ActiveDocContext,
+  onReconciled?: (result: ReconcileResult) => void,
 ): Promise<void> {
+  const since = getCanvasCursor(session.userId);
   const params = new URLSearchParams({
-    select: 'id,op,ezwrite_agent_pairings(label)',
+    select: 'project_id,title,pages,updated_at',
     user_id: `eq.${session.userId}`,
-    consumed: 'is.false',
-    order: 'id.asc',
-    limit: '50',
+    order: 'updated_at.asc',
   });
-  const res = await fetch(restUrl(`${EVENTS_TABLE}?${params}`), { method: 'GET', headers: headers(session) });
-  if (!res.ok) throw new Error(`relay poll failed (${res.status})`);
-  const rows = (await res.json()) as EventRow[];
+  if (since > 0) params.set('updated_at', `gt.${new Date(since).toISOString()}`);
+
+  const res = await fetch(restUrl(`${CANVAS_TABLE}?${params}`), { method: 'GET', headers: headers(session) });
+  if (!res.ok) throw new Error(`canvas pull failed (${res.status})`);
+  let rows = (await res.json()) as CanvasRow[];
+  if (scope !== 'all') rows = rows.filter((r) => scope.has(r.project_id));
   if (rows.length === 0) return;
 
-  // Apply each op, recording whether it threw. A clean apply is consumed; a throw
-  // is retried on later ticks and only dropped (dead-lettered) after a few attempts,
-  // so a transient hiccup isn't silent data loss and one poison op can't wedge the
-  // queue forever. `attempts` carries retry counts across ticks.
-  const outcomes: OpOutcome[] = rows.map((row) => {
-    try {
-      applyOp({ ...row.op, label: row.ezwrite_agent_pairings?.label ?? null });
-      return { id: row.id, ok: true };
-    } catch (error) {
-      return { id: row.id, ok: false, error: error instanceof Error ? error.message : String(error) };
-    }
-  });
+  const result = await reconcileCanvasRows(rows, getContext());
+  if (result.maxUpdatedAt > since) setCanvasCursor(session.userId, result.maxUpdatedAt);
+  if (result.touchedIds.length || result.conflictIds.length) onReconciled?.(result);
+}
 
-  const { consumedIds, deadLettered } = decideDrain(outcomes, attempts);
-  await markConsumed(session, consumedIds);
-  for (const dropped of deadLettered) onOpDropped?.(dropped);
+// PUSH: send up local docs whose content changed since their last sync.
+async function pushCanvas(
+  session: SyncSession,
+  scope: Set<string> | 'all',
+  getContext: () => ActiveDocContext,
+): Promise<void> {
+  const pushes = await collectCanvasPushes(scope, getContext());
+  if (pushes.length === 0) return;
+
+  const ts = Date.now();
+  const iso = new Date(ts).toISOString();
+  const rows = pushes.map((p) => ({
+    user_id: session.userId,
+    project_id: p.projectId,
+    title: p.title,
+    pages: p.pages,
+    updated_at: iso,
+  }));
+  const res = await fetch(restUrl(`${CANVAS_TABLE}?on_conflict=user_id,project_id`), {
+    method: 'POST',
+    headers: headers(session, { Prefer: 'resolution=merge-duplicates,return=minimal' }),
+    body: JSON.stringify(rows),
+  });
+  if (!res.ok) throw new Error(`canvas push failed (${res.status})`);
+  // Record what we pushed so its echo on the next pull is recognized as already-synced.
+  for (const p of pushes) markCanvasPushed(p.projectId, ts, p.hash);
 }
 
 // Reap snapshot rows for docs that no longer exist on this device and have gone
@@ -139,50 +142,30 @@ async function pruneOrphanSnapshots(session: SyncSession, scope: Set<string> | '
   });
 }
 
-async function publishSnapshots(session: SyncSession, scope: Set<string> | 'all'): Promise<void> {
-  const projects = listProjects().filter((p) => scope === 'all' || scope.has(p.id));
-  if (projects.length === 0) return;
-  const rows = projects.map((p) => ({
-    user_id: session.userId,
-    project_id: p.id,
-    title: p.title ?? getProjectTitle(p.id),
-    pages: getProjectPages(p.id),
-    updated_at: new Date().toISOString(),
-  }));
-  await fetch(restUrl(`${CANVAS_TABLE}?on_conflict=user_id,project_id`), {
-    method: 'POST',
-    headers: headers(session, { Prefer: 'resolution=merge-duplicates,return=minimal' }),
-    body: JSON.stringify(rows),
-  });
-}
-
 export function startAgentRelay(opts: {
   session: SyncSession;
   pairings: AgentPairing[];
-  applyOp: (op: AgentOp) => void;
+  getContext: () => ActiveDocContext;
+  onReconciled?: (result: ReconcileResult) => void;
   onError?: (error: unknown) => void;
-  onOpDropped?: (info: { id: number; error: string }) => void;
 }): RelayHandle {
-  const { session, pairings, applyOp, onError, onOpDropped } = opts;
+  const { session, pairings, getContext, onReconciled, onError } = opts;
   const scope = inScopeProjectIds(pairings);
   let stopped = false;
   let ticking = false;
-  let sinceLastPublish = Infinity; // force a publish on the first tick
+  let sinceLastPush = Infinity; // force a push on the first tick
   let lastPruneAt = 0;
-  const attempts = new Map<number, number>(); // event id -> failed apply attempts, carried across ticks
 
   const tick = async () => {
     if (stopped || ticking) return;
     ticking = true;
     try {
-      await drainEvents(session, applyOp, attempts, onOpDropped);
-      // Refresh snapshots roughly every ~3.2s (every 4th tick) so reads stay current
-      // without hammering the DB on every poll.
-      sinceLastPublish += 1;
-      if (sinceLastPublish >= 4) {
-        await publishSnapshots(session, scope);
-        sinceLastPublish = 0;
-        // Reap abandoned snapshot rows occasionally — not on every publish.
+      await pullCanvas(session, scope, getContext, onReconciled);
+      sinceLastPush += 1;
+      if (sinceLastPush >= PUSH_EVERY_TICKS) {
+        await pushCanvas(session, scope, getContext);
+        sinceLastPush = 0;
+        // Reap abandoned snapshot rows occasionally — not on every push.
         if (Date.now() - lastPruneAt >= PRUNE_EVERY_MS) {
           lastPruneAt = Date.now();
           await pruneOrphanSnapshots(session, scope);

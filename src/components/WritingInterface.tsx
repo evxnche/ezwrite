@@ -109,10 +109,9 @@ import { buildSyncProjectSnapshot, hashSnapshot } from '@/lib/sync-crypto';
 import { runSequentialSyncBatch, toSyncError } from '@/lib/sync-retry';
 import { recordBugReportBreadcrumb, setBugReportRuntimeContext } from '@/lib/bug-report';
 import { loadSyncSession, saveSyncSession, clearSyncSession } from '@/lib/sync-session-store';
-import { startAgentRelay, type AgentOp, type RelayHandle } from '@/lib/agent-relay';
+import { startAgentRelay, type RelayHandle } from '@/lib/agent-relay';
 import { listPairings, hasActivePairing, type AgentPairing } from '@/lib/agent-pairing';
 import { getScratchpadLLMConfig, setScratchpadLLMConfig, type ScratchpadLLMConfig } from '@/lib/scratchpad-llm';
-import { saveAgentCheckpoint, popAgentCheckpoint, hasAgentCheckpoint } from '@/lib/agent-checkpoints';
 import MobileSyncGate from './MobileSyncGate';
 import {
   EditorHistory,
@@ -204,22 +203,6 @@ function getUntitledFolderName(projectId: string): string {
 const AGENT_SETUP_CHEAT = '//agent//';   // opens the agent setup window
 const VOICE_CHEAT = '//voice//';         // toggles voice notes
 const BYOK_CHEAT = '//byok//';           // reveals bring-your-own-key scratchpad settings
-
-// Apply a single-page agent edit op to a page's text. Pure — the caller decides
-// where the result goes (live editor vs storage for a background project).
-function transformPageForAgentOp(cur: string, op: AgentOp): string {
-  const text = op.text ?? '';
-  if (op.type === 'set_content') return op.content ?? '';
-  if (op.type === 'append') return cur ? `${cur}\n${text}` : text;
-  const lines = cur.split('\n');
-  const start = typeof op.start === 'number'
-    ? Math.max(0, Math.min(op.start, lines.length))
-    : lines.length;
-  if (op.type === 'insert_lines') { lines.splice(start, 0, ...text.split('\n')); return lines.join('\n'); }
-  if (op.type === 'delete_lines') { lines.splice(start, op.count ?? 1); return lines.join('\n'); }
-  if (op.type === 'replace_lines') { lines.splice(start, op.count ?? 1, ...text.split('\n')); return lines.join('\n'); }
-  return cur;
-}
 
 function getInitialProjectState(): { projects: ProjectMeta[]; activeProjectId: string | null } {
   initProjects();
@@ -448,8 +431,6 @@ const WritingInterface = () => {
   const agentNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   // Hidden agent setup window, opened by the //agent// cheat code (see handleInput).
   const [agentSetupOpen, setAgentSetupOpen] = useState(false);
-  // Tracks the last agent edit time per doc so a burst of edits shares one checkpoint.
-  const agentBurstRef = useRef<Map<string, number>>(new Map());
   // Set after refreshActiveProjectFromStorage is defined (avoids a forward ref).
   const refreshActiveProjectRef = useRef<() => void>(() => {});
   const [timerAlert, setTimerAlert] = useState(false);
@@ -1899,132 +1880,9 @@ const WritingInterface = () => {
     agentNoticeTimeoutRef.current = setTimeout(() => setAgentNotice(null), projectId ? 7000 : 3500);
   }, []);
 
-  // Snapshot a doc before the first edit of an agent burst (gap > 8s since the
-  // agent last touched it), so a bad agent edit can be rolled back.
-  const checkpointBeforeAgentEdit = useCallback((projectId: string, label: string) => {
-    const now = Date.now();
-    const last = agentBurstRef.current.get(projectId) ?? 0;
-    agentBurstRef.current.set(projectId, now);
-    if (now - last < 8000) return; // same burst — already checkpointed
-    const pages = projectId === activeProjectIdRef.current && editorRef.current
-      ? pagesRef.current.map((p, i) => (i === currentPageRef.current ? extractContent(editorRef.current!) : p))
-      : getProjectPages(projectId);
-    saveAgentCheckpoint(projectId, label, pages);
-  }, []);
-
-  const restoreAgentCheckpoint = useCallback((projectId: string) => {
-    const checkpoint = popAgentCheckpoint(projectId);
-    if (!checkpoint) return;
-    saveProjectPages(projectId, checkpoint.pages);
-    scheduleSyncPush(projectId);
-    if (projectId === activeProjectIdRef.current) {
-      refreshActiveProjectRef.current();
-    } else {
-      setProjects(listProjects());
-    }
-    setAgentNotice(null);
-  }, [scheduleSyncPush]);
-
-  // Applies one agent op to the canvas, live. Edits to the open page go through
-  // structuralUpdate (same path as undo/redo); other pages/projects are written to
-  // storage and the active project is reloaded so the change shows immediately.
-  const applyAgentOp = useCallback((op: AgentOp) => {
-    const activeId = activeProjectIdRef.current;
-    const who = op.label?.trim() || 'an agent';
-
-    // Resolve target doc: explicit id, else loose title match (exact → contains), else active doc.
-    const resolveId = (): string | null => {
-      if (op.projectId) return op.projectId;
-      if (op.projectTitle?.trim()) {
-        const wanted = op.projectTitle.trim().toLowerCase();
-        const all = listProjects().map(p => ({ id: p.id, title: (p.title ?? getProjectTitle(p.id)).toLowerCase() }));
-        const exact = all.find(p => p.title === wanted);
-        if (exact) return exact.id;
-        const contains = all.find(p => p.title.includes(wanted) || wanted.includes(p.title));
-        if (contains) return contains.id;
-      }
-      return activeId;
-    };
-
-    // Agents can never delete docs (also guarded server-side); ignore any stale op.
-    if (op.type === 'delete_project') return;
-
-    if (op.type === 'create_project') {
-      createProject(op.content ?? '', op.title);
-      setProjects(listProjects());
-      showAgentNotice(`${who} created "${op.title?.trim() || 'untitled'}"`);
-      return;
-    }
-    if (op.type === 'rename_project') {
-      const id = resolveId();
-      if (!id || !op.title) return;
-      if (!getProjectMeta(id)) {
-        // The doc lives only in the canvas snapshot, not on this device — we can't
-        // rename what we don't hold. Surface it instead of silently no-oping.
-        showAgentNotice(`${who} referenced a doc that isn't on this device`);
-        return;
-      }
-      checkpointBeforeAgentEdit(id, who);
-      handleRenameProject(id, op.title);
-      showAgentNotice(`${who} renamed a doc`, id);
-      return;
-    }
-
-    const targetId = resolveId();
-    if (!targetId) return;
-    if (!getProjectMeta(targetId)) {
-      showAgentNotice(`${who} referenced a doc that isn't on this device`);
-      return;
-    }
-    const isActive = targetId === activeId;
-    checkpointBeforeAgentEdit(targetId, who);
-
-    if (op.type === 'add_page') {
-      if (isActive) {
-        if (editorRef.current) pagesRef.current[currentPageRef.current] = extractContent(editorRef.current);
-        pagesRef.current.push(op.content ?? '');
-        saveProjectPages(targetId, pagesRef.current);
-        setPageCount(pagesRef.current.length);
-      } else {
-        const pages = getProjectPages(targetId);
-        pages.push(op.content ?? '');
-        saveProjectPages(targetId, pages);
-      }
-      scheduleSyncPush(targetId);
-      setProjects(listProjects());
-      showAgentNotice(`${who} added a page`, targetId);
-      return;
-    }
-
-    // text/line ops on a single page
-    if (isActive) {
-      const page = op.page ?? currentPageRef.current;
-      if (page === currentPageRef.current) {
-        const cur = editorRef.current ? extractContent(editorRef.current) : contentRef.current;
-        const next = transformPageForAgentOp(cur, op);
-        const lines = next.split('\n');
-        structuralUpdate(next, lines.length - 1, (lines[lines.length - 1] ?? '').length, false);
-      } else {
-        pagesRef.current[page] = transformPageForAgentOp(pagesRef.current[page] ?? '', op);
-        saveProjectPages(targetId, pagesRef.current);
-        setPageCount(pagesRef.current.length);
-        scheduleSyncPush(targetId);
-      }
-    } else {
-      const pages = getProjectPages(targetId);
-      const page = op.page ?? 0;
-      pages[page] = transformPageForAgentOp(pages[page] ?? '', op);
-      saveProjectPages(targetId, pages);
-      scheduleSyncPush(targetId);
-      setProjects(listProjects());
-    }
-    showAgentNotice(op.type === 'append' ? `${who} wrote to your canvas` : `${who} edited your canvas`, targetId);
-  }, [showAgentNotice, checkpointBeforeAgentEdit, structuralUpdate, handleRenameProject, scheduleSyncPush]);
-
-  // Keep a live ref so the relay always calls the latest applyAgentOp without
-  // restarting the poll loop on every render.
-  const applyAgentOpRef = useRef(applyAgentOp);
-  applyAgentOpRef.current = applyAgentOp;
+  // Agent edits now arrive through the two-way canvas sync in the relay below
+  // (reconcileCanvasRows merges the server-applied snapshot into local storage and
+  // forks a -conflict- doc on a clash) — there is no live op-apply path here.
 
   // Load the user's pairings whenever a session appears, and refresh after the
   // settings dialog closes (where pairings are minted/revoked).
@@ -2051,9 +1909,22 @@ const WritingInterface = () => {
     const handle = startAgentRelay({
       session: syncSession,
       pairings: agentPairings,
-      applyOp: (op) => applyAgentOpRef.current(op),
+      // Live snapshot of the active doc, so the sync never overwrites unsaved edits.
+      getContext: () => {
+        const activeProjectId = activeProjectIdRef.current;
+        if (!activeProjectId) return { activeProjectId: null, activePages: null };
+        const activePages = pagesRef.current.map((p, i) =>
+          i === currentPageRef.current && editorRef.current ? extractContent(editorRef.current) : p,
+        );
+        return { activeProjectId, activePages };
+      },
+      onReconciled: (result) => {
+        setProjects(listProjects());
+        if (result.activeTouched) refreshActiveProjectRef.current();
+        if (result.conflictIds.length) showAgentNotice('an agent edit conflicted — saved a copy to compare');
+        else if (result.touchedIds.length) showAgentNotice('an agent updated your canvas');
+      },
       onError: () => { /* transient network errors are retried next tick */ },
-      onOpDropped: () => showAgentNotice('an agent edit could not be applied and was skipped'),
     });
     agentRelayRef.current = handle;
     return () => { handle.stop(); agentRelayRef.current = null; };
@@ -4467,15 +4338,6 @@ const WritingInterface = () => {
           <div className="pointer-events-auto flex items-center gap-2 rounded-full bg-foreground/90 px-3 py-1 text-[11px] font-mono lowercase text-background shadow-sm">
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent-foreground animate-pulse" />
             {agentNotice.message}
-            {agentNotice.projectId && hasAgentCheckpoint(agentNotice.projectId) && (
-              <button
-                type="button"
-                onClick={() => restoreAgentCheckpoint(agentNotice.projectId!)}
-                className="font-bold underline underline-offset-2 hover:opacity-80"
-              >
-                restore
-              </button>
-            )}
           </div>
         </div>
       )}
