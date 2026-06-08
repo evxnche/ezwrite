@@ -4517,8 +4517,8 @@ const WritingInterface = () => {
           style={isTouchDevice ? { bottom: MOBILE_FOOTER_BOTTOM } : undefined}
         >
           <span
-            className="font-playfair text-xs sm:text-sm text-foreground tracking-wide pointer-events-auto"
-            style={titleGlow}
+            className="text-xs sm:text-sm text-foreground pointer-events-auto"
+            style={{ ...titleGlow, letterSpacing: '0', fontFamily: "'Instrument Serif', serif" }}
           >
             built by evan :)
           </span>
