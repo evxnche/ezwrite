@@ -5,11 +5,12 @@
 // Two auth modes:
 //   - User-authenticated (Bearer Supabase access token) -> mint a passkey.
 //   - Passkey-authenticated (X-EZ-Passkey header or body.passkey) -> read/write
-//     the user's canvas via a relay the browser drains.
+//     the user's canvas.
 //
-// Writes are NOT applied here. They are enqueued into ezwrite_agent_events and the
-// user's open browser tab applies them live, then publishes the canvas back into
-// ezwrite_agent_canvas for reads. The service role bypasses RLS for both.
+// Writes apply directly to ezwrite_agent_canvas here (service role bypasses RLS),
+// so agents work with no browser tab open. The owner's tab two-way-syncs that
+// snapshot into its local-first storage (pull-merge with conflict forking, push
+// of local edits) — see src/lib/agent-canvas-sync.ts.
 
 import crypto from 'node:crypto';
 
@@ -147,23 +148,100 @@ const WRITE_OPS = new Set([
 // Agents can create and rename docs, but never delete them.
 const PROJECT_OPS = new Set(['create_project', 'rename_project']);
 
-interface AgentOp {
-  type: string;
-  projectId?: string;
-  projectTitle?: string;
-  page?: number;
-  text?: string;
-  content?: string;
-  title?: string;
-  start?: number;
-  count?: number;
-}
-
 function bodyObj(body: unknown): Record<string, unknown> {
   if (typeof body === 'string') {
     try { return JSON.parse(body) as Record<string, unknown>; } catch { return {}; }
   }
   return (body && typeof body === 'object') ? (body as Record<string, unknown>) : {};
+}
+
+// --- canvas apply (server-side) --------------------------------------------
+// The server applies write ops straight to ezwrite_agent_canvas so agents work
+// with NO browser tab open. The browser two-way-syncs that snapshot back into
+// its local-first storage. transformPageForAgentOp is the SAME pure transform
+// the browser uses, so a page mutates identically on either side.
+
+export interface AgentTextOp {
+  type: string;
+  text?: string;
+  content?: string;
+  start?: number;
+  count?: number;
+}
+
+export function transformPageForAgentOp(cur: string, op: AgentTextOp): string {
+  const text = op.text ?? '';
+  if (op.type === 'set_content') return op.content ?? '';
+  if (op.type === 'append') return cur ? `${cur}\n${text}` : text;
+  const lines = cur.split('\n');
+  const start = typeof op.start === 'number'
+    ? Math.max(0, Math.min(op.start, lines.length))
+    : lines.length;
+  if (op.type === 'insert_lines') { lines.splice(start, 0, ...text.split('\n')); return lines.join('\n'); }
+  if (op.type === 'delete_lines') { lines.splice(start, op.count ?? 1); return lines.join('\n'); }
+  if (op.type === 'replace_lines') { lines.splice(start, op.count ?? 1, ...text.split('\n')); return lines.join('\n'); }
+  return cur;
+}
+
+// Project id in the same shape the browser's generateId() produces.
+function newProjectId(): string {
+  return Date.now().toString(36) + crypto.randomBytes(5).toString('hex').slice(0, 6);
+}
+
+interface CanvasRow {
+  project_id: string;
+  title: string | null;
+  pages: string[];
+}
+
+async function fetchCanvasRow(env: AgentEnv, userId: string, projectId: string): Promise<CanvasRow | null> {
+  const params = new URLSearchParams({
+    select: 'project_id,title,pages',
+    user_id: `eq.${userId}`,
+    project_id: `eq.${projectId}`,
+    limit: '1',
+  });
+  const rows = await adminFetch<CanvasRow[]>(env, `ezwrite_agent_canvas?${params}`, { method: 'GET' });
+  return rows[0] ?? null;
+}
+
+// Upsert a canvas row, bumping updated_at so the browser's pull notices the change.
+async function writeCanvasRow(env: AgentEnv, userId: string, row: CanvasRow): Promise<void> {
+  await adminFetch(env, 'ezwrite_agent_canvas?on_conflict=user_id,project_id', {
+    method: 'POST',
+    prefer: 'resolution=merge-duplicates,return=minimal',
+    body: JSON.stringify({
+      user_id: userId,
+      project_id: row.project_id,
+      title: row.title,
+      pages: row.pages,
+      updated_at: new Date().toISOString(),
+    }),
+  });
+}
+
+// Resolve which doc a write targets: explicit id, else loose title match, else the
+// most-recently-updated doc (the server has no notion of "currently open").
+async function resolveCanvasTarget(env: AgentEnv, pairing: PairingRow, body: Record<string, unknown>): Promise<string | null> {
+  if (pairing.target_project_id) return pairing.target_project_id;
+  if (typeof body.projectId === 'string' && body.projectId) return body.projectId;
+
+  if (typeof body.projectTitle === 'string' && body.projectTitle.trim()) {
+    const wanted = body.projectTitle.trim().toLowerCase();
+    const params = new URLSearchParams({ select: 'project_id,title', user_id: `eq.${pairing.user_id}`, order: 'updated_at.desc' });
+    const rows = await adminFetch<Array<{ project_id: string; title: string | null }>>(env, `ezwrite_agent_canvas?${params}`, { method: 'GET' });
+    const exact = rows.find((r) => (r.title ?? '').toLowerCase() === wanted);
+    if (exact) return exact.project_id;
+    const contains = rows.find((r) => {
+      const t = (r.title ?? '').toLowerCase();
+      return t.length > 0 && (t.includes(wanted) || wanted.includes(t));
+    });
+    return contains?.project_id ?? null;
+  }
+
+  const params = new URLSearchParams({ select: 'project_id', user_id: `eq.${pairing.user_id}`, order: 'updated_at.desc', limit: '1' });
+  const rows = await adminFetch<Array<{ project_id: string }>>(env, `ezwrite_agent_canvas?${params}`, { method: 'GET' });
+  return rows[0]?.project_id ?? null;
 }
 
 // --- usage doc -------------------------------------------------------------
@@ -184,7 +262,7 @@ function usageDoc(): Record<string, unknown> {
       create_project: '{ "action": "create_project", "title"?, "content"? }',
       rename_project: '{ "action": "rename_project", "projectId"|"projectTitle", "title": string }',
     },
-    note: 'Writes appear live in the owner\'s open ezwrite tab. If no projectId is given, pass projectTitle (matched loosely against the owner\'s doc titles) or omit both to use the doc the owner is currently looking at. Agents cannot delete docs.',
+    note: 'Writes apply immediately to the canvas — no open tab required — and the owner\'s ezwrite syncs them into local storage when it next runs. If no projectId is given, pass projectTitle (matched loosely against the owner\'s doc titles) or omit both to target the most recently updated doc. Agents cannot delete docs.',
   };
 }
 
@@ -292,25 +370,51 @@ export async function handleAgentRequest(req: AgentRequest, env: AgentEnv): Prom
     return { status: 403, body: { error: 'Agents cannot delete docs. Ask the owner to delete it.' } };
   }
 
-  // Writes enqueue an op for the browser to apply.
+  // Writes apply straight to the canvas snapshot — no browser tab required. The
+  // owner's tab two-way-syncs the snapshot into its local-first storage when it
+  // next runs (pull-merge, with conflict forking).
   if (WRITE_OPS.has(action) || PROJECT_OPS.has(action)) {
-    const op: AgentOp = { type: action };
-    // Scope: single-project pairings force the target.
-    if (pairing.target_project_id) op.projectId = pairing.target_project_id;
-    else if (typeof body.projectId === 'string' && body.projectId) op.projectId = body.projectId;
-    if (typeof body.projectTitle === 'string') op.projectTitle = body.projectTitle;
-    if (typeof body.page === 'number') op.page = body.page;
-    if (typeof body.text === 'string') op.text = body.text;
-    if (typeof body.content === 'string') op.content = body.content;
-    if (typeof body.title === 'string') op.title = body.title;
-    if (typeof body.start === 'number') op.start = body.start;
-    if (typeof body.count === 'number') op.count = body.count;
+    if (action === 'create_project') {
+      const projectId = newProjectId();
+      const content = typeof body.content === 'string' ? body.content : '';
+      const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : null;
+      await writeCanvasRow(env, pairing.user_id, { project_id: projectId, title, pages: [content] });
+      return { status: 200, body: { ok: true, applied: true, op: action, projectId } };
+    }
 
-    await adminFetch(env, 'ezwrite_agent_events', {
-      method: 'POST', prefer: 'return=minimal',
-      body: JSON.stringify({ user_id: pairing.user_id, pairing_id: pairing.id, op }),
-    });
-    return { status: 200, body: { ok: true, queued: true, op: op.type } };
+    const projectId = await resolveCanvasTarget(env, pairing, body);
+    if (!projectId) {
+      return { status: 404, body: { error: 'No target doc. Pass projectId or projectTitle, or open ezwrite once so a doc exists.' } };
+    }
+
+    if (action === 'rename_project') {
+      const title = typeof body.title === 'string' ? body.title.trim() : '';
+      if (!title) return { status: 400, body: { error: 'rename_project needs a non-empty "title".' } };
+      const row = await fetchCanvasRow(env, pairing.user_id, projectId);
+      if (!row) return { status: 404, body: { error: 'That doc is not in the canvas yet. Open ezwrite once to publish it.' } };
+      await writeCanvasRow(env, pairing.user_id, { project_id: projectId, title, pages: row.pages });
+      return { status: 200, body: { ok: true, applied: true, op: action, projectId } };
+    }
+
+    // Content ops need the doc's current pages from the snapshot.
+    const row = await fetchCanvasRow(env, pairing.user_id, projectId);
+    if (!row) return { status: 404, body: { error: 'That doc is not in the canvas yet. Open ezwrite once to publish it.' } };
+    const pages = Array.isArray(row.pages) && row.pages.length ? [...row.pages] : [''];
+
+    if (action === 'add_page') {
+      pages.push(typeof body.content === 'string' ? body.content : '');
+    } else {
+      const pageIndex = typeof body.page === 'number' ? Math.max(0, Math.min(body.page, pages.length - 1)) : 0;
+      pages[pageIndex] = transformPageForAgentOp(pages[pageIndex] ?? '', {
+        type: action,
+        text: typeof body.text === 'string' ? body.text : undefined,
+        content: typeof body.content === 'string' ? body.content : undefined,
+        start: typeof body.start === 'number' ? body.start : undefined,
+        count: typeof body.count === 'number' ? body.count : undefined,
+      });
+    }
+    await writeCanvasRow(env, pairing.user_id, { project_id: projectId, title: row.title, pages });
+    return { status: 200, body: { ok: true, applied: true, op: action, projectId } };
   }
 
   return { status: 400, body: { error: `Unknown action "${action}". GET /api/agent for usage.` } };
