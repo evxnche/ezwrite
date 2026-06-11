@@ -2,6 +2,38 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import * as scratchpadLlm from './scratchpad-llm.ts';
+import { extractAssistantContent } from './openrouter.ts';
+
+test('a normal reply uses message content', () => {
+  assert.equal(
+    extractAssistantContent({ message: { role: 'assistant', content: 'the answer' }, finish_reason: 'stop' }),
+    'the answer',
+  );
+});
+
+test('a reply truncated mid-reasoning yields nothing — never the unfinished thought', () => {
+  // deepseek-v4-flash burns the token budget on reasoning_content and returns
+  // empty content with finish_reason "length". The old code surfaced the last
+  // reasoning line as a mid-sentence fragment; now it returns empty so the
+  // chain falls through instead.
+  assert.equal(
+    extractAssistantContent({
+      message: { role: 'assistant', content: '', reasoning_content: 'Let me think...\nGeneral/Personal Leave:' },
+      finish_reason: 'length',
+    }),
+    '',
+  );
+});
+
+test('when a model finishes but answers only in reasoning, the last line is used', () => {
+  assert.equal(
+    extractAssistantContent({
+      message: { role: 'assistant', content: '', reasoning: 'thinking out loud\nFinal answer here' },
+      finish_reason: 'stop',
+    }),
+    'Final answer here',
+  );
+});
 
 test('Groq-style key-only BYOK resolves to the Groq endpoint and default model', () => {
   const resolveConfig = scratchpadLlm.resolveScratchpadLLMConfig;

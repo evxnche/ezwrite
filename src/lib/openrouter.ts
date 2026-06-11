@@ -39,7 +39,15 @@ interface OpenRouterMessage {
 
 interface OpenRouterChoice {
   message?: OpenRouterMessage;
+  finish_reason?: string;
 }
+
+// OpenCode's models are reasoning models: they spend hundreds of tokens
+// "thinking" (reasoning_content) before emitting any answer. A 700-token cap
+// gets consumed entirely by reasoning, leaving content empty and the reply
+// truncated mid-thought — so they get a generous ceiling. It's a ceiling, not
+// a target; the model stops (finish_reason "stop") once it has answered.
+const OPENCODE_MAX_TOKENS = 4000;
 
 interface OpenRouterChatResponse {
   choices?: OpenRouterChoice[];
@@ -54,9 +62,15 @@ function shouldTryNextModel(status: number): boolean {
   return false;
 }
 
-function extractAssistantContent(message?: OpenRouterMessage): string {
+export function extractAssistantContent(choice?: OpenRouterChoice): string {
+  const message = choice?.message;
   const content = message?.content?.trim();
   if (content) return content;
+  // Reasoning models sometimes leave content empty. If the reply was cut off by
+  // the token limit (finish_reason "length"), the reasoning is an unfinished
+  // mid-thought — never surface that. Only fall back to reasoning when the model
+  // actually finished, where the last line tends to hold the answer.
+  if (choice?.finish_reason === 'length') return '';
   const reasoning = message?.reasoning?.trim() || message?.reasoning_content?.trim();
   if (!reasoning) return '';
   const lines = reasoning.split('\n').map((line) => line.trim()).filter(Boolean);
@@ -131,7 +145,7 @@ async function requestCompletion(
       { role: 'system', content: buildScratchpadSystemPrompt(entry.id, entry.webSearch) },
       { role: 'user', content: prompt },
     ],
-    max_tokens: entry.webSearch ? 500 : 700,
+    max_tokens: isOpencode ? OPENCODE_MAX_TOKENS : entry.webSearch ? 500 : 700,
   };
 
   if (entry.webSearch && usingOpenRouter) {
@@ -183,8 +197,11 @@ async function requestCompletion(
         const badKey = !!apiKey && (relayRes.status === 401 || relayRes.status === 403);
         return { ok: false, status: relayRes.status, message, badKey };
       }
-      const relayContent = extractAssistantContent(relayPayload.choices?.[0]?.message);
-      if (!relayContent) return { ok: false, status: 502, message: 'LLM returned an empty response' };
+      const relayContent = extractAssistantContent(relayPayload.choices?.[0]);
+      if (!relayContent) {
+        // 502 is retriable, so an empty/truncated reply falls through to the next model in the chain.
+        return { ok: false, status: 502, message: 'LLM returned an empty response' };
+      }
       return { ok: true, content: relayContent };
     };
 
@@ -261,7 +278,7 @@ async function requestCompletion(
     return { ok: false, status, message };
   }
 
-  const content = extractAssistantContent(payload.choices?.[0]?.message);
+  const content = extractAssistantContent(payload.choices?.[0]);
   if (!content) {
     return { ok: false, status: 502, message: 'LLM returned an empty response' };
   }
