@@ -98,6 +98,22 @@ test('append applies the transform to the snapshot in place', async () => {
   assert.deepEqual(canvas.get('doc-1')!.pages, ['line one\nline two']);
 });
 
+test('add_page appends a new page to an existing notebook snapshot', async () => {
+  const canvas = new Map<string, CanvasRow>([
+    ['doc-1', { project_id: 'doc-1', title: 'Letter', pages: ['page one'] }],
+  ]);
+  installFetch(canvas);
+
+  const result = await handleAgentRequest(
+    { method: 'POST', header: passkeyHeader, body: { action: 'add_page', projectId: 'doc-1', content: 'page two' } },
+    env,
+  );
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.applied, true);
+  assert.deepEqual(canvas.get('doc-1')!.pages, ['page one', 'page two']);
+});
+
 test('rename_project updates the title without touching pages', async () => {
   const canvas = new Map<string, CanvasRow>([
     ['doc-1', { project_id: 'doc-1', title: 'Old', pages: ['body'] }],
