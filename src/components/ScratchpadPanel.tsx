@@ -31,6 +31,7 @@ import {
   normalizeEditorContent,
   normalizeClipboardPasteText,
   renumberFollowingPlainNumberedListItems,
+  renumberAllPlainNumberedLists,
   splitExitedListLine,
 } from './editor-behavior';
 import {
@@ -480,6 +481,23 @@ const ScratchpadPanel: React.FC<Props> = ({
     if (hasRawTextNode || nextContent !== rawContent) {
       structuralUpdate(nextContent, info?.lineIndex ?? 0, info?.offset ?? 0);
       return;
+    }
+
+    // Renumber plain numbered lists after a deletion. Inserting an item renumbers
+    // via the Enter handler, but deletes go through native editing, so the trailing
+    // items never decrement back into sequence without this pass.
+    if (nextContent.length < contentRef.current.length) {
+      const oldLines = nextContent.split('\n');
+      const renumbered = renumberAllPlainNumberedLists(oldLines).join('\n');
+      if (renumbered !== nextContent) {
+        const li = info?.lineIndex ?? 0;
+        let off = info?.offset ?? 0;
+        const newLines = renumbered.split('\n');
+        const delta = (newLines[li]?.length ?? 0) - (oldLines[li]?.length ?? 0);
+        if (off > 0) off = Math.max(0, Math.min(off + delta, newLines[li]?.length ?? 0));
+        structuralUpdate(renumbered, li, off);
+        return;
+      }
     }
 
     emitContent(nextContent);
