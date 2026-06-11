@@ -5,10 +5,14 @@ export interface ScratchpadModelEntry {
   webSearch: boolean;
 }
 
-export type ScratchpadLLMProvider = 'openrouter' | 'groq' | 'openai-compatible' | 'anthropic';
+export type ScratchpadLLMProvider = 'openrouter' | 'groq' | 'openai-compatible' | 'anthropic' | 'opencode';
 
 export interface ScratchpadLLMConfig {
-  /** API key for the provider. Never sent to ezwrite servers. */
+  /**
+   * API key for the provider. Sent straight from the browser to the provider —
+   * except OpenCode Zen, which blocks browser requests, so its key is relayed
+   * through ezwrite's same-origin proxy (forwarded verbatim, never stored).
+   */
   apiKey?: string;
   /** Base URL. For anthropic leave empty to default to https://api.anthropic.com */
   baseURL?: string;
@@ -30,10 +34,40 @@ export const SCRATCHPAD_GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
 export const SCRATCHPAD_GROQ_MODEL = 'llama-3.3-70b-versatile';
 export const SCRATCHPAD_ANTHROPIC_BASE_URL = 'https://api.anthropic.com';
 export const SCRATCHPAD_ANTHROPIC_MODEL = 'claude-3-5-sonnet-20241022';
+export const SCRATCHPAD_OPENCODE_BASE_URL = 'https://opencode.ai/zen/v1';
+export const SCRATCHPAD_OPENCODE_MODEL = 'deepseek-v4-flash';
+export const SCRATCHPAD_OPENCODE_FREE_MODEL = 'deepseek-v4-flash-free';
+
+/** With a key: fast paid default first, free models as resilient fallbacks. */
+export const SCRATCHPAD_OPENCODE_MODEL_CHAIN = [
+  'deepseek-v4-flash',
+  'glm-5',
+  'deepseek-v4-flash-free',
+  'mimo-v2.5-free',
+] as const;
+
+/** Keyless: OpenCode Zen serves its -free models without authentication. */
+export const SCRATCHPAD_OPENCODE_FREE_MODEL_CHAIN = [
+  'deepseek-v4-flash-free',
+  'mimo-v2.5-free',
+  'qwen3.6-plus-free',
+  'minimax-m3-free',
+] as const;
 
 function trimOptionalString(value?: string): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+/**
+ * People paste the full endpoint URL from provider docs; the request code
+ * appends /chat/completions itself, so strip it (and trailing slashes) here.
+ */
+function normalizeBaseURL(value?: string): string | undefined {
+  const trimmed = trimOptionalString(value);
+  if (!trimmed) return undefined;
+  const normalized = trimmed.replace(/\/+$/, '').replace(/\/chat\/completions$/i, '');
+  return normalized || undefined;
 }
 
 function looksLikeOpenRouterKey(apiKey?: string): boolean {
@@ -53,11 +87,12 @@ function inferScratchpadLLMProvider(config?: ScratchpadLLMConfig): ScratchpadLLM
   const apiKey = trimOptionalString(config?.apiKey);
   const baseURL = trimOptionalString(config?.baseURL)?.toLowerCase();
 
-  if (provider === 'anthropic' || provider === 'groq' || provider === 'openrouter') return provider;
+  if (provider === 'anthropic' || provider === 'groq' || provider === 'openrouter' || provider === 'opencode') return provider;
 
   if (baseURL?.includes('anthropic')) return 'anthropic';
   if (baseURL?.includes('api.groq.com') || baseURL?.includes('groq.com')) return 'groq';
   if (baseURL?.includes('openrouter.ai')) return 'openrouter';
+  if (baseURL?.includes('opencode.ai')) return 'opencode';
   if (baseURL) return 'openai-compatible';
 
   if (looksLikeAnthropicKey(apiKey)) return 'anthropic';
@@ -70,7 +105,7 @@ function inferScratchpadLLMProvider(config?: ScratchpadLLMConfig): ScratchpadLLM
 
 function sanitizeScratchpadLLMConfig(config?: ScratchpadLLMConfig): ScratchpadLLMConfig {
   const apiKey = trimOptionalString(config?.apiKey);
-  const baseURL = trimOptionalString(config?.baseURL);
+  const baseURL = normalizeBaseURL(config?.baseURL);
   const model = trimOptionalString(config?.model);
   const provider = inferScratchpadLLMProvider({
     provider: config?.provider,
@@ -99,6 +134,11 @@ export function resolveScratchpadLLMConfig(config?: ScratchpadLLMConfig): Resolv
   } else if (provider === 'groq') {
     baseURL ||= SCRATCHPAD_GROQ_BASE_URL;
     model ||= SCRATCHPAD_GROQ_MODEL;
+  } else if (provider === 'opencode') {
+    // Key optional — Zen serves -free models without one. Requests go through
+    // ezwrite's same-origin proxy, so the stored base URL is informational.
+    baseURL ||= SCRATCHPAD_OPENCODE_BASE_URL;
+    model ||= apiKey ? SCRATCHPAD_OPENCODE_MODEL : SCRATCHPAD_OPENCODE_FREE_MODEL;
   } else if (provider === 'openai-compatible' && (apiKey || baseURL || model)) {
     if (!baseURL || !model) {
       validationError = 'Custom OpenAI-compatible providers need both a base URL and model.';
@@ -284,6 +324,7 @@ export function setScratchpadLLMConfig(config: ScratchpadLLMConfig): void {
       || sanitized.provider === 'groq'
       || sanitized.provider === 'anthropic'
       || sanitized.provider === 'openai-compatible'
+      || sanitized.provider === 'opencode'
     );
     if (hasAny) {
       localStorage.setItem(LLM_CONFIG_STORAGE_KEY, JSON.stringify(sanitized));

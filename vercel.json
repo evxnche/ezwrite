@@ -4,6 +4,9 @@
   "functions": {
     "api/openrouter.ts": {
       "maxDuration": 60
+    },
+    "api/opencode.ts": {
+      "maxDuration": 60
     }
   },
   "rewrites": [

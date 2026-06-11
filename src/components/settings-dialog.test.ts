@@ -8,6 +8,7 @@ test('scratchpad BYOK settings offer explicit Groq/custom provider guidance', ()
 
   assert.match(source, /<option value="groq">groq<\/option>/);
   assert.match(source, /<option value="openrouter">openrouter<\/option>/);
+  assert.match(source, /<option value="opencode">opencode zen<\/option>/);
   assert.match(source, />byok<\/h3>/);
   assert.match(source, /custom openai-compatible \(enter base url \+ model\)/);
   assert.equal(source.includes('openai-compatible (openai / groq / together / openrouter...)'), false);

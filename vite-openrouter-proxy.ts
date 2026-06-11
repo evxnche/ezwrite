@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Connect } from 'vite';
 import { loadEnv } from 'vite';
 import { proxyOpenRouterChatCompletion, validateScratchpadProxyBody } from './lib/openrouter-upstream';
+import { proxyOpencodeChatCompletion, validateOpencodeProxyBody } from './lib/opencode-upstream';
 import { handleAgentRequest } from './lib/agent-upstream';
 import { handleAgentMcpRequest } from './lib/agent-mcp';
 
@@ -75,6 +76,26 @@ export function createOpenRouterProxyMiddleware(mode: string, root: string): Con
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Fetch failed';
         sendJson(res, 502, { error: message });
+      }
+      return;
+    }
+
+    if (req.method === 'POST' && url.startsWith('/api/opencode')) {
+      try {
+        const rawAuth = req.headers.authorization;
+        const apiKey = (Array.isArray(rawAuth) ? rawAuth[0] : rawAuth)?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || undefined;
+        const validation = validateOpencodeProxyBody(await readRequestBody(req), !!apiKey);
+        if (!validation.ok) {
+          sendJson(res, validation.status ?? 400, { error: validation.error ?? 'Bad request' });
+          return;
+        }
+        const upstream = await proxyOpencodeChatCompletion(validation.body!, apiKey);
+        const text = await upstream.text();
+        res.statusCode = upstream.status;
+        res.setHeader('Content-Type', upstream.headers.get('content-type') ?? 'application/json');
+        res.end(text);
+      } catch {
+        sendJson(res, 502, { error: 'OpenCode Zen proxy failed.' });
       }
       return;
     }

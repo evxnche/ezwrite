@@ -3,6 +3,8 @@ import {
   formatScratchpadLlmReply,
   getScratchpadModelChain,
   resolveScratchpadLLMConfig,
+  SCRATCHPAD_OPENCODE_FREE_MODEL_CHAIN,
+  SCRATCHPAD_OPENCODE_MODEL_CHAIN,
   SCRATCHPAD_WEB_SEARCH_TOOL,
   type ResolvedScratchpadLLMConfig,
   type ScratchpadLLMConfig,
@@ -10,6 +12,7 @@ import {
 } from './scratchpad-llm.ts';
 
 const OPENROUTER_CHAT_PATH = '/api/openrouter';
+const OPENCODE_CHAT_PATH = '/api/opencode';
 const OPENROUTER_DIRECT_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 export interface ScratchpadLlmResult {
@@ -21,6 +24,8 @@ interface OpenRouterMessage {
   role: string;
   content?: string | null;
   reasoning?: string;
+  /** OpenCode Zen reasoning models put their thinking here. */
+  reasoning_content?: string;
 }
 
 interface OpenRouterChoice {
@@ -43,7 +48,7 @@ function shouldTryNextModel(status: number): boolean {
 function extractAssistantContent(message?: OpenRouterMessage): string {
   const content = message?.content?.trim();
   if (content) return content;
-  const reasoning = message?.reasoning?.trim();
+  const reasoning = message?.reasoning?.trim() || message?.reasoning_content?.trim();
   if (!reasoning) return '';
   const lines = reasoning.split('\n').map((line) => line.trim()).filter(Boolean);
   return lines[lines.length - 1] ?? '';
@@ -104,12 +109,17 @@ async function requestCompletion(
     return { ok: true, content: text };
   }
 
-  // OpenAI-compatible / OpenRouter path (existing)
+  // OpenAI-compatible / OpenRouter / OpenCode Zen path
   const usingOpenRouter = config?.provider === 'openrouter';
-  const isDirect = !!apiKey;
+  // OpenCode Zen blocks browser requests (no CORS), so it always goes through
+  // ezwrite's same-origin relay — with or without a key.
+  const isOpencode = config?.provider === 'opencode';
+  const isDirect = !!apiKey && !isOpencode;
 
   let targetURL: string;
-  if (!isDirect) {
+  if (isOpencode) {
+    targetURL = OPENCODE_CHAT_PATH;
+  } else if (!isDirect) {
     targetURL = OPENROUTER_CHAT_PATH;
   } else if (usingOpenRouter) {
     targetURL = OPENROUTER_DIRECT_URL;
@@ -132,6 +142,9 @@ async function requestCompletion(
   }
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (isOpencode && apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
   if (isDirect) {
     headers.Authorization = `Bearer ${apiKey}`;
     if (usingOpenRouter) {
@@ -154,7 +167,10 @@ async function requestCompletion(
     });
   } catch (error) {
     if (signal?.aborted) throw error;
-    const message = error instanceof Error ? error.message : 'Network error';
+    let message = error instanceof Error ? error.message : 'Network error';
+    if (isDirect && config?.provider === 'openai-compatible' && /failed to fetch|load failed|networkerror/i.test(message)) {
+      message = 'The provider blocked this browser request (no CORS) or is unreachable. Check the base URL, or pick OpenCode Zen, OpenRouter, or Groq in settings instead.';
+    }
     return { ok: false, status: 503, message };
   }
 
@@ -162,6 +178,18 @@ async function requestCompletion(
 
   if (!res.ok) {
     let message = payload.error?.message ?? `LLM request failed (${res.status})`;
+    if (isOpencode) {
+      if (/not supported/i.test(payload.error?.message ?? '')) {
+        // Unknown model id on Zen — report 404 so the chain falls through to a known model.
+        return { ok: false, status: 404, message };
+      }
+      if (apiKey && (res.status === 401 || res.status === 403)) {
+        message = 'Invalid OpenCode Zen API key (401/403). Check or clear it in settings.';
+      } else if (res.status === 404 && !payload.error) {
+        message = 'OpenCode Zen relay missing on this host (deploy api/opencode).';
+      }
+      return { ok: false, status: res.status, message };
+    }
     if (isDirect && (res.status === 401 || res.status === 403)) {
       message = usingOpenRouter
         ? 'Invalid OpenRouter API key (401/403). Check or clear it in settings.'
@@ -197,7 +225,13 @@ export async function completeScratchpadPrompt(
 
   // Decide chain
   let chain: readonly ScratchpadModelEntry[];
-  if (!resolved.apiKey) {
+  if (resolved.provider === 'opencode') {
+    // Explicit model first; defaults behind it so an unknown/renamed Zen model
+    // id falls back instead of dead-ending. Keyless keys to free models only.
+    const defaults = resolved.apiKey ? SCRATCHPAD_OPENCODE_MODEL_CHAIN : SCRATCHPAD_OPENCODE_FREE_MODEL_CHAIN;
+    const ids = [...new Set([...(resolved.model ? [resolved.model] : []), ...defaults])];
+    chain = ids.map((id) => ({ id, webSearch: false }));
+  } else if (!resolved.apiKey) {
     chain = explicitModel
       ? [{ id: explicitModel, webSearch: false }]
       : getScratchpadModelChain(prompt);

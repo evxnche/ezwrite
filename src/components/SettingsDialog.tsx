@@ -11,6 +11,8 @@ import {
   SCRATCHPAD_ANTHROPIC_MODEL,
   SCRATCHPAD_GROQ_BASE_URL,
   SCRATCHPAD_GROQ_MODEL,
+  SCRATCHPAD_OPENCODE_FREE_MODEL,
+  SCRATCHPAD_OPENCODE_MODEL,
   type ScratchpadLLMConfig,
   type ScratchpadLLMProvider,
 } from '@/lib/scratchpad-llm';
@@ -229,7 +231,12 @@ export const SettingsDialog: React.FC<Props> = ({
   const landingPageLabel = getLandingPageDisplayLabel();
   const resolvedScratchpadLLM = resolveScratchpadLLMConfig(scratchpadLLMConfig);
   const scratchpadProvider = scratchpadLLMConfig?.provider ?? resolvedScratchpadLLM.provider;
-  const hasScratchpadConfig = !!(scratchpadLLMConfig?.apiKey || scratchpadLLMConfig?.baseURL || scratchpadLLMConfig?.model);
+  const hasScratchpadConfig = !!(
+    scratchpadLLMConfig?.apiKey
+    || scratchpadLLMConfig?.baseURL
+    || scratchpadLLMConfig?.model
+    || scratchpadLLMConfig?.provider === 'opencode'
+  );
   const showCustomBaseURL = scratchpadProvider === 'openai-compatible';
   const showAnthropicBaseURL = scratchpadProvider === 'anthropic';
   const scratchpadKeyPlaceholder =
@@ -239,7 +246,9 @@ export const SettingsDialog: React.FC<Props> = ({
         ? 'sk-ant-...'
         : scratchpadProvider === 'openrouter'
           ? 'sk-or-v1-... or or-...'
-          : 'api key';
+          : scratchpadProvider === 'opencode'
+            ? 'api key (optional — free models work without one)'
+            : 'api key';
   const scratchpadModelPlaceholder =
     scratchpadProvider === 'groq'
       ? `model (optional — defaults to ${SCRATCHPAD_GROQ_MODEL})`
@@ -247,7 +256,9 @@ export const SettingsDialog: React.FC<Props> = ({
         ? `model (optional — defaults to ${SCRATCHPAD_ANTHROPIC_MODEL})`
         : scratchpadProvider === 'openrouter'
           ? 'model (optional — leave blank for ezwrite fallback chain)'
-          : 'model (required — e.g. gpt-4o-mini)';
+          : scratchpadProvider === 'opencode'
+            ? `model (optional — defaults to ${SCRATCHPAD_OPENCODE_MODEL})`
+            : 'model (required — e.g. gpt-4o-mini)';
   const scratchpadStatus = !hasScratchpadConfig
     ? 'using shared key'
     : resolvedScratchpadLLM.validationError
@@ -258,7 +269,11 @@ export const SettingsDialog: React.FC<Props> = ({
           ? 'groq direct'
           : scratchpadProvider === 'openrouter'
             ? 'openrouter direct'
-            : 'custom provider (direct)';
+            : scratchpadProvider === 'opencode'
+              ? scratchpadLLMConfig?.apiKey
+                ? 'opencode zen'
+                : 'opencode zen (free models)'
+              : 'custom provider (direct)';
 
   const handleScratchpadProviderChange = (provider: ScratchpadLLMProvider) => {
     const next: ScratchpadLLMConfig = {
@@ -617,6 +632,7 @@ export const SettingsDialog: React.FC<Props> = ({
                     className="w-full rounded-lg border border-border bg-background px-2 py-1 text-xs font-mono outline-none focus:border-accent-foreground/50"
                   >
                     <option value="openrouter">openrouter</option>
+                    <option value="opencode">opencode zen</option>
                     <option value="groq">groq</option>
                     <option value="anthropic">anthropic (claude)</option>
                     <option value="openai-compatible">custom openai-compatible (enter base url + model)</option>
@@ -673,7 +689,7 @@ export const SettingsDialog: React.FC<Props> = ({
                   />
 
                   <div className="flex items-center justify-between gap-2">
-                    {(scratchpadLLMConfig?.apiKey || scratchpadLLMConfig?.baseURL || scratchpadLLMConfig?.model) ? (
+                    {hasScratchpadConfig ? (
                       <button
                         type="button"
                         onClick={() => onScratchpadLLMConfigChange?.({})}
@@ -701,7 +717,9 @@ export const SettingsDialog: React.FC<Props> = ({
                         ? `groq fills ${SCRATCHPAD_GROQ_BASE_URL} and defaults to ${SCRATCHPAD_GROQ_MODEL}.`
                         : scratchpadProvider === 'anthropic'
                           ? `anthropic fills ${SCRATCHPAD_ANTHROPIC_BASE_URL} and defaults to ${SCRATCHPAD_ANTHROPIC_MODEL}.`
-                          : 'custom openai-compatible providers need both a base url and model.'}
+                          : scratchpadProvider === 'opencode'
+                            ? `just paste your opencode zen key — defaults to ${SCRATCHPAD_OPENCODE_MODEL}. no key uses free models (${SCRATCHPAD_OPENCODE_FREE_MODEL}). zen blocks browser requests, so calls relay through ezwrite's server; your key is forwarded, never stored.`
+                            : 'custom openai-compatible providers need both a base url and model.'}
                     </div>
                   )}
                   <div className="text-[10px] text-muted-foreground">
