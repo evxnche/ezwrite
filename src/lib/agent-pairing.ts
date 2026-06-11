@@ -116,6 +116,17 @@ export function buildAgentHandoffInstructions({
 }: AgentHandoffOptions): string {
   const lines = ['Use ezwrite shared canvas.', ''];
   const isPoke = label?.trim().toLowerCase() === 'poke';
+  const notebookScope = describeScope(targetProjectId, targetProjectTitle);
+  const notebookHelp = [
+    'How ezwrite is organized:',
+    '- A notebook is one document in the notebooks list.',
+    '- Each notebook can have multiple pages.',
+    '- `list_projects` shows notebooks. `projectId` means notebook ID.',
+    '- `read` returns that notebook title plus its `pages` array.',
+    '- Page numbering is zero-based in API/tool calls: `page: 0` is the first page, `page: 1` is the second page.',
+    '- If asked to edit a specific page, read the notebook first, then update the matching page index.',
+    '',
+  ];
 
   if (label) {
     lines.push('Agent label:', label, '');
@@ -128,9 +139,10 @@ export function buildAgentHandoffInstructions({
     lines.push('Expires:', expiresAt, '');
   }
 
-  lines.push('Scope:', describeScope(targetProjectId, targetProjectTitle), '');
+  lines.push('Scope:', notebookScope, '');
   if (isPoke) {
     lines.push(
+      ...notebookHelp,
       'Connect it to Poke:',
       '1. Open https://poke.com/integrations/new',
       '2. Name the integration: ezwrite',
@@ -139,6 +151,7 @@ export function buildAgentHandoffInstructions({
       '5. Create the integration, then ask Poke to list your ezwrite docs.',
       '',
       'Important:',
+      '- When a user says "notebook", they mean a doc. When they say "page", they mean one entry inside that notebook.',
       '- Poke must use the ezwrite MCP integration; its chat agent cannot make arbitrary terminal network calls.',
       '- Agents can read, edit, create, and rename docs.',
       '- Agents cannot delete docs.',
@@ -147,6 +160,7 @@ export function buildAgentHandoffInstructions({
   }
 
   lines.push(
+    ...notebookHelp,
     'How to use it:',
     '- Send POST requests to the endpoint',
     `- Include header: X-EZ-Passkey: ${passkey}`,
@@ -159,6 +173,7 @@ export function buildAgentHandoffInstructions({
     '',
     'Important:',
     '- Use the API directly; you do not need to browse the website UI',
+    '- When a user says "notebook", they mean a doc. When they say "page", they mean one entry inside that notebook.',
     "- Keep the owner's ezwrite tab open for live writes.",
     '- Agents can read, edit, create, and rename docs.',
     '- Agents cannot delete docs.',

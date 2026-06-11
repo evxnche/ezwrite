@@ -76,6 +76,9 @@ test('buildAgentHandoffInstructions includes endpoint passkey and usage guidance
   assert.match(instructions, /Passkey:\s*noble-lynx-96/);
   assert.match(instructions, /Expires:\s*2026-06-09T12:00:00.000Z\s*Scope:/);
   assert.match(instructions, /Scope:\s*one doc only \(biology notes\)/);
+  assert.match(instructions, /A notebook is one document in the notebooks list\./);
+  assert.match(instructions, /`read` returns that notebook title plus its `pages` array\./);
+  assert.match(instructions, /Page numbering is zero-based.*`page: 0` is the first page.*`page: 1` is the second page\./);
   assert.match(instructions, /Keep the owner's ezwrite tab open for live writes\./);
 });
 
@@ -90,6 +93,8 @@ test('buildAgentHandoffInstructions gives Poke its supported MCP integration set
   assert.match(instructions, /https:\/\/ezwrite\.xyz\/api\/mcp/);
   assert.match(instructions, /poke\.com\/integrations\/new/);
   assert.match(instructions, /API key:\s*tidy-acorn-33/);
+  assert.match(instructions, /A notebook is one document in the notebooks list\./);
+  assert.match(instructions, /When a user says "notebook", they mean a doc\./);
   assert.doesNotMatch(instructions, /Send POST requests to the endpoint/);
 });
 
@@ -97,4 +102,5 @@ test('AgentPairingSection exposes a single copy-agent-instructions button after 
   const source = fs.readFileSync(path.join(process.cwd(), 'src/components/AgentPairingSection.tsx'), 'utf8');
   assert.match(source, /buildAgentHandoffInstructions/);
   assert.match(source, /copy agent instructions/);
+  assert.match(source, /notebook\/page navigation notes/);
 });

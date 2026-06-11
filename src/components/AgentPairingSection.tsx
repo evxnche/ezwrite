@@ -242,7 +242,7 @@ export default function AgentPairingSection({
                   </button>
                 </div>
                 <div className="text-[10px] text-muted-foreground lowercase leading-relaxed">
-                  copies the endpoint, passkey, starter requests, and usage notes your agent needs. keep this tab open to see edits arrive live.
+                  copies the endpoint, passkey, notebook/page navigation notes, and usage steps your agent needs. keep this tab open to see edits arrive live.
                 </div>
               </div>
             )}
