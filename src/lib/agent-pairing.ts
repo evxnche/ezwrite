@@ -124,6 +124,7 @@ export function buildAgentHandoffInstructions({
     '- `list_projects` shows notebooks. `projectId` means notebook ID.',
     '- `read` returns that notebook title plus its `pages` array.',
     '- Page numbering is zero-based in API/tool calls: `page: 0` is the first page, `page: 1` is the second page.',
+    '- To create a new page in a notebook through the API/tools, use `add_page` / `ezwrite_add_page`.',
     '- If asked to edit a specific page, read the notebook first, then update the matching page index.',
     '',
   ];
@@ -131,6 +132,7 @@ export function buildAgentHandoffInstructions({
     'Try this first:',
     '- If you can browse and edit websites directly, first try the hassle-free path: open https://ezwrite.xyz and make the edit there with no extra setup.',
     '- Find the right notebook, open the right page, then make the requested change.',
+    '- If you need a new page in the browser, go to the last page in the notebook and move to the next page; ezwrite creates a new blank page when you advance past the end.',
     '- If you cannot reliably browse the site, cannot keep the edit stable, or cannot figure out the UI, stop and ask the user to set up the integration route below instead of guessing.',
     '',
   ];
@@ -177,6 +179,7 @@ export function buildAgentHandoffInstructions({
     '- Start with: {"action":"list_projects"}',
     '- Then use actions like:',
     '  {"action":"read","projectId":"..."}',
+    '  {"action":"add_page","projectId":"...","content":"..."}',
     '  {"action":"append","projectId":"...","text":"..."}',
     '  {"action":"set_content","projectId":"...","content":"..."}',
     '',

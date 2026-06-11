@@ -79,8 +79,11 @@ test('buildAgentHandoffInstructions includes endpoint passkey and usage guidance
   assert.match(instructions, /A notebook is one document in the notebooks list\./);
   assert.match(instructions, /`read` returns that notebook title plus its `pages` array\./);
   assert.match(instructions, /Page numbering is zero-based.*`page: 0` is the first page.*`page: 1` is the second page\./);
+  assert.match(instructions, /use `add_page` \/ `ezwrite_add_page`/);
   assert.match(instructions, /first try the hassle-free path: open https:\/\/ezwrite\.xyz and make the edit there with no extra setup\./);
+  assert.match(instructions, /go to the last page in the notebook and move to the next page; ezwrite creates a new blank page when you advance past the end\./);
   assert.match(instructions, /ask the user to set up the integration route below instead of guessing\./);
+  assert.match(instructions, /\{"action":"add_page","projectId":"\.\.\.","content":"\.\.\."\}/);
   assert.match(instructions, /Keep the owner's ezwrite tab open for live writes\./);
 });
 
@@ -96,7 +99,9 @@ test('buildAgentHandoffInstructions gives Poke its supported MCP integration set
   assert.match(instructions, /poke\.com\/integrations\/new/);
   assert.match(instructions, /API key:\s*tidy-acorn-33/);
   assert.match(instructions, /A notebook is one document in the notebooks list\./);
+  assert.match(instructions, /use `add_page` \/ `ezwrite_add_page`/);
   assert.match(instructions, /first try the hassle-free path: open https:\/\/ezwrite\.xyz and make the edit there with no extra setup\./);
+  assert.match(instructions, /go to the last page in the notebook and move to the next page; ezwrite creates a new blank page when you advance past the end\./);
   assert.match(instructions, /When a user says "notebook", they mean a doc\./);
   assert.doesNotMatch(instructions, /Send POST requests to the endpoint/);
 });
