@@ -3,6 +3,7 @@ import type { Connect } from 'vite';
 import { loadEnv } from 'vite';
 import { proxyOpenRouterChatCompletion, validateScratchpadProxyBody } from './lib/openrouter-upstream';
 import { handleAgentRequest } from './lib/agent-upstream';
+import { handleAgentMcpRequest } from './lib/agent-mcp';
 
 function readRequestBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -23,7 +24,7 @@ export function createOpenRouterProxyMiddleware(mode: string, root: string): Con
   return async (req, res, next) => {
     const url = req.url ?? '';
 
-    if (url.startsWith('/api/agent')) {
+    if (url.startsWith('/api/mcp') || url.startsWith('/api/agent')) {
       const env = loadEnv(mode, root, '');
       const agentEnv = {
         supabaseUrl: env.SUPABASE_URL || env.VITE_SUPABASE_URL || '',
@@ -38,7 +39,9 @@ export function createOpenRouterProxyMiddleware(mode: string, root: string): Con
         return Array.isArray(value) ? value[0] : value;
       };
       try {
-        const result = await handleAgentRequest({ method, header, body }, agentEnv);
+        const result = url.startsWith('/api/mcp')
+          ? await handleAgentMcpRequest({ method, header, body }, agentEnv, handleAgentRequest)
+          : await handleAgentRequest({ method, header, body }, agentEnv);
         sendJson(res, result.status, result.body);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Agent request failed';

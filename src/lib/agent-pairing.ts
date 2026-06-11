@@ -16,6 +16,7 @@ let agentPairingEnvOverride: AgentPairingEnv | null = null;
 
 const PAIRINGS_TABLE = 'ezwrite_agent_pairings';
 export const AGENT_API_ENDPOINT = 'https://ezwrite.xyz/api/agent';
+export const AGENT_MCP_ENDPOINT = 'https://ezwrite.xyz/api/mcp';
 
 export interface AgentPairing {
   id: string;
@@ -114,12 +115,13 @@ export function buildAgentHandoffInstructions({
   expiresAt,
 }: AgentHandoffOptions): string {
   const lines = ['Use ezwrite shared canvas.', ''];
+  const isPoke = label?.trim().toLowerCase() === 'poke';
 
   if (label) {
     lines.push('Agent label:', label, '');
   }
 
-  lines.push('API endpoint:', AGENT_API_ENDPOINT, '');
+  lines.push(isPoke ? 'MCP server URL:' : 'API endpoint:', isPoke ? AGENT_MCP_ENDPOINT : AGENT_API_ENDPOINT, '');
   lines.push('Passkey:', passkey, '');
 
   if (expiresAt) {
@@ -127,6 +129,23 @@ export function buildAgentHandoffInstructions({
   }
 
   lines.push('Scope:', describeScope(targetProjectId, targetProjectTitle), '');
+  if (isPoke) {
+    lines.push(
+      'Connect it to Poke:',
+      '1. Open https://poke.com/integrations/new',
+      '2. Name the integration: ezwrite',
+      `3. Use MCP server URL: ${AGENT_MCP_ENDPOINT}`,
+      `4. Use API key: ${passkey}`,
+      '5. Create the integration, then ask Poke to list your ezwrite docs.',
+      '',
+      'Important:',
+      '- Poke must use the ezwrite MCP integration; its chat agent cannot make arbitrary terminal network calls.',
+      '- Agents can read, edit, create, and rename docs.',
+      '- Agents cannot delete docs.',
+    );
+    return lines.join('\n');
+  }
+
   lines.push(
     'How to use it:',
     '- Send POST requests to the endpoint',

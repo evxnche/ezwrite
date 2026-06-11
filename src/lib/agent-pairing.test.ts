@@ -63,7 +63,7 @@ test('probeAgentApiSetup reports ready when the backend route responds', async (
 test('buildAgentHandoffInstructions includes endpoint passkey and usage guidance', () => {
   const instructions = buildAgentHandoffInstructions({
     passkey: 'noble-lynx-96',
-    label: 'poke',
+    label: 'claude',
     targetProjectId: 'doc-123',
     targetProjectTitle: 'biology notes',
     expiresAt: '2026-06-09T12:00:00.000Z',
@@ -77,6 +77,20 @@ test('buildAgentHandoffInstructions includes endpoint passkey and usage guidance
   assert.match(instructions, /Expires:\s*2026-06-09T12:00:00.000Z\s*Scope:/);
   assert.match(instructions, /Scope:\s*one doc only \(biology notes\)/);
   assert.match(instructions, /Keep the owner's ezwrite tab open for live writes\./);
+});
+
+test('buildAgentHandoffInstructions gives Poke its supported MCP integration setup', () => {
+  const instructions = buildAgentHandoffInstructions({
+    passkey: 'tidy-acorn-33',
+    label: 'poke',
+    targetProjectId: null,
+    expiresAt: '2026-06-12T18:35:35.740Z',
+  });
+
+  assert.match(instructions, /https:\/\/ezwrite\.xyz\/api\/mcp/);
+  assert.match(instructions, /poke\.com\/integrations\/new/);
+  assert.match(instructions, /API key:\s*tidy-acorn-33/);
+  assert.doesNotMatch(instructions, /Send POST requests to the endpoint/);
 });
 
 test('AgentPairingSection exposes a single copy-agent-instructions button after minting', () => {

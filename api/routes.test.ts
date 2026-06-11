@@ -8,6 +8,12 @@ test('api/agent uses an explicit .js relative import for the shared handler', ()
   assert.match(source, /from '\.\.\/lib\/agent-upstream\.js';/);
 });
 
+test('api/mcp uses deploy-safe .js imports for both shared handlers', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'api/mcp.ts'), 'utf8');
+  assert.match(source, /from '\.\.\/lib\/agent-mcp\.js';/);
+  assert.match(source, /from '\.\.\/lib\/agent-upstream\.js';/);
+});
+
 test('api/link-title stays self-contained without @vercel/node type imports', () => {
   const source = fs.readFileSync(path.join(process.cwd(), 'api/link-title.ts'), 'utf8');
   assert.equal(source.includes("@vercel/node"), false);
