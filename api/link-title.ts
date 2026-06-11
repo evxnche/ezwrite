@@ -1,5 +1,6 @@
 import { lookup } from 'node:dns/promises';
 import { isBlockedIp } from '../lib/ssrf-guard.js';
+import { endpointRateLimited } from '../lib/rate-limit.js';
 
 export const config = {
   maxDuration: 10,
@@ -11,6 +12,7 @@ const MAX_HTML_BYTES = 256 * 1024; // titles live in <head>; 256 KB is plenty
 interface VercelRequest {
   method?: string;
   query?: Record<string, string | string[] | undefined>;
+  headers?: Record<string, string | string[] | undefined>;
 }
 
 interface VercelResponse {
@@ -63,6 +65,11 @@ async function blockUrl(parsed: URL): Promise<string | null> {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
     res.status(405).json({ error: 'Method not allowed' });
+    return;
+  }
+
+  if (await endpointRateLimited('link-title', req.headers, 40)) {
+    res.status(429).json({ error: 'Too many requests. Slow down and retry shortly.' });
     return;
   }
 

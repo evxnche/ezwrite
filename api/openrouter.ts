@@ -5,6 +5,7 @@
  * Shares validation + upstream call with the dev proxy via lib/openrouter-upstream.
  */
 import { validateScratchpadProxyBody, proxyOpenRouterChatCompletion } from '../lib/openrouter-upstream.js';
+import { endpointRateLimited } from '../lib/rate-limit.js';
 
 export const config = {
   maxDuration: 60,
@@ -13,6 +14,7 @@ export const config = {
 interface VercelRequest {
   method?: string;
   body?: unknown;
+  headers?: Record<string, string | string[] | undefined>;
 }
 
 interface VercelResponse {
@@ -31,6 +33,11 @@ function requestBody(req: VercelRequest): string {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
+    return;
+  }
+
+  if (await endpointRateLimited('openrouter', req.headers, 20, 400)) {
+    res.status(429).json({ error: 'Too many requests. Slow down and retry shortly.' });
     return;
   }
 

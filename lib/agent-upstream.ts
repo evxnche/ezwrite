@@ -13,6 +13,7 @@
 // of local edits) — see src/lib/agent-canvas-sync.ts.
 
 import crypto from 'node:crypto';
+import { rateLimitAllow, clientIp } from './rate-limit.ts';
 
 export interface AgentEnv {
   supabaseUrl: string;
@@ -285,6 +286,12 @@ export async function handleAgentRequest(req: AgentRequest, env: AgentEnv): Prom
   const body = bodyObj(req.body);
   const action = typeof body.action === 'string' ? body.action : '';
 
+  // Overall per-IP flood cap on the public POST surface (generous for real agents).
+  const ip = clientIp(req.header);
+  if (!(await rateLimitAllow(env, `agent:${ip}`, 60, 90))) {
+    return { status: 429, body: { error: 'Too many requests. Slow down and retry shortly.' } };
+  }
+
   // --- mint_pairing: user-authenticated ---
   if (action === 'mint_pairing') {
     const auth = req.header('authorization') ?? '';
@@ -344,7 +351,11 @@ export async function handleAgentRequest(req: AgentRequest, env: AgentEnv): Prom
   }
   const pairing = await findPairing(env, passkeyRaw);
   if (!pairing || !pairingActive(pairing)) {
-    return { status: 401, body: { error: 'Invalid, revoked, or expired passkey' } };
+    // Throttle wrong-passkey guesses per IP so the (now ~1B) keyspace can't be enumerated.
+    const within = await rateLimitAllow(env, `agent-fail:${ip}`, 600, 10);
+    return within
+      ? { status: 401, body: { error: 'Invalid, revoked, or expired passkey' } }
+      : { status: 429, body: { error: 'Too many failed attempts. Try again later.' } };
   }
   void adminFetch(env, `ezwrite_agent_pairings?id=eq.${pairing.id}`, {
     method: 'PATCH', prefer: 'return=minimal', body: JSON.stringify({ last_used_at: new Date().toISOString() }),

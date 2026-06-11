@@ -6,6 +6,7 @@
  * models (see validateOpencodeProxyBody).
  */
 import { validateOpencodeProxyBody, proxyOpencodeChatCompletion } from '../lib/opencode-upstream.js';
+import { endpointRateLimited } from '../lib/rate-limit.js';
 
 export const config = {
   maxDuration: 60,
@@ -40,6 +41,11 @@ function bearerKey(req: VercelRequest): string | undefined {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
+    return;
+  }
+
+  if (await endpointRateLimited('opencode', req.headers, 20, 400)) {
+    res.status(429).json({ error: 'Too many requests. Slow down and retry shortly.' });
     return;
   }
 
