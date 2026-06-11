@@ -58,8 +58,11 @@ function pick<T>(arr: T[]): T {
 }
 
 export function generatePasskey(): string {
-  const digits = String(crypto.randomInt(10, 100)); // 10-99, always two digits
-  return `${pick(ADJECTIVES)}-${pick(NOUNS)}-${digits}`;
+  // 48 adj × 48 noun × 48 noun × 9000 digits ≈ 1.0 billion combinations — ~4800× the
+  // old adj-noun-2digit keyspace (207k), so it isn't brute-forceable even absent a
+  // rate limit. Still short enough to hand off by copy-paste.
+  const digits = String(crypto.randomInt(1000, 10000)); // 1000-9999, always four digits
+  return `${pick(ADJECTIVES)}-${pick(NOUNS)}-${pick(NOUNS)}-${digits}`;
 }
 
 // Normalize whatever the agent typed ("Amber Otter 47", "amber_otter_47") to the

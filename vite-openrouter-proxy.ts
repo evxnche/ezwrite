@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Connect } from 'vite';
 import { loadEnv } from 'vite';
-import { proxyOpenRouterChatCompletion } from './lib/openrouter-upstream';
+import { proxyOpenRouterChatCompletion, validateScratchpadProxyBody } from './lib/openrouter-upstream';
 import { handleAgentRequest } from './lib/agent-upstream';
 
 function readRequestBody(req: IncomingMessage): Promise<string> {
@@ -90,15 +90,22 @@ export function createOpenRouterProxyMiddleware(mode: string, root: string): Con
     }
 
     try {
-      const body = await readRequestBody(req);
-      const upstream = await proxyOpenRouterChatCompletion(body, apiKey, 'http://localhost:8080');
+      const validation = validateScratchpadProxyBody(await readRequestBody(req));
+      if (!validation.ok) {
+        sendJson(res, validation.status ?? 400, { error: validation.error ?? 'Bad request' });
+        return;
+      }
+      const upstream = await proxyOpenRouterChatCompletion(validation.body!, apiKey, 'http://localhost:8080');
       const text = await upstream.text();
+      if (!upstream.ok) {
+        sendJson(res, upstream.status, { error: `Scratchpad AI request failed (${upstream.status}).` });
+        return;
+      }
       res.statusCode = upstream.status;
       res.setHeader('Content-Type', upstream.headers.get('content-type') ?? 'application/json');
       res.end(text);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'OpenRouter proxy failed';
-      sendJson(res, 502, { error: message });
+    } catch {
+      sendJson(res, 502, { error: 'Scratchpad AI proxy failed.' });
     }
   };
 }

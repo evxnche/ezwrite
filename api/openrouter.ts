@@ -1,8 +1,10 @@
 /**
- * Vercel serverless handler — keep self-contained (no imports outside api/)
- * so the bundle always includes upstream proxy logic.
+ * Vercel serverless handler for the scratchpad's free-model fallback. Spends
+ * ezwrite's own OPENROUTER_API_KEY, so it is restricted to free models and clamped
+ * (see validateScratchpadProxyBody) — an anonymous caller can't run up a bill.
+ * Shares validation + upstream call with the dev proxy via lib/openrouter-upstream.
  */
-const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions';
+import { validateScratchpadProxyBody, proxyOpenRouterChatCompletion } from '../lib/openrouter-upstream.js';
 
 export const config = {
   maxDuration: 60,
@@ -18,16 +20,6 @@ interface VercelResponse {
   setHeader: (name: string, value: string) => void;
   end: (body: string) => void;
   json: (body: Record<string, unknown>) => void;
-}
-
-function getReferer(): string {
-  const production = process.env.VERCEL_PROJECT_PRODUCTION_URL;
-  if (production) {
-    return production.startsWith('http') ? production.replace(/\/$/, '') : `https://${production}`;
-  }
-  const preview = process.env.VERCEL_URL;
-  if (preview) return `https://${preview}`;
-  return 'https://ezwrite.evanche.xyz';
 }
 
 function requestBody(req: VercelRequest): string {
@@ -50,24 +42,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  try {
-    const upstream = await fetch(OPENROUTER_CHAT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-        'HTTP-Referer': getReferer(),
-        'X-Title': 'ezwrite',
-      },
-      body: requestBody(req),
-    });
+  const validation = validateScratchpadProxyBody(requestBody(req));
+  if (!validation.ok) {
+    res.status(validation.status ?? 400).json({ error: validation.error ?? 'Bad request' });
+    return;
+  }
 
+  try {
+    const upstream = await proxyOpenRouterChatCompletion(validation.body!, apiKey);
     const text = await upstream.text();
+    if (!upstream.ok) {
+      // Don't reflect the upstream error body — it can leak our OpenRouter account id.
+      res.status(upstream.status).json({ error: `Scratchpad AI request failed (${upstream.status}).` });
+      return;
+    }
     res.status(upstream.status);
     res.setHeader('Content-Type', upstream.headers.get('content-type') ?? 'application/json');
     res.end(text);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'OpenRouter proxy failed';
-    res.status(502).json({ error: message });
+  } catch {
+    res.status(502).json({ error: 'Scratchpad AI proxy failed.' });
   }
 }
