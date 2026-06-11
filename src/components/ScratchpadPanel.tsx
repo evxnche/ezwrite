@@ -77,6 +77,9 @@ interface CursorInfo {
 
 const MIN_WIDTH = 260;
 const MAX_WIDTH = 720;
+// Safety net so a slow or hung model never leaves the … loading line forever.
+// Reasoning models (e.g. OpenCode) can legitimately take 30s+, so keep it generous.
+const SCRATCHPAD_LLM_TIMEOUT_MS = 90_000;
 
 const ScratchpadPanel: React.FC<Props> = ({
   open,
@@ -103,7 +106,6 @@ const ScratchpadPanel: React.FC<Props> = ({
   const trackedCursor = useRef<{ lineIndex: number; offset: number } | null>(null);
   const pendingCursor = useRef<{ lineIndex: number; offset: number } | null>(null);
   const cursorRestoreFrameRef = useRef<number | null>(null);
-  const llmAbortRef = useRef<AbortController | null>(null);
   const editorHistory = useRef(new EditorHistory());
   const suppressInputHistoryRef = useRef(false);
   const [historyVersion, setHistoryVersion] = useState(0);
@@ -380,9 +382,11 @@ const ScratchpadPanel: React.FC<Props> = ({
   }, [resolveLineOffsetFromDOMPoint, notesTransferMode, onMoveToEditor, structuralUpdate]);
 
   const runScratchpadLlmQuery = useCallback(async (lineIndex: number, prompt: string) => {
-    llmAbortRef.current?.abort();
+    // Each query runs independently — firing several // prompts in a row answers
+    // them all instead of cancelling the earlier ones. A timeout guarantees the
+    // … loading line is always resolved (to an answer or an error), never orphaned.
     const controller = new AbortController();
-    llmAbortRef.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(), SCRATCHPAD_LLM_TIMEOUT_MS);
 
     pushUndo(true);
     const lines = contentRef.current.split('\n');
@@ -390,33 +394,29 @@ const ScratchpadPanel: React.FC<Props> = ({
     lines.splice(loadingIndex, 0, SCRATCHPAD_LLM_LOADING_LINE);
     structuralUpdate(lines.join('\n'), loadingIndex, SCRATCHPAD_LLM_LOADING_LINE.length);
 
+    // Replace this query's own … line (the first one after its prompt line) with
+    // the result. Re-reading content keeps it correct when other queries resolve
+    // concurrently and shift line numbers around.
+    const resolveLoadingLine = (replacement: string[]) => {
+      const fresh = contentRef.current.split('\n');
+      const loadingLineIndex = fresh.findIndex(
+        (line, index) => index > lineIndex && line === SCRATCHPAD_LLM_LOADING_LINE,
+      );
+      if (loadingLineIndex < 0) return;
+      fresh.splice(loadingLineIndex, 1, ...replacement);
+      structuralUpdate(fresh.join('\n'), loadingLineIndex + Math.max(replacement.length - 1, 0), 0);
+    };
+
     try {
       const { text: answer } = await completeScratchpadPrompt(prompt, controller.signal, scratchpadLLMConfig);
-      if (controller.signal.aborted) return;
-
-      const fresh = contentRef.current.split('\n');
-      const loadingLineIndex = fresh.findIndex(
-        (line, index) => index > lineIndex && line === SCRATCHPAD_LLM_LOADING_LINE,
-      );
-      const insertAt = loadingLineIndex >= 0 ? loadingLineIndex : lineIndex + 1;
-      const responseLines = splitScratchpadLlmResponse(answer);
-      fresh.splice(insertAt, 1, ...responseLines, '');
-      structuralUpdate(
-        fresh.join('\n'),
-        insertAt + responseLines.length,
-        0,
-      );
+      resolveLoadingLine([...splitScratchpadLlmResponse(answer), '']);
     } catch (error) {
-      if (controller.signal.aborted) return;
-
-      const fresh = contentRef.current.split('\n');
-      const loadingLineIndex = fresh.findIndex(
-        (line, index) => index > lineIndex && line === SCRATCHPAD_LLM_LOADING_LINE,
-      );
-      const insertAt = loadingLineIndex >= 0 ? loadingLineIndex : lineIndex + 1;
-      const message = error instanceof Error ? error.message : 'LLM request failed';
-      fresh.splice(insertAt, 1, `// error: ${message}`, '');
-      structuralUpdate(fresh.join('\n'), insertAt + 1, 0);
+      const message = controller.signal.aborted
+        ? 'timed out — the model took too long. try again, or pick a faster model in settings.'
+        : error instanceof Error ? error.message : 'LLM request failed';
+      resolveLoadingLine([`// error: ${message}`, '']);
+    } finally {
+      window.clearTimeout(timeout);
     }
   }, [pushUndo, structuralUpdate, scratchpadLLMConfig]);
 
