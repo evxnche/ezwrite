@@ -51,7 +51,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const upstream = await proxyOpencodeChatCompletion(validation.body!, apiKey);
+    const upstream = await proxyOpencodeChatCompletion(validation.body!, apiKey, validation.gateway);
     // Pass upstream errors through — they describe the caller's own key/model,
     // nothing of ezwrite's leaks here.
     const text = await upstream.text();

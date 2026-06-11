@@ -271,8 +271,8 @@ export const SettingsDialog: React.FC<Props> = ({
             ? 'openrouter direct'
             : scratchpadProvider === 'opencode'
               ? scratchpadLLMConfig?.apiKey
-                ? 'opencode zen'
-                : 'opencode zen (free models)'
+                ? 'opencode'
+                : 'opencode (free models)'
               : 'custom provider (direct)';
 
   const handleScratchpadProviderChange = (provider: ScratchpadLLMProvider) => {
@@ -632,7 +632,7 @@ export const SettingsDialog: React.FC<Props> = ({
                     className="w-full rounded-lg border border-border bg-background px-2 py-1 text-xs font-mono outline-none focus:border-accent-foreground/50"
                   >
                     <option value="openrouter">openrouter</option>
-                    <option value="opencode">opencode zen</option>
+                    <option value="opencode">opencode (zen / go)</option>
                     <option value="groq">groq</option>
                     <option value="anthropic">anthropic (claude)</option>
                     <option value="openai-compatible">custom openai-compatible (enter base url + model)</option>
@@ -718,7 +718,7 @@ export const SettingsDialog: React.FC<Props> = ({
                         : scratchpadProvider === 'anthropic'
                           ? `anthropic fills ${SCRATCHPAD_ANTHROPIC_BASE_URL} and defaults to ${SCRATCHPAD_ANTHROPIC_MODEL}.`
                           : scratchpadProvider === 'opencode'
-                            ? `just paste your opencode zen key — defaults to ${SCRATCHPAD_OPENCODE_MODEL}. no key uses free models (${SCRATCHPAD_OPENCODE_FREE_MODEL}). zen blocks browser requests, so calls relay through ezwrite's server; your key is forwarded, never stored.`
+                            ? `just paste your opencode key — zen or go, it detects which. defaults to ${SCRATCHPAD_OPENCODE_MODEL}; no key uses free models (${SCRATCHPAD_OPENCODE_FREE_MODEL}). opencode blocks browser requests, so calls relay through ezwrite's server; your key is forwarded, never stored.`
                             : 'custom openai-compatible providers need both a base url and model.'}
                     </div>
                   )}

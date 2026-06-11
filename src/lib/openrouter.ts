@@ -15,6 +15,15 @@ const OPENROUTER_CHAT_PATH = '/api/openrouter';
 const OPENCODE_CHAT_PATH = '/api/opencode';
 const OPENROUTER_DIRECT_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
+type OpencodeGateway = 'zen' | 'go';
+
+/**
+ * OpenCode runs two gateways (Zen and Go) with separate keys, and a pasted key
+ * doesn't say which it belongs to. Remember which one accepted it this session
+ * so only the first request pays for the discovery round trip.
+ */
+let opencodeGatewayHint: OpencodeGateway | undefined;
+
 export interface ScratchpadLlmResult {
   text: string;
   model: string;
@@ -109,24 +118,12 @@ async function requestCompletion(
     return { ok: true, content: text };
   }
 
-  // OpenAI-compatible / OpenRouter / OpenCode Zen path
+  // OpenAI-compatible / OpenRouter / OpenCode path
   const usingOpenRouter = config?.provider === 'openrouter';
-  // OpenCode Zen blocks browser requests (no CORS), so it always goes through
+  // OpenCode blocks browser requests (no CORS), so it always goes through
   // ezwrite's same-origin relay — with or without a key.
   const isOpencode = config?.provider === 'opencode';
   const isDirect = !!apiKey && !isOpencode;
-
-  let targetURL: string;
-  if (isOpencode) {
-    targetURL = OPENCODE_CHAT_PATH;
-  } else if (!isDirect) {
-    targetURL = OPENROUTER_CHAT_PATH;
-  } else if (usingOpenRouter) {
-    targetURL = OPENROUTER_DIRECT_URL;
-  } else {
-    const base = config!.baseURL!.trim().replace(/\/+$/, '');
-    targetURL = `${base}/chat/completions`;
-  }
 
   const body: Record<string, unknown> = {
     model: entry.id,
@@ -157,6 +154,76 @@ async function requestCompletion(
     }
   }
 
+  if (isOpencode) {
+    const sendViaRelay = async (gateway: OpencodeGateway): Promise<
+      { ok: true; content: string } | { ok: false; status: number; message: string; badKey?: boolean }
+    > => {
+      let relayRes: Response;
+      try {
+        relayRes = await fetch(OPENCODE_CHAT_PATH, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ ...body, gateway }),
+          signal,
+        });
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        return { ok: false, status: 503, message: error instanceof Error ? error.message : 'Network error' };
+      }
+      const relayPayload = await relayRes.json().catch(() => ({})) as OpenRouterChatResponse;
+      if (!relayRes.ok) {
+        const message = relayPayload.error?.message ?? `LLM request failed (${relayRes.status})`;
+        if (/not supported/i.test(relayPayload.error?.message ?? '')) {
+          // Unknown model id on this gateway — 404 lets the chain fall through.
+          return { ok: false, status: 404, message };
+        }
+        if (relayRes.status === 404 && !relayPayload.error) {
+          return { ok: false, status: 404, message: 'OpenCode relay missing on this host (deploy api/opencode).' };
+        }
+        const badKey = !!apiKey && (relayRes.status === 401 || relayRes.status === 403);
+        return { ok: false, status: relayRes.status, message, badKey };
+      }
+      const relayContent = extractAssistantContent(relayPayload.choices?.[0]?.message);
+      if (!relayContent) return { ok: false, status: 502, message: 'LLM returned an empty response' };
+      return { ok: true, content: relayContent };
+    };
+
+    // Keyless requests only work on Zen (its -free models need no auth). With
+    // a key, start from the gateway the base URL or session hint points at, and
+    // on an auth failure try the other one — the key tells us which it is.
+    const preferred: OpencodeGateway = !apiKey
+      ? 'zen'
+      : config?.baseURL?.includes('/zen/go')
+        ? 'go'
+        : opencodeGatewayHint ?? 'zen';
+    const result = await sendViaRelay(preferred);
+    if (result.ok) {
+      if (apiKey) opencodeGatewayHint = preferred;
+      return result;
+    }
+    if (!apiKey || !result.badKey) return result;
+    const fallback: OpencodeGateway = preferred === 'go' ? 'zen' : 'go';
+    const retry = await sendViaRelay(fallback);
+    if (retry.ok) {
+      opencodeGatewayHint = fallback;
+      return retry;
+    }
+    if (retry.badKey) {
+      return { ok: false, status: 401, message: 'Invalid OpenCode API key — rejected by both the Zen and Go gateways (401/403). Check or clear it in settings.' };
+    }
+    return retry;
+  }
+
+  let targetURL: string;
+  if (!isDirect) {
+    targetURL = OPENROUTER_CHAT_PATH;
+  } else if (usingOpenRouter) {
+    targetURL = OPENROUTER_DIRECT_URL;
+  } else {
+    const base = config!.baseURL!.trim().replace(/\/+$/, '');
+    targetURL = `${base}/chat/completions`;
+  }
+
   let res: Response;
   try {
     res = await fetch(targetURL, {
@@ -178,18 +245,6 @@ async function requestCompletion(
 
   if (!res.ok) {
     let message = payload.error?.message ?? `LLM request failed (${res.status})`;
-    if (isOpencode) {
-      if (/not supported/i.test(payload.error?.message ?? '')) {
-        // Unknown model id on Zen — report 404 so the chain falls through to a known model.
-        return { ok: false, status: 404, message };
-      }
-      if (apiKey && (res.status === 401 || res.status === 403)) {
-        message = 'Invalid OpenCode Zen API key (401/403). Check or clear it in settings.';
-      } else if (res.status === 404 && !payload.error) {
-        message = 'OpenCode Zen relay missing on this host (deploy api/opencode).';
-      }
-      return { ok: false, status: res.status, message };
-    }
     if (isDirect && (res.status === 401 || res.status === 403)) {
       message = usingOpenRouter
         ? 'Invalid OpenRouter API key (401/403). Check or clear it in settings.'

@@ -20,6 +20,31 @@ test('any model is allowed when the caller brings their own key', () => {
   assert.equal(v.ok, true);
 });
 
+test('gateway defaults to zen and is stripped from the forwarded body', () => {
+  const v = validateOpencodeProxyBody(JSON.stringify({ model: 'glm-5', gateway: 'zen' }), true);
+  assert.equal(v.ok, true);
+  assert.equal(v.gateway, 'zen');
+  assert.equal('gateway' in (JSON.parse(v.body!) as object), false);
+});
+
+test('the go gateway is selectable with a key', () => {
+  const v = validateOpencodeProxyBody(JSON.stringify({ model: 'mimo-v2.5', gateway: 'go' }), true);
+  assert.equal(v.ok, true);
+  assert.equal(v.gateway, 'go');
+});
+
+test('keyless calls cannot use the go gateway — it has no free models', () => {
+  const v = validateOpencodeProxyBody(JSON.stringify({ model: 'deepseek-v4-flash-free', gateway: 'go' }), false);
+  assert.equal(v.ok, false);
+  assert.equal(v.status, 403);
+});
+
+test('an unknown gateway value is rejected', () => {
+  const v = validateOpencodeProxyBody(JSON.stringify({ model: 'glm-5', gateway: 'other' }), true);
+  assert.equal(v.ok, false);
+  assert.equal(v.status, 400);
+});
+
 test('missing model is rejected', () => {
   const v = validateOpencodeProxyBody(JSON.stringify({ messages: [] }), true);
   assert.equal(v.ok, false);

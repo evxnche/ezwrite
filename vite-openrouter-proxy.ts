@@ -89,7 +89,7 @@ export function createOpenRouterProxyMiddleware(mode: string, root: string): Con
           sendJson(res, validation.status ?? 400, { error: validation.error ?? 'Bad request' });
           return;
         }
-        const upstream = await proxyOpencodeChatCompletion(validation.body!, apiKey);
+        const upstream = await proxyOpencodeChatCompletion(validation.body!, apiKey, validation.gateway);
         const text = await upstream.text();
         res.statusCode = upstream.status;
         res.setHeader('Content-Type', upstream.headers.get('content-type') ?? 'application/json');

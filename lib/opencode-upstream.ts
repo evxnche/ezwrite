@@ -1,4 +1,12 @@
-const OPENCODE_ZEN_CHAT_URL = 'https://opencode.ai/zen/v1/chat/completions';
+// OpenCode runs two gateways with separate API keys and model lists:
+// Zen (documented, serves -free models keyless) and Go (what the OpenCode
+// consumer app hands out). The client says which one the caller's key is for.
+const OPENCODE_CHAT_URLS = {
+  zen: 'https://opencode.ai/zen/v1/chat/completions',
+  go: 'https://opencode.ai/zen/go/v1/chat/completions',
+} as const;
+
+export type OpencodeGateway = keyof typeof OPENCODE_CHAT_URLS;
 
 // --- abuse guards ----------------------------------------------------------
 // OpenCode Zen blocks browser (CORS) requests, so BYOK keys are relayed through
@@ -18,10 +26,12 @@ export interface OpencodeProxyValidation {
   status?: number;
   error?: string;
   body?: string; // sanitized/clamped body to forward upstream
+  gateway?: OpencodeGateway;
 }
 
-// Validate + sanitize an inbound opencode proxy body. Rejects oversized bodies
-// and keyless calls to non-free models, and clamps max_tokens.
+// Validate + sanitize an inbound opencode proxy body. Rejects oversized bodies,
+// keyless calls to non-free models or the Go gateway, and clamps max_tokens.
+// The gateway field is consumed here, never forwarded upstream.
 export function validateOpencodeProxyBody(raw: string, hasApiKey: boolean): OpencodeProxyValidation {
   if (raw.length > MAX_PROXY_BODY_BYTES) return { ok: false, status: 413, error: 'Request too large.' };
   let parsed: Record<string, unknown>;
@@ -30,23 +40,29 @@ export function validateOpencodeProxyBody(raw: string, hasApiKey: boolean): Open
   } catch {
     return { ok: false, status: 400, error: 'Invalid JSON body.' };
   }
+  const rawGateway = parsed.gateway;
+  delete parsed.gateway;
+  if (rawGateway !== undefined && rawGateway !== 'zen' && rawGateway !== 'go') {
+    return { ok: false, status: 400, error: 'Unknown gateway.' };
+  }
+  const gateway: OpencodeGateway = rawGateway === 'go' ? 'go' : 'zen';
   if (typeof parsed.model !== 'string' || !parsed.model.trim()) {
     return { ok: false, status: 400, error: 'Missing model.' };
   }
-  if (!hasApiKey && !isFreeZenModel(parsed.model)) {
-    return { ok: false, status: 403, error: 'This model needs an OpenCode Zen API key. Add one in settings, or leave the model blank to use free models.' };
+  if (!hasApiKey && (gateway === 'go' || !isFreeZenModel(parsed.model))) {
+    return { ok: false, status: 403, error: 'This model needs an OpenCode API key. Add one in settings, or leave the model blank to use free models.' };
   }
   const mt = parsed.max_tokens;
   if (typeof mt !== 'number' || !Number.isFinite(mt) || mt <= 0 || mt > MAX_PROXY_OUTPUT_TOKENS) {
     parsed.max_tokens = MAX_PROXY_OUTPUT_TOKENS;
   }
-  return { ok: true, body: JSON.stringify(parsed) };
+  return { ok: true, body: JSON.stringify(parsed), gateway };
 }
 
-export function proxyOpencodeChatCompletion(body: string, apiKey?: string): Promise<Response> {
+export function proxyOpencodeChatCompletion(body: string, apiKey?: string, gateway: OpencodeGateway = 'zen'): Promise<Response> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-  return fetch(OPENCODE_ZEN_CHAT_URL, {
+  return fetch(OPENCODE_CHAT_URLS[gateway], {
     method: 'POST',
     headers,
     body,
