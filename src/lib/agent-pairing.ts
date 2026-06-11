@@ -127,6 +127,13 @@ export function buildAgentHandoffInstructions({
     '- If asked to edit a specific page, read the notebook first, then update the matching page index.',
     '',
   ];
+  const browserFirstHelp = [
+    'Try this first:',
+    '- If you can browse and edit websites directly, first try the hassle-free path: open https://ezwrite.xyz and make the edit there with no extra setup.',
+    '- Find the right notebook, open the right page, then make the requested change.',
+    '- If you cannot reliably browse the site, cannot keep the edit stable, or cannot figure out the UI, stop and ask the user to set up the integration route below instead of guessing.',
+    '',
+  ];
 
   if (label) {
     lines.push('Agent label:', label, '');
@@ -143,6 +150,7 @@ export function buildAgentHandoffInstructions({
   if (isPoke) {
     lines.push(
       ...notebookHelp,
+      ...browserFirstHelp,
       'Connect it to Poke:',
       '1. Open https://poke.com/integrations/new',
       '2. Name the integration: ezwrite',
@@ -161,6 +169,7 @@ export function buildAgentHandoffInstructions({
 
   lines.push(
     ...notebookHelp,
+    ...browserFirstHelp,
     'How to use it:',
     '- Send POST requests to the endpoint',
     `- Include header: X-EZ-Passkey: ${passkey}`,
