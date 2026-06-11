@@ -3,11 +3,14 @@ import assert from 'node:assert/strict';
 import {
   buildScratchpadSystemPrompt,
   formatScratchpadLlmReply,
+  getScratchpadLLMConfig,
   getScratchpadModelChain,
   isScratchpadLlmLine,
   parseScratchpadLlmPrompt,
+  resolveScratchpadLLMConfig,
   scratchpadNeedsWebSearch,
   SCRATCHPAD_LLM_MODEL,
+  setScratchpadLLMConfig,
   splitScratchpadLlmResponse,
 } from './scratchpad-llm.ts';
 
@@ -47,4 +50,43 @@ test('system prompt demands zero preamble when web search enabled', () => {
 
 test('formatScratchpadLlmReply strips boilerplate only', () => {
   assert.equal(formatScratchpadLlmReply('Hello.'), 'Hello.');
+});
+
+test('provider-only scratchpad selections persist for non-default providers', () => {
+  const originalLocalStorage = globalThis.localStorage;
+  const store = new Map<string, string>();
+  const mockLocalStorage = {
+    getItem(key: string) {
+      return store.has(key) ? store.get(key)! : null;
+    },
+    setItem(key: string, value: string) {
+      store.set(key, value);
+    },
+    removeItem(key: string) {
+      store.delete(key);
+    },
+  };
+
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: mockLocalStorage,
+  });
+
+  try {
+    setScratchpadLLMConfig({ provider: 'groq' });
+    assert.deepEqual(getScratchpadLLMConfig(), { provider: 'groq' });
+    assert.equal(resolveScratchpadLLMConfig(getScratchpadLLMConfig()).provider, 'groq');
+
+    setScratchpadLLMConfig({});
+    assert.deepEqual(getScratchpadLLMConfig(), {});
+  } finally {
+    if (originalLocalStorage === undefined) {
+      delete (globalThis as { localStorage?: unknown }).localStorage;
+    } else {
+      Object.defineProperty(globalThis, 'localStorage', {
+        configurable: true,
+        value: originalLocalStorage,
+      });
+    }
+  }
 });

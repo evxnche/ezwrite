@@ -11,7 +11,7 @@ test('BugReportDialog removes the visible what happened label and uses bright pl
   assert.match(source, /aria-label="what happened\?"/);
   assert.match(source, /placeholder:text-popover-foreground/);
   assert.match(source, /placeholder:opacity-100/);
-  assert.match(source, /notes content is not sent/);
+  assert.equal(source.includes('notes content is not sent'), false);
 });
 
 test('bug report diagnostics are installed at startup and editor state is pushed into bug context', () => {

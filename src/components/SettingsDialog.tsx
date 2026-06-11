@@ -604,7 +604,7 @@ export const SettingsDialog: React.FC<Props> = ({
 
               {byokUnlocked && (
               <div className="space-y-2">
-                <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">scratchpad ai — byok</h3>
+                <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">byok</h3>
                 <div className={`${PANEL_SURFACE} bg-muted/10 p-3 space-y-2`}>
                   <div className="text-[10px] text-muted-foreground lowercase">
                     add your own api key
@@ -695,15 +695,15 @@ export const SettingsDialog: React.FC<Props> = ({
                     </div>
                   )}
 
-                  <div className="text-[10px] text-muted-foreground">
-                    {scratchpadProvider === 'openrouter'
-                      ? 'openrouter key is optional. leave model blank to use ezwrite fallback.'
-                      : scratchpadProvider === 'groq'
+                  {scratchpadProvider !== 'openrouter' && (
+                    <div className="text-[10px] text-muted-foreground">
+                      {scratchpadProvider === 'groq'
                         ? `groq fills ${SCRATCHPAD_GROQ_BASE_URL} and defaults to ${SCRATCHPAD_GROQ_MODEL}.`
                         : scratchpadProvider === 'anthropic'
                           ? `anthropic fills ${SCRATCHPAD_ANTHROPIC_BASE_URL} and defaults to ${SCRATCHPAD_ANTHROPIC_MODEL}.`
                           : 'custom openai-compatible providers need both a base url and model.'}
-                  </div>
+                    </div>
+                  )}
                   <div className="text-[10px] text-muted-foreground">
                     key stays in browser only.
                   </div>

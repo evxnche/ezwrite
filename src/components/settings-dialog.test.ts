@@ -8,7 +8,10 @@ test('scratchpad BYOK settings offer explicit Groq/custom provider guidance', ()
 
   assert.match(source, /<option value="groq">groq<\/option>/);
   assert.match(source, /<option value="openrouter">openrouter<\/option>/);
+  assert.match(source, />byok<\/h3>/);
   assert.match(source, /custom openai-compatible \(enter base url \+ model\)/);
   assert.equal(source.includes('openai-compatible (openai / groq / together / openrouter...)'), false);
   assert.equal(source.includes('base url (optional — defaults per provider)'), false);
+  assert.equal(source.includes('scratchpad ai — byok'), false);
+  assert.equal(source.includes('openrouter key is optional. leave model blank to use ezwrite fallback.'), false);
 });

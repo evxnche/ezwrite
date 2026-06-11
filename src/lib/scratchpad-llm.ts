@@ -277,7 +277,14 @@ export function getScratchpadLLMConfig(): ScratchpadLLMConfig {
 export function setScratchpadLLMConfig(config: ScratchpadLLMConfig): void {
   try {
     const sanitized = sanitizeScratchpadLLMConfig(config);
-    const hasAny = !!(sanitized.apiKey || sanitized.baseURL || sanitized.model);
+    const hasAny = !!(
+      sanitized.apiKey
+      || sanitized.baseURL
+      || sanitized.model
+      || sanitized.provider === 'groq'
+      || sanitized.provider === 'anthropic'
+      || sanitized.provider === 'openai-compatible'
+    );
     if (hasAny) {
       localStorage.setItem(LLM_CONFIG_STORAGE_KEY, JSON.stringify(sanitized));
     } else {

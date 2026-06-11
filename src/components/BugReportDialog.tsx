@@ -110,11 +110,11 @@ const BugReportDialog: React.FC<Props> = ({
               className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-accent-foreground/50 disabled:opacity-50 placeholder:text-popover-foreground placeholder:opacity-100"
             />
           </div>
-          <p className="text-[10px] text-muted-foreground leading-relaxed">
-            {dbReady
-              ? 'notes content is not sent'
-              : 'supabase is not configured — submit will open your email app instead.'}
-          </p>
+          {!dbReady && (
+            <p className="text-[10px] text-muted-foreground leading-relaxed">
+              supabase is not configured — submit will open your email app instead.
+            </p>
+          )}
           {status === 'success' && successNote && (
             <p className="text-xs text-accent-foreground">{successNote}</p>
           )}
