@@ -5,7 +5,15 @@ import DialogSupportFooter from './DialogSupportFooter';
 import { BUG_REPORT_EMAIL } from '@/lib/bug-report';
 import { copyLandingPageUrl, getLandingPageDisplayLabel, getLandingPageUrl } from '@/lib/app-links';
 import type { ColorTheme } from './preferences';
-import type { ScratchpadLLMConfig } from '@/lib/scratchpad-llm';
+import {
+  resolveScratchpadLLMConfig,
+  SCRATCHPAD_ANTHROPIC_BASE_URL,
+  SCRATCHPAD_ANTHROPIC_MODEL,
+  SCRATCHPAD_GROQ_BASE_URL,
+  SCRATCHPAD_GROQ_MODEL,
+  type ScratchpadLLMConfig,
+  type ScratchpadLLMProvider,
+} from '@/lib/scratchpad-llm';
 
 const THEMES = [
   { id: '' as ColorTheme, label: 'orig', swatch: 'bg-[#171717] dark:bg-[#fafaf9]' },
@@ -219,6 +227,46 @@ export const SettingsDialog: React.FC<Props> = ({
   const [showOrKey, setShowOrKey] = useState(false);
   const landingPageUrl = getLandingPageUrl();
   const landingPageLabel = getLandingPageDisplayLabel();
+  const resolvedScratchpadLLM = resolveScratchpadLLMConfig(scratchpadLLMConfig);
+  const scratchpadProvider = scratchpadLLMConfig?.provider ?? resolvedScratchpadLLM.provider;
+  const hasScratchpadConfig = !!(scratchpadLLMConfig?.apiKey || scratchpadLLMConfig?.baseURL || scratchpadLLMConfig?.model);
+  const showCustomBaseURL = scratchpadProvider === 'openai-compatible';
+  const showAnthropicBaseURL = scratchpadProvider === 'anthropic';
+  const scratchpadKeyPlaceholder =
+    scratchpadProvider === 'groq'
+      ? 'gsk_...'
+      : scratchpadProvider === 'anthropic'
+        ? 'sk-ant-...'
+        : scratchpadProvider === 'openrouter'
+          ? 'sk-or-v1-... or or-...'
+          : 'api key';
+  const scratchpadModelPlaceholder =
+    scratchpadProvider === 'groq'
+      ? `model (optional — defaults to ${SCRATCHPAD_GROQ_MODEL})`
+      : scratchpadProvider === 'anthropic'
+        ? `model (optional — defaults to ${SCRATCHPAD_ANTHROPIC_MODEL})`
+        : scratchpadProvider === 'openrouter'
+          ? 'model (optional — leave blank for ezwrite fallback chain)'
+          : 'model (required — e.g. gpt-4o-mini)';
+  const scratchpadStatus = !hasScratchpadConfig
+    ? 'using shared key'
+    : resolvedScratchpadLLM.validationError
+      ? 'needs setup'
+      : scratchpadProvider === 'anthropic'
+        ? 'anthropic direct'
+        : scratchpadProvider === 'groq'
+          ? 'groq direct'
+          : scratchpadProvider === 'openrouter'
+            ? 'openrouter direct'
+            : 'custom provider (direct)';
+
+  const handleScratchpadProviderChange = (provider: ScratchpadLLMProvider) => {
+    const next: ScratchpadLLMConfig = {
+      provider,
+      ...(scratchpadLLMConfig?.apiKey ? { apiKey: scratchpadLLMConfig.apiKey } : {}),
+    };
+    onScratchpadLLMConfigChange?.(next);
+  };
 
   useEffect(() => {
     if (open) setActiveTab('storage');
@@ -564,15 +612,14 @@ export const SettingsDialog: React.FC<Props> = ({
 
                   {/* Provider */}
                   <select
-                    value={scratchpadLLMConfig?.provider || 'openai-compatible'}
-                    onChange={(e) => onScratchpadLLMConfigChange?.({
-                      ...scratchpadLLMConfig,
-                      provider: e.target.value as 'openai-compatible' | 'anthropic'
-                    })}
+                    value={scratchpadProvider}
+                    onChange={(e) => handleScratchpadProviderChange(e.target.value as ScratchpadLLMProvider)}
                     className="w-full rounded-lg border border-border bg-background px-2 py-1 text-xs font-mono outline-none focus:border-accent-foreground/50"
                   >
-                    <option value="openai-compatible">openai-compatible (openai / groq / together / openrouter...)</option>
+                    <option value="openrouter">openrouter</option>
+                    <option value="groq">groq</option>
                     <option value="anthropic">anthropic (claude)</option>
+                    <option value="openai-compatible">custom openai-compatible (enter base url + model)</option>
                   </select>
 
                   {/* API Key */}
@@ -581,7 +628,7 @@ export const SettingsDialog: React.FC<Props> = ({
                       type={showOrKey ? 'text' : 'password'}
                       value={scratchpadLLMConfig?.apiKey ?? ''}
                       onChange={(e) => onScratchpadLLMConfigChange?.({ ...scratchpadLLMConfig, apiKey: e.target.value })}
-                      placeholder="sk-... or or-..."
+                      placeholder={scratchpadKeyPlaceholder}
                       spellCheck={false}
                       autoCorrect="off"
                       autoCapitalize="none"
@@ -598,23 +645,28 @@ export const SettingsDialog: React.FC<Props> = ({
                     </button>
                   </div>
 
-                  {/* Base URL (for other providers) */}
-                  <input
-                    type="text"
-                    value={scratchpadLLMConfig?.baseURL ?? ''}
-                    onChange={(e) => onScratchpadLLMConfigChange?.({ ...scratchpadLLMConfig, baseURL: e.target.value || undefined })}
-                    placeholder="base url (optional — defaults per provider)"
-                    spellCheck={false}
-                    autoCorrect="off"
-                    className="w-full rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-xs outline-none focus:border-accent-foreground/50"
-                  />
+                  {(showCustomBaseURL || showAnthropicBaseURL) && (
+                    <input
+                      type="text"
+                      value={scratchpadLLMConfig?.baseURL ?? ''}
+                      onChange={(e) => onScratchpadLLMConfigChange?.({ ...scratchpadLLMConfig, baseURL: e.target.value || undefined })}
+                      placeholder={
+                        showCustomBaseURL
+                          ? 'base url (required — e.g. https://api.example.com/v1)'
+                          : `base url override (optional — defaults to ${SCRATCHPAD_ANTHROPIC_BASE_URL})`
+                      }
+                      spellCheck={false}
+                      autoCorrect="off"
+                      className="w-full rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-xs outline-none focus:border-accent-foreground/50"
+                    />
+                  )}
 
                   {/* Model override */}
                   <input
                     type="text"
                     value={scratchpadLLMConfig?.model ?? ''}
                     onChange={(e) => onScratchpadLLMConfigChange?.({ ...scratchpadLLMConfig, model: e.target.value || undefined })}
-                    placeholder="model (optional — e.g. llama-3.3-70b-versatile)"
+                    placeholder={scratchpadModelPlaceholder}
                     spellCheck={false}
                     autoCorrect="off"
                     className="w-full rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-xs outline-none focus:border-accent-foreground/50"
@@ -633,18 +685,27 @@ export const SettingsDialog: React.FC<Props> = ({
                       <span />
                     )}
                     <span className="text-[10px] text-muted-foreground lowercase">
-                      {scratchpadLLMConfig?.provider === 'anthropic'
-                        ? 'anthropic direct'
-                        : scratchpadLLMConfig?.baseURL
-                          ? 'custom provider (direct)'
-                          : scratchpadLLMConfig?.apiKey
-                            ? 'your key (direct)'
-                            : 'using shared key'}
+                      {scratchpadStatus}
                     </span>
                   </div>
 
+                  {resolvedScratchpadLLM.validationError && (
+                    <div className="text-[10px] text-destructive lowercase break-all whitespace-pre-wrap">
+                      {resolvedScratchpadLLM.validationError}
+                    </div>
+                  )}
+
                   <div className="text-[10px] text-muted-foreground">
-                    key stays in browser only. pick anthropic for claude keys. openai-compatible also supported.
+                    {scratchpadProvider === 'openrouter'
+                      ? 'openrouter key is optional. leave model blank to use ezwrite fallback.'
+                      : scratchpadProvider === 'groq'
+                        ? `groq fills ${SCRATCHPAD_GROQ_BASE_URL} and defaults to ${SCRATCHPAD_GROQ_MODEL}.`
+                        : scratchpadProvider === 'anthropic'
+                          ? `anthropic fills ${SCRATCHPAD_ANTHROPIC_BASE_URL} and defaults to ${SCRATCHPAD_ANTHROPIC_MODEL}.`
+                          : 'custom openai-compatible providers need both a base url and model.'}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">
+                    key stays in browser only.
                   </div>
                 </div>
               </div>

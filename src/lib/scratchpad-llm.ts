@@ -5,6 +5,8 @@ export interface ScratchpadModelEntry {
   webSearch: boolean;
 }
 
+export type ScratchpadLLMProvider = 'openrouter' | 'groq' | 'openai-compatible' | 'anthropic';
+
 export interface ScratchpadLLMConfig {
   /** API key for the provider. Never sent to ezwrite servers. */
   apiKey?: string;
@@ -12,8 +14,104 @@ export interface ScratchpadLLMConfig {
   baseURL?: string;
   /** Specific model id. */
   model?: string;
-  /** Provider type. 'anthropic' for Claude keys. Defaults to openai-compatible when baseURL present. */
-  provider?: 'openai-compatible' | 'anthropic';
+  /** Provider type. */
+  provider?: ScratchpadLLMProvider;
+}
+
+export interface ResolvedScratchpadLLMConfig {
+  provider: ScratchpadLLMProvider;
+  apiKey?: string;
+  baseURL?: string;
+  model?: string;
+  validationError?: string;
+}
+
+export const SCRATCHPAD_GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
+export const SCRATCHPAD_GROQ_MODEL = 'llama-3.3-70b-versatile';
+export const SCRATCHPAD_ANTHROPIC_BASE_URL = 'https://api.anthropic.com';
+export const SCRATCHPAD_ANTHROPIC_MODEL = 'claude-3-5-sonnet-20241022';
+
+function trimOptionalString(value?: string): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function looksLikeOpenRouterKey(apiKey?: string): boolean {
+  return !!apiKey && (/^sk-or-v1-/i.test(apiKey) || /^or-/i.test(apiKey));
+}
+
+function looksLikeGroqKey(apiKey?: string): boolean {
+  return !!apiKey && /^gsk_/i.test(apiKey);
+}
+
+function looksLikeAnthropicKey(apiKey?: string): boolean {
+  return !!apiKey && /^sk-ant-/i.test(apiKey);
+}
+
+function inferScratchpadLLMProvider(config?: ScratchpadLLMConfig): ScratchpadLLMProvider {
+  const provider = config?.provider;
+  const apiKey = trimOptionalString(config?.apiKey);
+  const baseURL = trimOptionalString(config?.baseURL)?.toLowerCase();
+
+  if (provider === 'anthropic' || provider === 'groq' || provider === 'openrouter') return provider;
+
+  if (baseURL?.includes('anthropic')) return 'anthropic';
+  if (baseURL?.includes('api.groq.com') || baseURL?.includes('groq.com')) return 'groq';
+  if (baseURL?.includes('openrouter.ai')) return 'openrouter';
+  if (baseURL) return 'openai-compatible';
+
+  if (looksLikeAnthropicKey(apiKey)) return 'anthropic';
+  if (looksLikeGroqKey(apiKey)) return 'groq';
+  if (looksLikeOpenRouterKey(apiKey)) return 'openrouter';
+
+  if (provider === 'openai-compatible') return 'openai-compatible';
+  return 'openrouter';
+}
+
+function sanitizeScratchpadLLMConfig(config?: ScratchpadLLMConfig): ScratchpadLLMConfig {
+  const apiKey = trimOptionalString(config?.apiKey);
+  const baseURL = trimOptionalString(config?.baseURL);
+  const model = trimOptionalString(config?.model);
+  const provider = inferScratchpadLLMProvider({
+    provider: config?.provider,
+    apiKey,
+    baseURL,
+    model,
+  });
+
+  return {
+    ...(apiKey ? { apiKey } : {}),
+    ...(baseURL ? { baseURL } : {}),
+    ...(model ? { model } : {}),
+    provider,
+  };
+}
+
+export function resolveScratchpadLLMConfig(config?: ScratchpadLLMConfig): ResolvedScratchpadLLMConfig {
+  const sanitized = sanitizeScratchpadLLMConfig(config);
+  const { apiKey, provider } = sanitized;
+  let { baseURL, model } = sanitized;
+  let validationError: string | undefined;
+
+  if (provider === 'anthropic') {
+    baseURL ||= SCRATCHPAD_ANTHROPIC_BASE_URL;
+    model ||= SCRATCHPAD_ANTHROPIC_MODEL;
+  } else if (provider === 'groq') {
+    baseURL ||= SCRATCHPAD_GROQ_BASE_URL;
+    model ||= SCRATCHPAD_GROQ_MODEL;
+  } else if (provider === 'openai-compatible' && (apiKey || baseURL || model)) {
+    if (!baseURL || !model) {
+      validationError = 'Custom OpenAI-compatible providers need both a base URL and model.';
+    }
+  }
+
+  return {
+    provider,
+    ...(apiKey ? { apiKey } : {}),
+    ...(baseURL ? { baseURL } : {}),
+    ...(model ? { model } : {}),
+    ...(validationError ? { validationError } : {}),
+  };
 }
 
 /** Default order when no live web search is needed. */
@@ -156,13 +254,16 @@ export function getScratchpadLLMConfig(): ScratchpadLLMConfig {
     const raw = localStorage.getItem(LLM_CONFIG_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === 'object' ? parsed : {};
+      return parsed && typeof parsed === 'object' ? sanitizeScratchpadLLMConfig(parsed) : {};
     }
 
     // one-time migration from previous single OpenRouter key
     const old = localStorage.getItem(LEGACY_OPENROUTER_KEY);
     if (old && old.trim()) {
-      const cfg: ScratchpadLLMConfig = { apiKey: old.trim() };
+      const cfg: ScratchpadLLMConfig = sanitizeScratchpadLLMConfig({
+        apiKey: old.trim(),
+        provider: 'openrouter',
+      });
       localStorage.setItem(LLM_CONFIG_STORAGE_KEY, JSON.stringify(cfg));
       localStorage.removeItem(LEGACY_OPENROUTER_KEY);
       return cfg;
@@ -175,9 +276,10 @@ export function getScratchpadLLMConfig(): ScratchpadLLMConfig {
 
 export function setScratchpadLLMConfig(config: ScratchpadLLMConfig): void {
   try {
-    const hasAny = !!(config && (config.apiKey || config.baseURL || config.model));
+    const sanitized = sanitizeScratchpadLLMConfig(config);
+    const hasAny = !!(sanitized.apiKey || sanitized.baseURL || sanitized.model);
     if (hasAny) {
-      localStorage.setItem(LLM_CONFIG_STORAGE_KEY, JSON.stringify(config));
+      localStorage.setItem(LLM_CONFIG_STORAGE_KEY, JSON.stringify(sanitized));
     } else {
       localStorage.removeItem(LLM_CONFIG_STORAGE_KEY);
     }
@@ -201,13 +303,13 @@ export function getScratchpadOpenRouterKey(): string | null {
 
 export function setScratchpadOpenRouterKey(key: string): void {
   const cfg = getScratchpadLLMConfig();
-  setScratchpadLLMConfig({ ...cfg, apiKey: key.trim() || undefined });
+  setScratchpadLLMConfig({ ...cfg, provider: 'openrouter', apiKey: key.trim() || undefined });
 }
 
 export function clearScratchpadOpenRouterKey(): void {
   const cfg = getScratchpadLLMConfig();
   if (cfg.baseURL || cfg.model) {
-    setScratchpadLLMConfig({ baseURL: cfg.baseURL, model: cfg.model });
+    setScratchpadLLMConfig({ provider: cfg.provider, baseURL: cfg.baseURL, model: cfg.model });
   } else {
     clearScratchpadLLMConfig();
   }

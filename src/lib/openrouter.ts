@@ -2,10 +2,12 @@ import {
   buildScratchpadSystemPrompt,
   formatScratchpadLlmReply,
   getScratchpadModelChain,
+  resolveScratchpadLLMConfig,
   SCRATCHPAD_WEB_SEARCH_TOOL,
+  type ResolvedScratchpadLLMConfig,
   type ScratchpadLLMConfig,
   type ScratchpadModelEntry,
-} from './scratchpad-llm';
+} from './scratchpad-llm.ts';
 
 const OPENROUTER_CHAT_PATH = '/api/openrouter';
 const OPENROUTER_DIRECT_URL = 'https://openrouter.ai/api/v1/chat/completions';
@@ -51,14 +53,14 @@ async function requestCompletion(
   entry: ScratchpadModelEntry,
   prompt: string,
   signal?: AbortSignal,
-  config?: ScratchpadLLMConfig,
+  config?: ResolvedScratchpadLLMConfig,
 ): Promise<{ ok: true; content: string } | { ok: false; status: number; message: string }> {
   const apiKey = config?.apiKey;
-  const isAnthropic = config?.provider === 'anthropic' || (config?.baseURL || '').toLowerCase().includes('anthropic');
+  const isAnthropic = config?.provider === 'anthropic';
 
   if (isAnthropic && apiKey) {
     // Anthropic Messages API path
-    const base = (config?.baseURL || 'https://api.anthropic.com').trim().replace(/\/+$/, '');
+    const base = config.baseURL!.trim().replace(/\/+$/, '');
     const targetURL = `${base}/v1/messages`;
 
     const system = buildScratchpadSystemPrompt(entry.id, false); // no web tools for anthropic yet
@@ -103,17 +105,17 @@ async function requestCompletion(
   }
 
   // OpenAI-compatible / OpenRouter path (existing)
-  const isCustom = !!config?.baseURL;
+  const usingOpenRouter = config?.provider === 'openrouter';
   const isDirect = !!apiKey;
 
   let targetURL: string;
   if (!isDirect) {
     targetURL = OPENROUTER_CHAT_PATH;
-  } else if (isCustom) {
+  } else if (usingOpenRouter) {
+    targetURL = OPENROUTER_DIRECT_URL;
+  } else {
     const base = config!.baseURL!.trim().replace(/\/+$/, '');
     targetURL = `${base}/chat/completions`;
-  } else {
-    targetURL = OPENROUTER_DIRECT_URL;
   }
 
   const body: Record<string, unknown> = {
@@ -125,7 +127,6 @@ async function requestCompletion(
     max_tokens: entry.webSearch ? 500 : 700,
   };
 
-  const usingOpenRouter = !isCustom || (config?.baseURL || '').includes('openrouter');
   if (entry.webSearch && usingOpenRouter) {
     body.tools = [SCRATCHPAD_WEB_SEARCH_TOOL];
   }
@@ -162,9 +163,11 @@ async function requestCompletion(
   if (!res.ok) {
     let message = payload.error?.message ?? `LLM request failed (${res.status})`;
     if (isDirect && (res.status === 401 || res.status === 403)) {
-      message = isCustom
-        ? 'Invalid API key or base URL (401/403). Check your settings.'
-        : 'Invalid OpenRouter API key (401/403). Check or clear it in settings.';
+      message = usingOpenRouter
+        ? 'Invalid OpenRouter API key (401/403). Check or clear it in settings.'
+        : config?.provider === 'groq'
+          ? 'Invalid Groq API key (401/403). Check or clear it in settings.'
+          : 'Invalid API key or base URL (401/403). Check your settings.';
     } else if (!isDirect && res.status === 404) {
       message = 'Scratchpad AI endpoint missing on this host (deploy api/openrouter and set OPENROUTER_API_KEY).';
     } else if (!isDirect && res.status === 502 && !payload.error?.message) {
@@ -188,25 +191,28 @@ export async function completeScratchpadPrompt(
   signal?: AbortSignal,
   config?: ScratchpadLLMConfig,
 ): Promise<ScratchpadLlmResult> {
-  const isAnthropic = config?.provider === 'anthropic' || (config?.baseURL || '').toLowerCase().includes('anthropic');
+  const resolved = resolveScratchpadLLMConfig(config);
+  if (resolved.validationError) throw new Error(resolved.validationError);
+  const explicitModel = config?.model?.trim() || undefined;
 
   // Decide chain
   let chain: readonly ScratchpadModelEntry[];
-  if (isAnthropic) {
-    const model = config?.model || 'claude-3-5-sonnet-20241022';
-    chain = [{ id: model, webSearch: false }];
-  } else if (config?.model) {
-    chain = [{ id: config.model, webSearch: false }];
-  } else if (config?.baseURL) {
-    chain = [{ id: 'gpt-4o-mini', webSearch: false }];
+  if (!resolved.apiKey) {
+    chain = explicitModel
+      ? [{ id: explicitModel, webSearch: false }]
+      : getScratchpadModelChain(prompt);
+  } else if (resolved.provider === 'openrouter') {
+    chain = resolved.model
+      ? [{ id: resolved.model, webSearch: false }]
+      : getScratchpadModelChain(prompt);
   } else {
-    chain = getScratchpadModelChain(prompt);
+    chain = [{ id: resolved.model!, webSearch: false }];
   }
 
   const errors: string[] = [];
 
   for (const entry of chain) {
-    const result = await requestCompletion(entry, prompt, signal, config);
+    const result = await requestCompletion(entry, prompt, signal, resolved);
 
     if (result.ok) {
       return {
