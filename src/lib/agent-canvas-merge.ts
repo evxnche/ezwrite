@@ -1,32 +1,45 @@
 // Pure merge policy + bookkeeping for two-way syncing the plaintext agent canvas
-// (ezwrite_agent_canvas) with local-first storage. This is the data-safety-critical
-// core, kept free of projects.ts / Vite deps so it unit-tests under node:test.
+// (ezwrite_agent_canvas) with local-first storage. Data-safety-critical core, kept
+// free of projects.ts / Vite deps so it unit-tests under node:test.
 //
-// The shape mirrors the E2E note sync (applyRemoteSyncRows): per doc we compare a
-// local content hash and the remote snapshot against the hash we last reconciled,
-// and decide whether to take the remote, keep local, or fork a -conflict- copy.
+// Change detection is by CONTENT HASH, never by timestamp. An earlier version used
+// an updated_at cursor, but the browser stamps its pushes with the browser clock
+// while the server stamps agent writes with the server clock — any skew made the
+// cursor skip agent edits. We compare each side's current hash against the hash we
+// last reconciled (S), so the two clocks never matter.
 
 export type CanvasMergeDecision =
-  | 'skip'             // remote unchanged since we last saw it — nothing to do
-  | 'sync-bookkeeping' // remote changed but content is already identical — advance cursor only
-  | 'apply-remote'     // take the remote pages/title into local
-  | 'fork-conflict';   // both sides changed — keep local, fork the remote copy
+  | 'skip'           // nothing to do
+  | 'mark-synced'    // content already agrees — just record the synced hash
+  | 'apply-remote'   // take the canvas pages/title into local
+  | 'push-local'     // send local up to the canvas (incl. seeding a doc the canvas lacks)
+  | 'fork-conflict'  // both sides changed — keep local, fork the canvas copy, then push local
+  | 'delete-remote'; // owner deleted a doc we'd synced — remove it from the canvas
 
 export interface CanvasMergeInput {
-  hasLocal: boolean;      // a local doc with this id exists
-  remoteChanged: boolean; // snapshot.updated_at is newer than what we last reconciled
-  localChanged: boolean;  // local content hash differs from the last reconciled hash
-  hashesEqual: boolean;   // local content hash equals the remote content hash
+  hasLocal: boolean;
+  hasRemote: boolean;     // a canvas row exists for this doc
+  hadSynced: boolean;     // we have a recorded synced hash (i.e. we knew this doc before)
+  localChanged: boolean;  // local hash differs from the last synced hash (S)
+  remoteChanged: boolean; // canvas hash differs from S
+  hashesEqual: boolean;   // local hash equals canvas hash (only meaningful if both exist)
 }
 
-// The whole policy in one place. Order matters: conflict is only possible when the
-// remote moved AND local diverged AND they aren't already equal.
 export function decideCanvasMerge(i: CanvasMergeInput): CanvasMergeDecision {
-  if (!i.hasLocal) return 'apply-remote';        // brand-new doc from the agent
-  if (!i.remoteChanged) return 'skip';           // nothing new remotely
-  if (i.hashesEqual) return 'sync-bookkeeping';  // converged (e.g. our own echoed push)
-  if (i.localChanged) return 'fork-conflict';    // both edited since last sync
-  return 'apply-remote';                         // only the remote changed
+  if (!i.hasLocal && !i.hasRemote) return 'skip';
+  if (!i.hasLocal) {
+    // Canvas-only. If we never knew it, the agent just created it -> pull it down.
+    // If we DID sync it before, the owner deleted it locally -> honor that and remove
+    // it from the canvas, UNLESS the agent edited it since (then resurrect, don't lose
+    // the agent's work — the owner can delete again).
+    if (!i.hadSynced) return 'apply-remote';
+    return i.remoteChanged ? 'apply-remote' : 'delete-remote';
+  }
+  if (!i.hasRemote) return 'push-local';       // local-only  -> seed it up to the canvas
+  if (i.hashesEqual) return i.remoteChanged || i.localChanged ? 'mark-synced' : 'skip';
+  if (i.remoteChanged && i.localChanged) return 'fork-conflict';
+  if (i.remoteChanged) return 'apply-remote';
+  return 'push-local';                          // only local changed
 }
 
 // --- content hash (stable, async via WebCrypto) ----------------------------
@@ -41,27 +54,13 @@ export async function canvasHash(title: string | null, pages: string[]): Promise
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-// --- bookkeeping store (localStorage) --------------------------------------
+// --- bookkeeping: the last-reconciled content hash per doc -----------------
 
-const CURSOR_PREFIX = 'ezwrite-agent-canvas-cursor-';
-const DOCS_KEY = 'ezwrite-agent-canvas-docs';
+const HASHES_KEY = 'ezwrite-agent-canvas-synced';
 
-export interface DocSyncEntry {
-  remoteUpdatedAt: number; // ms; snapshot.updated_at we last reconciled for this doc
-  syncedHash: string;      // content hash at that reconcile point
-}
-
-export function getCanvasCursor(userId: string): number {
-  return Number(localStorage.getItem(CURSOR_PREFIX + userId) ?? '0') || 0;
-}
-
-export function setCanvasCursor(userId: string, ms: number): void {
-  localStorage.setItem(CURSOR_PREFIX + userId, String(ms));
-}
-
-function loadDocs(): Record<string, DocSyncEntry> {
+function loadHashes(): Record<string, string> {
   try {
-    const raw = localStorage.getItem(DOCS_KEY);
+    const raw = localStorage.getItem(HASHES_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' ? parsed : {};
@@ -70,20 +69,20 @@ function loadDocs(): Record<string, DocSyncEntry> {
   }
 }
 
-export function getDocSync(projectId: string): DocSyncEntry | null {
-  return loadDocs()[projectId] ?? null;
+export function getSyncedHash(projectId: string): string | null {
+  return loadHashes()[projectId] ?? null;
 }
 
-export function setDocSync(projectId: string, entry: DocSyncEntry): void {
-  const docs = loadDocs();
-  docs[projectId] = entry;
-  localStorage.setItem(DOCS_KEY, JSON.stringify(docs));
+export function setSyncedHash(projectId: string, hash: string): void {
+  const all = loadHashes();
+  all[projectId] = hash;
+  localStorage.setItem(HASHES_KEY, JSON.stringify(all));
 }
 
-export function clearDocSync(projectId: string): void {
-  const docs = loadDocs();
-  if (projectId in docs) {
-    delete docs[projectId];
-    localStorage.setItem(DOCS_KEY, JSON.stringify(docs));
+export function clearSyncedHash(projectId: string): void {
+  const all = loadHashes();
+  if (projectId in all) {
+    delete all[projectId];
+    localStorage.setItem(HASHES_KEY, JSON.stringify(all));
   }
 }

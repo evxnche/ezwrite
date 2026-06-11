@@ -1882,8 +1882,8 @@ const WritingInterface = () => {
   }, []);
 
   // Agent edits now arrive through the two-way canvas sync in the relay below
-  // (reconcileCanvasRows merges the server-applied snapshot into local storage and
-  // forks a -conflict- doc on a clash) — there is no live op-apply path here.
+  // (syncCanvas merges the server-applied snapshot into local storage and forks a
+  // -conflict- doc on a clash) — there is no live op-apply path here.
 
   // Load the user's pairings whenever a session appears, and refresh after the
   // settings dialog closes (where pairings are minted/revoked).

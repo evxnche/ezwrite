@@ -4,46 +4,77 @@ import assert from 'node:assert/strict';
 import {
   decideCanvasMerge,
   canvasHash,
-  getCanvasCursor,
-  setCanvasCursor,
-  getDocSync,
-  setDocSync,
-  clearDocSync,
+  getSyncedHash,
+  setSyncedHash,
+  clearSyncedHash,
+  type CanvasMergeInput,
 } from './agent-canvas-merge.ts';
 
-// --- decideCanvasMerge (the data-safety-critical policy) --------------------
+// Base input; each test overrides the fields it cares about.
+const base: CanvasMergeInput = {
+  hasLocal: false,
+  hasRemote: false,
+  hadSynced: false,
+  localChanged: false,
+  remoteChanged: false,
+  hashesEqual: false,
+};
 
-test('a doc that does not exist locally is taken from the agent', () => {
+// --- decideCanvasMerge: the data-safety-critical policy --------------------
+
+test('a brand-new agent doc (canvas-only, never synced) is pulled down', () => {
   assert.equal(
-    decideCanvasMerge({ hasLocal: false, remoteChanged: true, localChanged: false, hashesEqual: false }),
+    decideCanvasMerge({ ...base, hasRemote: true, hadSynced: false }),
     'apply-remote',
   );
 });
 
-test('an unchanged remote is skipped entirely', () => {
+test('a local-only doc is seeded up to the canvas', () => {
   assert.equal(
-    decideCanvasMerge({ hasLocal: true, remoteChanged: false, localChanged: true, hashesEqual: false }),
-    'skip',
+    decideCanvasMerge({ ...base, hasLocal: true, localChanged: true }),
+    'push-local',
   );
 });
 
-test('remote changed but content already equal only advances bookkeeping', () => {
+test('a synced doc the owner deleted locally is removed from the canvas', () => {
+  // canvas-only, we knew it before, agent did not edit it since
   assert.equal(
-    decideCanvasMerge({ hasLocal: true, remoteChanged: true, localChanged: false, hashesEqual: true }),
-    'sync-bookkeeping',
+    decideCanvasMerge({ ...base, hasRemote: true, hadSynced: true, remoteChanged: false }),
+    'delete-remote',
   );
 });
 
-test('remote-only change is applied to local', () => {
+test('a deleted-locally doc that the agent edited since is resurrected, not deleted', () => {
   assert.equal(
-    decideCanvasMerge({ hasLocal: true, remoteChanged: true, localChanged: false, hashesEqual: false }),
+    decideCanvasMerge({ ...base, hasRemote: true, hadSynced: true, remoteChanged: true }),
     'apply-remote',
   );
 });
 
-test('both sides changed forks a conflict (never silently overwrites the user)', () => {
+test('identical content on both sides just records the synced hash', () => {
   assert.equal(
-    decideCanvasMerge({ hasLocal: true, remoteChanged: true, localChanged: true, hashesEqual: false }),
+    decideCanvasMerge({ ...base, hasLocal: true, hasRemote: true, hadSynced: false, hashesEqual: true, remoteChanged: true }),
+    'mark-synced',
+  );
+});
+
+test('agent edited, owner did not -> apply remote', () => {
+  assert.equal(
+    decideCanvasMerge({ ...base, hasLocal: true, hasRemote: true, hadSynced: true, remoteChanged: true, localChanged: false, hashesEqual: false }),
+    'apply-remote',
+  );
+});
+
+test('owner edited, agent did not -> push local', () => {
+  assert.equal(
+    decideCanvasMerge({ ...base, hasLocal: true, hasRemote: true, hadSynced: true, remoteChanged: false, localChanged: true, hashesEqual: false }),
+    'push-local',
+  );
+});
+
+test('both edited -> fork a conflict (never silently overwrite the owner)', () => {
+  assert.equal(
+    decideCanvasMerge({ ...base, hasLocal: true, hasRemote: true, hadSynced: true, remoteChanged: true, localChanged: true, hashesEqual: false }),
     'fork-conflict',
   );
 });
@@ -52,19 +83,16 @@ test('both sides changed forks a conflict (never silently overwrites the user)',
 
 test('canvasHash is stable and sensitive to title and pages', async () => {
   const a = await canvasHash('Letter', ['one', 'two']);
-  const again = await canvasHash('Letter', ['one', 'two']);
-  assert.equal(a, again, 'deterministic');
-  assert.notEqual(a, await canvasHash('Letter', ['one', 'three']), 'page change moves the hash');
-  assert.notEqual(a, await canvasHash('Other', ['one', 'two']), 'title change moves the hash');
+  assert.equal(a, await canvasHash('Letter', ['one', 'two']));
+  assert.notEqual(a, await canvasHash('Letter', ['one', 'three']));
+  assert.notEqual(a, await canvasHash('Other', ['one', 'two']));
 });
 
 test('canvasHash distinguishes page boundaries (a join would collide these)', async () => {
-  const x = await canvasHash('t', ['ab', 'c']);
-  const y = await canvasHash('t', ['a', 'bc']);
-  assert.notEqual(x, y, 'a structural page change must move the hash');
+  assert.notEqual(await canvasHash('t', ['ab', 'c']), await canvasHash('t', ['a', 'bc']));
 });
 
-// --- bookkeeping store (with a localStorage shim) --------------------------
+// --- bookkeeping store -----------------------------------------------------
 
 function installLocalStorage() {
   const m = new Map<string, string>();
@@ -80,19 +108,11 @@ function installLocalStorage() {
 
 test.afterEach(() => { delete (globalThis as { localStorage?: Storage }).localStorage; });
 
-test('cursor round-trips per user and defaults to 0', () => {
+test('synced-hash entries round-trip and clear', () => {
   installLocalStorage();
-  assert.equal(getCanvasCursor('user-1'), 0);
-  setCanvasCursor('user-1', 1234);
-  assert.equal(getCanvasCursor('user-1'), 1234);
-  assert.equal(getCanvasCursor('user-2'), 0, 'isolated per user');
-});
-
-test('doc sync entries round-trip and clear', () => {
-  installLocalStorage();
-  assert.equal(getDocSync('doc-1'), null);
-  setDocSync('doc-1', { remoteUpdatedAt: 10, syncedHash: 'abc' });
-  assert.deepEqual(getDocSync('doc-1'), { remoteUpdatedAt: 10, syncedHash: 'abc' });
-  clearDocSync('doc-1');
-  assert.equal(getDocSync('doc-1'), null);
+  assert.equal(getSyncedHash('doc-1'), null);
+  setSyncedHash('doc-1', 'abc123');
+  assert.equal(getSyncedHash('doc-1'), 'abc123');
+  clearSyncedHash('doc-1');
+  assert.equal(getSyncedHash('doc-1'), null);
 });
