@@ -91,6 +91,24 @@ export function renumberFollowingPlainNumberedListItems(lines: string[], inserte
   return nextLines;
 }
 
+// Renumber every plain numbered-list block in the document. Used after a deletion
+// (which, unlike insertion, doesn't pass through the Enter handler) so that the
+// remaining items decrement back into sequence. Each block keeps its own starting
+// number, so an intentional non-one start is preserved.
+export function renumberAllPlainNumberedLists(lines: string[]): string[] {
+  let result = lines;
+  let i = 0;
+  while (i < result.length) {
+    if (result[i].match(PLAIN_NUMBERED_LIST_LINE)) {
+      result = renumberFollowingPlainNumberedListItems(result, i);
+      while (i < result.length && result[i].match(PLAIN_NUMBERED_LIST_LINE)) i++;
+    } else {
+      i++;
+    }
+  }
+  return result;
+}
+
 export function indentPlainListLineForTab(
   lines: string[],
   lineIndex: number,

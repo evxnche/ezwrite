@@ -44,6 +44,7 @@ import {
   type DeletedPageSnapshot,
   indentPlainListLineForTab,
   renumberFollowingPlainNumberedListItems,
+  renumberAllPlainNumberedLists,
   restoreDeletedPageToList,
   shouldAutoFocusAfterPageSwitch,
   splitExitedListLine,
@@ -2695,6 +2696,24 @@ const WritingInterface = () => {
     }
     getRemovedTimerStableIds(contentRef.current.split('\n'), newContent.split('\n'))
       .forEach((stableId) => clearTimerState(`main:${activeProjectIdRef.current ?? 'none'}:${currentPageRef.current}:${stableId}`));
+
+    // Renumber plain numbered lists after a deletion. Inserting an item renumbers
+    // via the Enter handler, but deletes go through native editing, so the trailing
+    // items never decrement back into sequence without this pass.
+    if (newContent.length < prevContent.length && !hasRawText) {
+      const oldLines = newContent.split('\n');
+      const renumbered = renumberAllPlainNumberedLists(oldLines).join('\n');
+      if (renumbered !== newContent) {
+        const cur = getCursorInfo();
+        const li = cur?.lineIndex ?? 0;
+        let off = cur?.offset ?? 0;
+        const newLines = renumbered.split('\n');
+        const delta = (newLines[li]?.length ?? 0) - (oldLines[li]?.length ?? 0);
+        if (off > 0) off = Math.max(0, Math.min(off + delta, newLines[li]?.length ?? 0));
+        structuralUpdate(renumbered, li, off);
+        return;
+      }
+    }
 
     saveContent(newContent);
     triggerTyping();

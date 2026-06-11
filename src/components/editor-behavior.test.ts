@@ -21,6 +21,7 @@ import {
   deletePageFromList,
   indentPlainListLineForTab,
   renumberFollowingPlainNumberedListItems,
+  renumberAllPlainNumberedLists,
   restoreDeletedPageToList,
   shouldAutoFocusAfterPageSwitch,
   splitExitedListLine,
@@ -122,6 +123,32 @@ test('renumberFollowingPlainNumberedListItems renumbers after exiting a nested n
     ),
     ['1/ first', '2/ second', `${INDENT}1/ nested`, `${INDENT}2/ nested`, `${INDENT}3/ nested`, '3/ ', '4/ third', '5/ fourth'],
   );
+});
+
+test('renumberAllPlainNumberedLists decrements items after a deleted item', () => {
+  assert.deepEqual(
+    renumberAllPlainNumberedLists(['1. first', '3. third', '4. fourth']),
+    ['1. first', '2. third', '3. fourth'],
+  );
+});
+
+test('renumberAllPlainNumberedLists fixes every block in the document independently', () => {
+  assert.deepEqual(
+    renumberAllPlainNumberedLists(['1. a', '3. c', 'note', '2. x', '4. z']),
+    ['1. a', '2. c', 'note', '2. x', '3. z'],
+  );
+});
+
+test('renumberAllPlainNumberedLists preserves an intentional non-one start', () => {
+  assert.deepEqual(
+    renumberAllPlainNumberedLists(['4. first', '6. second', '7. third']),
+    ['4. first', '5. second', '6. third'],
+  );
+});
+
+test('renumberAllPlainNumberedLists leaves an already-sequential list untouched', () => {
+  const lines = ['1. a', '2. b', '3. c'];
+  assert.deepEqual(renumberAllPlainNumberedLists(lines), lines);
 });
 
 test('indentPlainListLineForTab resets dot-numbered sublists to one', () => {
