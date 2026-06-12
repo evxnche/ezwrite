@@ -17,6 +17,12 @@ import {
   getEnabledLiveSessionAgentIds,
   setLiveSessionAgentEnabled,
 } from '@/lib/agent-live-session-store';
+import {
+  saveAgentPasskey,
+  getAgentPasskey,
+  getAgentPasskeyIds,
+  removeAgentPasskey,
+} from '@/lib/agent-passkey-store';
 
 const PANEL_SURFACE = 'rounded-xl border border-border/60';
 
@@ -70,10 +76,15 @@ export default function AgentPairingSection({
   const [setupStatus, setSetupStatus] = useState<AgentApiSetupStatus>({ ready: true, code: 'ready', message: '' });
   const [checkingSetup, setCheckingSetup] = useState(false);
   const [liveSessionAgentIds, setLiveSessionAgentIds] = useState<string[]>([]);
+  // Pairing ids whose passkey is cached locally, so their handoff instructions can
+  // be re-copied. Per-row "copied" feedback is tracked by id.
+  const [storedPasskeyIds, setStoredPasskeyIds] = useState<string[]>([]);
+  const [copiedPairingId, setCopiedPairingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     setLiveSessionAgentIds(getEnabledLiveSessionAgentIds(window.localStorage));
+    setStoredPasskeyIds(getAgentPasskeyIds(window.localStorage));
   }, []);
 
   const refresh = useCallback(() => {
@@ -117,6 +128,12 @@ export default function AgentPairingSection({
       setMintedPairing(result);
       setCopied(false);
       setLabel('');
+      // Cache the passkey so the instructions can be re-copied later — the server
+      // only keeps a hash, so this is the only place it can be resurfaced.
+      if (typeof window !== 'undefined') {
+        saveAgentPasskey(window.localStorage, result.pairing.id, result.passkey);
+        setStoredPasskeyIds(getAgentPasskeyIds(window.localStorage));
+      }
       refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not create passkey');
@@ -146,9 +163,33 @@ export default function AgentPairingSection({
     try {
       await revokePairing(auth, id);
       setPairings((prev) => prev.filter((p) => p.id !== id));
+      if (typeof window !== 'undefined') {
+        removeAgentPasskey(window.localStorage, id);
+        setStoredPasskeyIds(getAgentPasskeyIds(window.localStorage));
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not revoke');
     }
+  };
+
+  // Re-copy the full handoff instructions (endpoint + passkey + usage) for an
+  // existing pairing, using the locally cached passkey.
+  const handleCopyPairing = async (p: AgentPairing) => {
+    if (typeof window === 'undefined') return;
+    const passkey = getAgentPasskey(window.localStorage, p.id);
+    if (!passkey) return;
+    try {
+      const instructions = buildAgentHandoffInstructions({
+        passkey,
+        label: p.label,
+        targetProjectId: p.targetProjectId,
+        targetProjectTitle: p.targetProjectId === activeProjectId ? activeProjectTitle : undefined,
+        expiresAt: p.expiresAt,
+      });
+      await navigator.clipboard.writeText(instructions);
+      setCopiedPairingId(p.id);
+      setTimeout(() => setCopiedPairingId((cur) => (cur === p.id ? null : cur)), 1500);
+    } catch { /* clipboard blocked — user can re-mint or copy manually */ }
   };
 
   const handleToggleLiveSession = (pairingId: string, enabled: boolean) => {
@@ -289,6 +330,17 @@ export default function AgentPairingSection({
                       >
                         {liveSessionAgentIds.includes(p.id) ? 'live on' : 'live off'}
                       </button>
+                      {storedPasskeyIds.includes(p.id) && (
+                        <button
+                          onClick={() => handleCopyPairing(p)}
+                          className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
+                          aria-label={`copy ${p.label || 'agent'} instructions`}
+                          title="copy endpoint + passkey + instructions again"
+                        >
+                          {copiedPairingId === p.id ? <Check size={12} /> : <Copy size={12} />}
+                          {copiedPairingId === p.id ? 'copied' : 'copy'}
+                        </button>
+                      )}
                       <button
                         onClick={() => handleRevoke(p.id)}
                         className="flex items-center gap-1 text-muted-foreground hover:text-destructive"
