@@ -13,7 +13,27 @@
 // of local edits) — see src/lib/agent-canvas-sync.ts.
 
 import crypto from 'node:crypto';
-import { rateLimitAllow, clientIp } from './rate-limit.ts';
+
+// Rate limiting is injected rather than imported so this module stays runnable
+// under `node --test` (which executes the raw .ts) AND under @vercel/node (which
+// transpiles to .js). A static `./rate-limit.{ts,js}` import can only satisfy one
+// of those — the mismatch is what crashed /api/agent in prod. The api/ adapters
+// pass the real limiter (they compile to .js); tests fall back to the fail-open
+// default below, matching the prior no-Supabase behavior (never blocks).
+export interface AgentRateLimitDeps {
+  clientIp: (header: (name: string) => string | undefined) => string;
+  rateLimitAllow: (
+    env: { supabaseUrl: string; serviceRoleKey: string },
+    key: string,
+    windowSeconds: number,
+    max: number,
+  ) => Promise<boolean>;
+}
+
+const defaultRateLimitDeps: AgentRateLimitDeps = {
+  clientIp: () => 'unknown',
+  rateLimitAllow: () => Promise.resolve(true),
+};
 
 export interface AgentEnv {
   supabaseUrl: string;
@@ -198,6 +218,13 @@ interface CanvasRow {
   pages: string[];
 }
 
+interface AgentEventRow {
+  id: number;
+  op: Record<string, unknown>;
+  consumed: boolean;
+  created_at: string;
+}
+
 async function fetchCanvasRow(env: AgentEnv, userId: string, projectId: string): Promise<CanvasRow | null> {
   const params = new URLSearchParams({
     select: 'project_id,title,pages',
@@ -220,6 +247,41 @@ async function writeCanvasRow(env: AgentEnv, userId: string, row: CanvasRow): Pr
       title: row.title,
       pages: row.pages,
       updated_at: new Date().toISOString(),
+    }),
+  });
+}
+
+async function listPendingAgentEvents(env: AgentEnv, userId: string): Promise<AgentEventRow[]> {
+  const params = new URLSearchParams({
+    select: 'id,op,consumed,created_at',
+    user_id: `eq.${userId}`,
+    consumed: 'eq.false',
+    order: 'created_at.asc',
+  });
+  return adminFetch<AgentEventRow[]>(env, `ezwrite_agent_events?${params}`, { method: 'GET' });
+}
+
+async function markAgentEventConsumed(env: AgentEnv, eventId: number): Promise<void> {
+  await adminFetch(env, `ezwrite_agent_events?id=eq.${eventId}`, {
+    method: 'PATCH',
+    prefer: 'return=minimal',
+    body: JSON.stringify({ consumed: true }),
+  });
+}
+
+async function appendAgentEvent(
+  env: AgentEnv,
+  pairing: PairingRow,
+  op: Record<string, unknown>,
+): Promise<void> {
+  await adminFetch(env, 'ezwrite_agent_events', {
+    method: 'POST',
+    prefer: 'return=representation',
+    body: JSON.stringify({
+      user_id: pairing.user_id,
+      pairing_id: pairing.id,
+      op,
+      consumed: false,
     }),
   });
 }
@@ -271,7 +333,11 @@ function usageDoc(): Record<string, unknown> {
 }
 
 // --- main handler ----------------------------------------------------------
-export async function handleAgentRequest(req: AgentRequest, env: AgentEnv): Promise<AgentResult> {
+export async function handleAgentRequest(
+  req: AgentRequest,
+  env: AgentEnv,
+  deps: AgentRateLimitDeps = defaultRateLimitDeps,
+): Promise<AgentResult> {
   if (!env.supabaseUrl || !env.serviceRoleKey || !env.anonKey || !env.passkeyPepper) {
     return { status: 503, body: { error: 'Agent API not configured (missing server env: SUPABASE_SERVICE_ROLE_KEY / AGENT_PASSKEY_PEPPER).' } };
   }
@@ -287,8 +353,8 @@ export async function handleAgentRequest(req: AgentRequest, env: AgentEnv): Prom
   const action = typeof body.action === 'string' ? body.action : '';
 
   // Overall per-IP flood cap on the public POST surface (generous for real agents).
-  const ip = clientIp(req.header);
-  if (!(await rateLimitAllow(env, `agent:${ip}`, 60, 90))) {
+  const ip = deps.clientIp(req.header);
+  if (!(await deps.rateLimitAllow(env, `agent:${ip}`, 60, 90))) {
     return { status: 429, body: { error: 'Too many requests. Slow down and retry shortly.' } };
   }
 
@@ -344,6 +410,50 @@ export async function handleAgentRequest(req: AgentRequest, env: AgentEnv): Prom
     return { status: 500, body: { error: 'Could not generate a unique passkey, try again' } };
   }
 
+  if (action === 'queue_agent_tasks') {
+    const auth = req.header('authorization') ?? '';
+    const token = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : '';
+    if (!token) return { status: 401, body: { error: 'queue_agent_tasks requires a Bearer access token' } };
+    const userId = await verifyUserId(env, token);
+    if (!userId) return { status: 401, body: { error: 'Invalid or expired session' } };
+    const tasks = Array.isArray(body.tasks) ? body.tasks : [];
+    if (tasks.length === 0) return { status: 400, body: { error: 'queue_agent_tasks needs at least one task.' } };
+    for (const task of tasks) {
+      const projectId = typeof task?.projectId === 'string' ? task.projectId : '';
+      const promptId = typeof task?.promptId === 'string' ? task.promptId : '';
+      const taskId = typeof task?.taskId === 'string' ? task.taskId : '';
+      const promptText = typeof task?.promptText === 'string' ? task.promptText : '';
+      const targetAgentId = typeof task?.targetAgentId === 'string' ? task.targetAgentId : '';
+      const targetAgentLabel = typeof task?.targetAgentLabel === 'string' ? task.targetAgentLabel.trim().toLowerCase() : '';
+      const fingerprint = typeof task?.fingerprint === 'string' ? task.fingerprint : '';
+      const pageIndex = typeof task?.pageIndex === 'number' ? task.pageIndex : 0;
+      if (!projectId || !promptId || !taskId || !promptText || !targetAgentId || !targetAgentLabel) {
+        return { status: 400, body: { error: 'queue_agent_tasks received an invalid task payload.' } };
+      }
+      await adminFetch(env, 'ezwrite_agent_events', {
+        method: 'POST',
+        prefer: 'return=representation',
+        body: JSON.stringify({
+          user_id: userId,
+          pairing_id: targetAgentId,
+          op: {
+            kind: 'agent-task',
+            taskId,
+            promptId,
+            projectId,
+            pageIndex,
+            promptText,
+            fingerprint,
+            targetAgentId,
+            targetAgentLabel,
+          },
+          consumed: false,
+        }),
+      });
+    }
+    return { status: 200, body: { ok: true, queued: tasks.length } };
+  }
+
   // --- everything else: passkey-authenticated ---
   const passkeyRaw = req.header('x-ez-passkey') ?? (typeof body.passkey === 'string' ? body.passkey : '');
   if (!passkeyRaw) {
@@ -352,7 +462,7 @@ export async function handleAgentRequest(req: AgentRequest, env: AgentEnv): Prom
   const pairing = await findPairing(env, passkeyRaw);
   if (!pairing || !pairingActive(pairing)) {
     // Throttle wrong-passkey guesses per IP so the (now ~1B) keyspace can't be enumerated.
-    const within = await rateLimitAllow(env, `agent-fail:${ip}`, 600, 10);
+    const within = await deps.rateLimitAllow(env, `agent-fail:${ip}`, 600, 10);
     return within
       ? { status: 401, body: { error: 'Invalid, revoked, or expired passkey' } }
       : { status: 429, body: { error: 'Too many failed attempts. Try again later.' } };
@@ -377,6 +487,58 @@ export async function handleAgentRequest(req: AgentRequest, env: AgentEnv): Prom
     const row = rows[0];
     if (!row) return { status: 404, body: { error: 'No canvas snapshot yet. Make sure the owner has ezwrite open.' } };
     return { status: 200, body: { projectId: row.project_id, title: row.title ?? 'untitled', pages: row.pages } };
+  }
+
+  if (action === 'claim_agent_tasks') {
+    const label = pairing.label?.trim().toLowerCase();
+    if (!label) return { status: 400, body: { error: 'This pairing has no label, so it cannot claim live agent tasks.' } };
+    const rows = await listPendingAgentEvents(env, pairing.user_id);
+    const event = rows.find((row) => {
+      const kind = typeof row.op.kind === 'string' ? row.op.kind : '';
+      const targetAgentLabel = typeof row.op.targetAgentLabel === 'string' ? row.op.targetAgentLabel.toLowerCase() : '';
+      const projectId = typeof row.op.projectId === 'string' ? row.op.projectId : '';
+      if (kind !== 'agent-task' || targetAgentLabel !== label) return false;
+      if (pairing.target_project_id && projectId !== pairing.target_project_id) return false;
+      return true;
+    });
+    if (!event) return { status: 200, body: { task: null } };
+    await markAgentEventConsumed(env, event.id);
+    return {
+      status: 200,
+      body: {
+        task: {
+          taskId: event.op.taskId,
+          promptId: event.op.promptId,
+          projectId: event.op.projectId,
+          pageIndex: event.op.pageIndex,
+          promptText: event.op.promptText,
+          targetAgentLabel: event.op.targetAgentLabel,
+        },
+      },
+    };
+  }
+
+  if (action === 'submit_agent_reply') {
+    const taskId = typeof body.taskId === 'string' ? body.taskId : '';
+    const promptId = typeof body.promptId === 'string' ? body.promptId : '';
+    const projectId = typeof body.projectId === 'string' && body.projectId ? body.projectId : pairing.target_project_id;
+    const pageIndex = typeof body.pageIndex === 'number' ? body.pageIndex : 0;
+    const replyText = typeof body.replyText === 'string' ? body.replyText : '';
+    const status = body.status === 'error' ? 'error' : 'done';
+    if (!taskId || !promptId || !projectId || !replyText.trim()) {
+      return { status: 400, body: { error: 'submit_agent_reply needs taskId, promptId, projectId, and replyText.' } };
+    }
+    await appendAgentEvent(env, pairing, {
+      kind: 'agent-reply',
+      taskId,
+      promptId,
+      projectId,
+      pageIndex,
+      agentLabel: pairing.label?.trim().toLowerCase() ?? 'agent',
+      replyText,
+      status,
+    });
+    return { status: 200, body: { ok: true } };
   }
 
   // Agents are never allowed to delete docs.

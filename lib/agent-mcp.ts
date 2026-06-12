@@ -129,6 +129,27 @@ const TOOLS: ToolDefinition[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'ezwrite_claim_agent_tasks',
+    description: 'Claim the next pending live-session task targeting this agent label.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'ezwrite_submit_agent_reply',
+    description: 'Submit a live-session reply for a claimed agent task.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string' },
+        promptId: { type: 'string' },
+        projectId: { type: 'string' },
+        pageIndex: { type: 'number' },
+        replyText: { type: 'string' },
+      },
+      required: ['taskId', 'promptId', 'projectId', 'replyText'],
+      additionalProperties: false,
+    },
+  },
 ];
 
 const TOOL_ACTIONS: Record<string, string> = {
@@ -142,6 +163,8 @@ const TOOL_ACTIONS: Record<string, string> = {
   ezwrite_add_page: 'add_page',
   ezwrite_create_document: 'create_project',
   ezwrite_rename_document: 'rename_project',
+  ezwrite_claim_agent_tasks: 'claim_agent_tasks',
+  ezwrite_submit_agent_reply: 'submit_agent_reply',
 };
 
 function bodyObj(body: unknown): JsonRpcRequest {

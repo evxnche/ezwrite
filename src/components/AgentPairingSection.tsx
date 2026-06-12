@@ -13,6 +13,10 @@ import {
   type AgentApiSetupStatus,
   type MintedPairing,
 } from '@/lib/agent-pairing';
+import {
+  getEnabledLiveSessionAgentIds,
+  setLiveSessionAgentEnabled,
+} from '@/lib/agent-live-session-store';
 
 const PANEL_SURFACE = 'rounded-xl border border-border/60';
 
@@ -65,6 +69,12 @@ export default function AgentPairingSection({
   const [copied, setCopied] = useState(false);
   const [setupStatus, setSetupStatus] = useState<AgentApiSetupStatus>({ ready: true, code: 'ready', message: '' });
   const [checkingSetup, setCheckingSetup] = useState(false);
+  const [liveSessionAgentIds, setLiveSessionAgentIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setLiveSessionAgentIds(getEnabledLiveSessionAgentIds(window.localStorage));
+  }, []);
 
   const refresh = useCallback(() => {
     if (!auth) return;
@@ -139,6 +149,12 @@ export default function AgentPairingSection({
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not revoke');
     }
+  };
+
+  const handleToggleLiveSession = (pairingId: string, enabled: boolean) => {
+    if (typeof window === 'undefined') return;
+    const next = setLiveSessionAgentEnabled(window.localStorage, pairingId, enabled);
+    setLiveSessionAgentIds(next);
   };
 
   const mintDisabled = busy || checkingSetup || !setupStatus.ready;
@@ -250,6 +266,7 @@ export default function AgentPairingSection({
             {pairings.length > 0 && (
               <div className="space-y-1 pt-1">
                 <div className="text-[10px] text-muted-foreground uppercase tracking-wider">active passkeys</div>
+                <div className="text-[10px] text-muted-foreground lowercase">live session toggles decide which agents appear after `@` and can work on the canvas right now.</div>
                 {pairings.map((p) => (
                   <div key={p.id} className="flex items-center justify-between gap-2 text-[11px] font-mono">
                     <span className="min-w-0 truncate text-foreground lowercase">
@@ -258,14 +275,29 @@ export default function AgentPairingSection({
                         {' · '}{p.targetProjectId ? 'one doc' : 'any doc'}{' · '}{expiryLabel(p.expiresAt)}
                       </span>
                     </span>
-                    <button
-                      onClick={() => handleRevoke(p.id)}
-                      className="flex items-center gap-1 text-muted-foreground hover:text-destructive"
-                      aria-label={`revoke ${p.label || 'agent'} passkey`}
-                    >
-                      <X size={12} />
-                      revoke
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        data-agent-live-toggle
+                        onClick={() => handleToggleLiveSession(p.id, !liveSessionAgentIds.includes(p.id))}
+                        aria-label={`toggle ${(p.label || 'agent')} live session`}
+                        className={`rounded-full border px-2 py-0.5 text-[10px] lowercase transition-colors ${
+                          liveSessionAgentIds.includes(p.id)
+                            ? 'border-accent-foreground/50 bg-accent/20 text-accent-foreground'
+                            : 'border-border text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        {liveSessionAgentIds.includes(p.id) ? 'live on' : 'live off'}
+                      </button>
+                      <button
+                        onClick={() => handleRevoke(p.id)}
+                        className="flex items-center gap-1 text-muted-foreground hover:text-destructive"
+                        aria-label={`revoke ${p.label || 'agent'} passkey`}
+                      >
+                        <X size={12} />
+                        revoke
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

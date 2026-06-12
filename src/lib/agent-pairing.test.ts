@@ -112,3 +112,10 @@ test('AgentPairingSection exposes a single copy-agent-instructions button after 
   assert.match(source, /copy agent instructions/);
   assert.match(source, /notebook\/page navigation notes/);
 });
+
+test('AgentPairingSection shows a per-agent live-session toggle beside revoke controls', () => {
+  const source = fs.readFileSync(path.join(process.cwd(), 'src/components/AgentPairingSection.tsx'), 'utf8');
+  assert.match(source, /live session/i);
+  assert.match(source, /data-agent-live-toggle/);
+  assert.match(source, /toggle .* live/i);
+});

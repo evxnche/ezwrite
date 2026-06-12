@@ -115,3 +115,16 @@ test('EditorHistory redo restores a page delete after undo', () => {
   assert.deepEqual(redone, { type: 'page-delete-redo', deleted: { index: 0, content: 'gone' } });
   assert.equal(history.canUndo, true);
 });
+
+test('EditorHistory undo/redo round-trips a page insert', () => {
+  const history = new EditorHistory({ debounceMs: 0 });
+  history.pushPageInsert({ index: 2, content: '' });
+
+  const undone = history.undo({ content: 'live', pageIndex: 2, pages: ['one', 'two', '', 'four'] });
+  assert.equal(undone?.type, 'page-insert');
+  assert.deepEqual(undone, { type: 'page-insert', inserted: { index: 2, content: '' } });
+
+  const redone = history.redo({ content: 'live', pageIndex: 1, pages: ['one', 'two', 'four'] });
+  assert.equal(redone?.type, 'page-insert-redo');
+  assert.deepEqual(redone, { type: 'page-insert-redo', inserted: { index: 2, content: '' } });
+});

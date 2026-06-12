@@ -176,6 +176,44 @@ export function restoreDeletedPageToList(
   };
 }
 
+export function insertPageAfterInList(
+  pages: string[],
+  afterIndex: number,
+  content = '',
+): { pages: string[]; newPage: number; inserted: DeletedPageSnapshot } {
+  const insertAt = Math.max(0, Math.min(afterIndex + 1, pages.length));
+  const nextPages = [...pages];
+  nextPages.splice(insertAt, 0, content);
+
+  return {
+    pages: nextPages,
+    newPage: insertAt,
+    inserted: {
+      index: insertAt,
+      content,
+    },
+  };
+}
+
+export function insertPageBeforeInList(
+  pages: string[],
+  beforeIndex: number,
+  content = '',
+): { pages: string[]; newPage: number; inserted: DeletedPageSnapshot } {
+  const insertAt = Math.max(0, Math.min(beforeIndex, pages.length));
+  const nextPages = [...pages];
+  nextPages.splice(insertAt, 0, content);
+
+  return {
+    pages: nextPages,
+    newPage: insertAt,
+    inserted: {
+      index: insertAt,
+      content,
+    },
+  };
+}
+
 export function getPageEndCursor(content: string): { lineIndex: number; offset: number } {
   const lines = content.split('\n');
   const lineIndex = Math.max(0, lines.length - 1);
@@ -603,6 +641,8 @@ export function getMarkdownRangeForSelection(
   return { start, end };
 }
 
+export const PAGE_SWIPE_THRESHOLD_PX = 84;
+
 export function getTouchGestureIntent({
   dx,
   dy,
@@ -627,7 +667,7 @@ export function getTouchGestureIntent({
     return 'dismiss-keyboard';
   }
 
-  if (Math.abs(dx) > Math.abs(dy) * 1.2 && Math.abs(dx) > 84) {
+  if (Math.abs(dx) > Math.abs(dy) * 1.2 && Math.abs(dx) > PAGE_SWIPE_THRESHOLD_PX) {
     return dx < 0 ? 'page-next' : 'page-prev';
   }
 

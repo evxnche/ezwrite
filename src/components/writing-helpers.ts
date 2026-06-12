@@ -1,3 +1,12 @@
+import {
+  decodeAgentPromptLine,
+  decodeAgentReplyLine,
+  encodeAgentPromptLine,
+  encodeAgentReplyLines,
+  isAgentPromptLine,
+  isAgentReplyLine,
+} from '../lib/agent-live-session.ts';
+
 export const STRUCK_MARKER = '\u200B\u2713';
 export const LIST_EXIT = '\u2060'; // word joiner — invisible, marks explicit list exit
 export const INDENT = '        '; // 8 spaces
@@ -19,7 +28,7 @@ export function getListName(line: string): string {
   return match ? match[1] : 'rename list';
 }
 
-export type LineType = 'text' | 'heading1' | 'heading2' | 'list-header' | 'list-item' | 'divider' | 'timer' | 'quote' | 'image' | 'voice';
+export type LineType = 'text' | 'heading1' | 'heading2' | 'list-header' | 'list-item' | 'divider' | 'timer' | 'quote' | 'image' | 'voice' | 'agent-prompt' | 'agent-reply';
 
 const SLASH_COMMANDS_BASE = [
   { name: 'list', description: 'Create a checklist' },
@@ -33,7 +42,6 @@ const SLASH_COMMANDS_BASE = [
 
 const IMAGE_SLASH_COMMAND = { name: 'image', description: 'Insert an image' } as const;
 const VOICE_SLASH_COMMAND = { name: 'voice', description: 'Record a voice note' } as const;
-
 export type SlashCommand = { name: string; description: string };
 
 export interface SlashCommandOptions {
@@ -105,6 +113,8 @@ export function getLineType(lines: string[], index: number): LineType {
   const line = lines[index];
   if (line.startsWith(LIST_EXIT)) return 'text';
   const clean = getCleanLine(line).trim();
+  if (isAgentPromptLine(clean)) return 'agent-prompt';
+  if (isAgentReplyLine(clean)) return 'agent-reply';
   const lower = clean.toLowerCase();
   if (isListHeader(lower)) return 'list-header';
   if (lower === 'line') return 'divider';
@@ -239,6 +249,24 @@ export function contentToHTML(content: string, options?: ContentToHTMLOptions): 
         const label = escapeHTML(m?.[2] ?? '');
         const duration = escapeHTML(m?.[3] ?? '');
         return `<div data-type="voice" data-voice-id="${id}" data-voice-label="${label}" data-voice-duration="${duration}" data-voice-slot="${i}" contenteditable="false" class="ce-voice"></div>`;
+      }
+      case 'agent-prompt': {
+        const prompt = decodeAgentPromptLine(line);
+        const text = escapeHTML(prompt?.promptText ?? line);
+        const id = escapeHTML(prompt?.promptId ?? '');
+        const labels = escapeHTML((prompt?.targetAgentLabels ?? []).join(', '));
+        const ids = escapeHTML(JSON.stringify(prompt?.targetAgentIds ?? []));
+        const fingerprint = escapeHTML(prompt?.fingerprint ?? '');
+        return `<div data-type="agent-prompt" data-agent-prompt-id="${id}" data-agent-target-ids="${ids}" data-agent-target-labels="${labels}" data-agent-fingerprint="${fingerprint}" class="ce-agent-prompt">${text || '<br>'}</div>`;
+      }
+      case 'agent-reply': {
+        const reply = decodeAgentReplyLine(line);
+        const text = escapeHTML(reply?.replyText ?? line);
+        const id = escapeHTML(reply?.promptId ?? '');
+        const label = escapeHTML(reply?.agentLabel ?? '');
+        const status = escapeHTML(reply?.status ?? 'done');
+        const agentId = escapeHTML(reply?.agentId ?? '');
+        return `<div data-type="agent-reply" data-agent-prompt-id="${id}" data-agent-id="${agentId}" data-agent-label="${label}" data-agent-status="${status}" class="ce-agent-reply">${text || '<br>'}</div>`;
       }
       case 'quote': {
         const text = line.replace(/^>> ?/, '');
@@ -451,6 +479,54 @@ export function extractContent(editor: HTMLElement): string {
       const label = el.dataset.voiceLabel || '';
       const duration = el.dataset.voiceDuration || '';
       lines.push(duration ? `voice::${id}|${label}|${duration}` : `voice::${id}|${label}`);
+      return;
+    }
+    if (type === 'agent-prompt') {
+      const promptId = el.dataset.agentPromptId || '';
+      const promptText = extractText(el);
+      const fingerprint = el.dataset.agentFingerprint || '';
+      const targetAgentIds = (() => {
+        try {
+          const parsed = JSON.parse(el.dataset.agentTargetIds || '[]') as unknown;
+          return Array.isArray(parsed) ? parsed.map((entry) => String(entry ?? '')) : [];
+        } catch {
+          return [];
+        }
+      })();
+      const targetAgentLabels = (el.dataset.agentTargetLabels || '')
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+      lines.push(
+        isAgentPromptLine(promptText)
+          ? promptText
+          : encodeAgentPromptLine({
+              promptId,
+              promptText,
+              targetAgentIds,
+              targetAgentLabels,
+              fingerprint,
+            }),
+      );
+      return;
+    }
+    if (type === 'agent-reply') {
+      const promptId = el.dataset.agentPromptId || '';
+      const agentId = el.dataset.agentId || '';
+      const agentLabel = el.dataset.agentLabel || '';
+      const status = el.dataset.agentStatus || 'done';
+      const replyText = extractText(el);
+      lines.push(
+        isAgentReplyLine(replyText)
+          ? replyText
+          : encodeAgentReplyLines({
+              promptId,
+              agentId,
+              agentLabel,
+              status: status === 'pending' || status === 'done' || status === 'error' ? status : 'done',
+              replyText,
+            })[0] ?? '',
+      );
       return;
     }
     if (type === 'heading1' || type === 'heading2') {

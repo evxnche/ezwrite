@@ -1,5 +1,6 @@
 import { handleAgentMcpRequest } from '../lib/agent-mcp.js';
 import { handleAgentRequest, type AgentEnv } from '../lib/agent-upstream.js';
+import { rateLimitAllow, clientIp } from '../lib/rate-limit.js';
 
 export const config = {
   maxDuration: 30,
@@ -34,7 +35,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const result = await handleAgentMcpRequest(
       { method: req.method ?? 'GET', header, body: req.body },
       readEnv(),
-      handleAgentRequest,
+      (request, env) => handleAgentRequest(request, env, { rateLimitAllow, clientIp }),
     );
     res.status(result.status).json(result.body);
   } catch (error) {

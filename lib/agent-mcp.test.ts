@@ -59,6 +59,8 @@ test('MCP tools/list advertises document operations without delete', async () =>
     'ezwrite_add_page',
     'ezwrite_create_document',
     'ezwrite_rename_document',
+    'ezwrite_claim_agent_tasks',
+    'ezwrite_submit_agent_reply',
   ]);
   assert.equal(names.includes('ezwrite_delete_document'), false);
 });
@@ -121,4 +123,54 @@ test('MCP tools/call reports agent API failures as tool errors', async () => {
       isError: true,
     },
   });
+});
+
+test('MCP exposes the live-task claim tool through the shared agent handler', async () => {
+  let forwarded: AgentRequest | null = null;
+  const result = await handleAgentMcpRequest({
+    method: 'POST',
+    header: bearerHeader,
+    body: {
+      jsonrpc: '2.0',
+      id: 5,
+      method: 'tools/call',
+      params: { name: 'ezwrite_claim_agent_tasks', arguments: {} },
+    },
+  }, env, async (request) => {
+    forwarded = request;
+    return { status: 200, body: { task: { taskId: 'task-1' } } };
+  });
+
+  assert.equal(forwarded?.body.action, 'claim_agent_tasks');
+  assert.equal(result.status, 200);
+});
+
+test('MCP exposes the live-task reply tool through the shared agent handler', async () => {
+  let forwarded: AgentRequest | null = null;
+  const result = await handleAgentMcpRequest({
+    method: 'POST',
+    header: bearerHeader,
+    body: {
+      jsonrpc: '2.0',
+      id: 6,
+      method: 'tools/call',
+      params: {
+        name: 'ezwrite_submit_agent_reply',
+        arguments: { taskId: 'task-1', promptId: 'prompt-1', projectId: 'doc-1', pageIndex: 0, replyText: 'done' },
+      },
+    },
+  }, env, async (request) => {
+    forwarded = request;
+    return { status: 200, body: { ok: true } };
+  });
+
+  assert.deepEqual(forwarded?.body, {
+    action: 'submit_agent_reply',
+    taskId: 'task-1',
+    promptId: 'prompt-1',
+    projectId: 'doc-1',
+    pageIndex: 0,
+    replyText: 'done',
+  });
+  assert.equal(result.status, 200);
 });

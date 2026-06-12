@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import SlashCommandPopup from './SlashCommandPopup';
+import AgentMentionPopup from './AgentMentionPopup';
 import TimerWidget from './TimerWidget';
 import { clearTimerState } from './timer-storage';
 import PolaroidImage from './PolaroidImage';
@@ -34,6 +35,7 @@ import {
 import { buildTimerSlots, getAddedTimerStableIds, getRemovedTimerStableIds } from './timer-identity';
 import {
   getTouchGestureIntent,
+  PAGE_SWIPE_THRESHOLD_PX,
   getPageEndCursor,
   prepareFloatingSlashButtonCommand,
   getShareCardLines,
@@ -43,6 +45,7 @@ import {
   deletePageFromList,
   type DeletedPageSnapshot,
   insertPageAfterInList,
+  insertPageBeforeInList,
   indentPlainListLineForTab,
   renumberFollowingPlainNumberedListItems,
   renumberAllPlainNumberedLists,
@@ -122,6 +125,30 @@ import { recordBugReportBreadcrumb, setBugReportRuntimeContext } from '@/lib/bug
 import { loadSyncSession, saveSyncSession, clearSyncSession } from '@/lib/sync-session-store';
 import { startAgentRelay, type RelayHandle } from '@/lib/agent-relay';
 import { listPairings, hasActivePairing, type AgentPairing } from '@/lib/agent-pairing';
+import { getEnabledLiveSessionAgents } from '@/lib/agent-live-session-store';
+import {
+  type AgentTaskPayload,
+  type EncodedAgentReply,
+  applyAgentReplyEvent,
+  applyAgentThreadStart,
+  buildAgentThreadStart,
+  decodeAgentPromptLine,
+  decodeAgentReplyLine,
+  isAgentPromptLine,
+  isAgentReplyLine,
+  type ActiveAgentOption,
+} from '@/lib/agent-live-session';
+import {
+  consumeAgentReplyEvents,
+  listPendingAgentReplies,
+  queueAgentTasks,
+} from '@/lib/agent-live-session-client';
+import {
+  collectPendingStandinTasks,
+  generateStandinReply,
+  standinKey,
+} from '@/lib/agent-local-standin';
+import { completeScratchpadPrompt } from '@/lib/openrouter';
 import { getScratchpadLLMConfig, setScratchpadLLMConfig, type ScratchpadLLMConfig } from '@/lib/scratchpad-llm';
 import MobileSyncGate from './MobileSyncGate';
 import {
@@ -214,6 +241,7 @@ function getUntitledFolderName(projectId: string): string {
 const AGENT_SETUP_CHEAT = '//agent//';   // opens the agent setup window
 const VOICE_CHEAT = '//voice//';         // toggles voice notes
 const BYOK_CHEAT = '//byok//';           // reveals bring-your-own-key scratchpad settings
+const EXP_CHEAT = '//exp//';             // reveals experimental features (Spaces, keyboard page insert)
 
 function getInitialProjectState(): { projects: ProjectMeta[]; activeProjectId: string | null } {
   initProjects();
@@ -446,6 +474,7 @@ const WritingInterface = () => {
   const refreshActiveProjectRef = useRef<() => void>(() => {});
   const [timerAlert, setTimerAlert] = useState(false);
   const [pageTransition, setPageTransition] = useState<'none' | 'slide-left' | 'slide-right'>('none');
+  const scrollEditorToTopAfterPageSwitchRef = useRef(false);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const editorRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -648,6 +677,18 @@ const WritingInterface = () => {
     setByokUnlocked(v => {
       const next = !v;
       localStorage.setItem('ezwrite-byok-unlocked', String(next));
+      return next;
+    });
+  };
+  // Experimental features (Spaces/folders + keyboard page insert) are hidden by
+  // default — revealed via the //exp// cheat.
+  const [expEnabled, setExpEnabled] = useState(() =>
+    localStorage.getItem('ezwrite-exp-enabled') === 'true'
+  );
+  const toggleExpEnabled = () => {
+    setExpEnabled(v => {
+      const next = !v;
+      localStorage.setItem('ezwrite-exp-enabled', String(next));
       return next;
     });
   };
@@ -897,6 +938,14 @@ const WritingInterface = () => {
   // Slash popup
   const [slashPopup, setSlashPopup] = useState<{ rect: DOMRect; filter: string; lineIndex: number } | null>(null);
   const [popupHighlight, setPopupHighlight] = useState(0);
+  const [mentionPopup, setMentionPopup] = useState<{ rect: DOMRect; filter: string; lineIndex: number } | null>(null);
+  const [mentionHighlight, setMentionHighlight] = useState(0);
+  const [activeLiveSessionAgents, setActiveLiveSessionAgents] = useState<AgentPairing[]>([]);
+  const liveAgentSessionBusyRef = useRef(false);
+  // Path 2 local stand-in: prompt+agent keys with a reply being generated, and a
+  // buffer of finished replies waiting to be applied inside the next tick.
+  const standinInFlightRef = useRef<Set<string>>(new Set());
+  const standinRepliesRef = useRef<EncodedAgentReply[]>([]);
 
   const isDark = mounted && theme === 'dark';
 
@@ -1582,6 +1631,7 @@ const WritingInterface = () => {
       setPageCount(pagesRef.current.length);
       const projectId = activeProjectIdRef.current;
       if (projectId) saveProjectPages(projectId, pagesRef.current);
+      scrollEditorToTopAfterPageSwitchRef.current = true;
     }
     // Save current page
     if (editorRef.current) {
@@ -1621,6 +1671,10 @@ const WritingInterface = () => {
     structuralUpdateRef.current(pageContent, lineIndex, offset, shouldFocus, false);
     setIsPageEmpty(pageContent.trim() === '');
     setTimeout(() => {
+      if (scrollEditorToTopAfterPageSwitchRef.current) {
+        scrollEditorToTopAfterPageSwitchRef.current = false;
+        window.scrollTo({ top: 0, behavior: 'auto' });
+      }
       if (shouldFocus) {
         editorRef.current?.focus();
       }
@@ -1678,12 +1732,56 @@ const WritingInterface = () => {
     setShowDots(true);
     clearTimeout(dotsTimeoutRef.current);
     dotsTimeoutRef.current = setTimeout(() => setShowDots(false), PAGE_SIGNIFIER_PERSIST_MS);
+    scrollEditorToTopAfterPageSwitchRef.current = true;
     setPageTransition('slide-left');
     contentRef.current = newContent;
+    const projectId = activeProjectIdRef.current;
+    if (projectId) saveProjectLastPage(projectId, newPage);
     currentPageRef.current = newPage;
-    setIsPageEmpty(newContent.trim() === '');
     setCurrentPage(newPage);
   }, [bumpHistory, persistPageStructure]);
+
+  const insertPageBefore = useCallback((beforeIndex: number) => {
+    if (editorRef.current) {
+      pagesRef.current[currentPageRef.current] = extractContent(editorRef.current);
+    }
+
+    const result = insertPageBeforeInList(pagesRef.current, beforeIndex);
+    pagesRef.current = result.pages;
+    editorHistory.current.pushPageInsert(result.inserted);
+    bumpHistory();
+
+    const previousPage = currentPageRef.current;
+    const newPage = result.newPage;
+    const newContent = result.pages[newPage] ?? '';
+    setPageCount(result.pages.length);
+    persistPageStructure(result.pages, newPage);
+    editingTimerLineRef.current = null;
+    setShowDots(true);
+    clearTimeout(dotsTimeoutRef.current);
+    dotsTimeoutRef.current = setTimeout(() => setShowDots(false), PAGE_SIGNIFIER_PERSIST_MS);
+    scrollEditorToTopAfterPageSwitchRef.current = true;
+    setPageTransition('slide-right');
+    contentRef.current = newContent;
+    const projectId = activeProjectIdRef.current;
+    if (projectId) saveProjectLastPage(projectId, newPage);
+    currentPageRef.current = newPage;
+    setCurrentPage(newPage);
+
+    // Insert-before keeps the same page index, so the currentPage effect does not run.
+    if (newPage === previousPage) {
+      setIsPageEmpty(newContent.trim() === '');
+      const { lineIndex, offset } = getPageEndCursor(newContent);
+      structuralUpdate(newContent, lineIndex, offset, !isTouchDevice, false);
+      setTimeout(() => {
+        if (scrollEditorToTopAfterPageSwitchRef.current) {
+          scrollEditorToTopAfterPageSwitchRef.current = false;
+          window.scrollTo({ top: 0, behavior: 'auto' });
+        }
+        setPageTransition('none');
+      }, 250);
+    }
+  }, [bumpHistory, persistPageStructure, structuralUpdate, isTouchDevice]);
 
   const applyPageInsertUndo = useCallback((inserted: DeletedPageSnapshot) => {
     if (editorRef.current) {
@@ -1718,6 +1816,7 @@ const WritingInterface = () => {
       pagesRef.current[currentPageRef.current] = extractContent(editorRef.current);
     }
 
+    const previousPage = currentPageRef.current;
     const restored = restoreDeletedPageToList(pagesRef.current, inserted);
     pagesRef.current = restored.pages;
     const restoredContent = restored.pages[restored.restoredPage] ?? '';
@@ -1728,14 +1827,25 @@ const WritingInterface = () => {
     setShowDots(true);
     clearTimeout(dotsTimeoutRef.current);
     dotsTimeoutRef.current = setTimeout(() => setShowDots(false), PAGE_SIGNIFIER_PERSIST_MS);
-    setPageTransition('slide-left');
+    scrollEditorToTopAfterPageSwitchRef.current = true;
+    setPageTransition(inserted.index <= previousPage ? 'slide-right' : 'slide-left');
     contentRef.current = restoredContent;
     currentPageRef.current = restored.restoredPage;
-    setIsPageEmpty(restoredContent.trim() === '');
     setCurrentPage(restored.restoredPage);
-    const { lineIndex, offset } = getPageEndCursor(restoredContent);
-    structuralUpdate(restoredContent, lineIndex, offset, !isTouchDevice, false);
     editorHistory.current.onPageRestored(inserted.index);
+
+    if (restored.restoredPage === previousPage) {
+      setIsPageEmpty(restoredContent.trim() === '');
+      const { lineIndex, offset } = getPageEndCursor(restoredContent);
+      structuralUpdate(restoredContent, lineIndex, offset, !isTouchDevice, false);
+      setTimeout(() => {
+        if (scrollEditorToTopAfterPageSwitchRef.current) {
+          scrollEditorToTopAfterPageSwitchRef.current = false;
+          window.scrollTo({ top: 0, behavior: 'auto' });
+        }
+        setPageTransition('none');
+      }, 250);
+    }
   }, [persistPageStructure, structuralUpdate, isTouchDevice]);
 
   const applyPageRestore = useCallback((deleted: DeletedPageSnapshot) => {
@@ -2027,6 +2137,15 @@ const WritingInterface = () => {
     return () => { cancelled = true; };
   }, [syncSession]);
 
+  const refreshActiveLiveSessionAgents = useCallback((pairings: AgentPairing[]) => {
+    if (typeof window === 'undefined') return;
+    setActiveLiveSessionAgents(getEnabledLiveSessionAgents(pairings, window.localStorage));
+  }, []);
+
+  useEffect(() => {
+    refreshActiveLiveSessionAgents(agentPairings);
+  }, [agentPairings, refreshActiveLiveSessionAgents]);
+
   const prevSettingsOpenRef = useRef(settingsOpen);
   useEffect(() => {
     if (prevSettingsOpenRef.current && !settingsOpen && syncSessionRef.current) {
@@ -2034,6 +2153,14 @@ const WritingInterface = () => {
     }
     prevSettingsOpenRef.current = settingsOpen;
   }, [settingsOpen]);
+
+  const prevAgentSetupOpenRef = useRef(agentSetupOpen);
+  useEffect(() => {
+    if (prevAgentSetupOpenRef.current && !agentSetupOpen) {
+      refreshActiveLiveSessionAgents(agentPairings);
+    }
+    prevAgentSetupOpenRef.current = agentSetupOpen;
+  }, [agentPairings, agentSetupOpen, refreshActiveLiveSessionAgents]);
 
   // Run the relay only while signed in with an active pairing.
   useEffect(() => {
@@ -2063,6 +2190,126 @@ const WritingInterface = () => {
     agentRelayRef.current = handle;
     return () => { handle.stop(); agentRelayRef.current = null; };
   }, [syncSession, agentPairings, showAgentNotice]);
+
+  useEffect(() => {
+    if (!syncSession || !activeProjectId || activeLiveSessionAgents.length === 0) return;
+    let stopped = false;
+    const activeAgents: ActiveAgentOption[] = activeLiveSessionAgents
+      .filter((agent) => Boolean(agent.label?.trim()))
+      .map((agent) => ({ id: agent.id, label: agent.label!.trim() }));
+    if (activeAgents.length === 0) return;
+
+    const tick = async () => {
+      if (stopped || liveAgentSessionBusyRef.current) return;
+      liveAgentSessionBusyRef.current = true;
+      try {
+        const currentContent = editorRef.current ? extractContent(editorRef.current) : contentRef.current;
+        let lines = currentContent.split('\n');
+        // Avoid duplicate queueing by skipping lines already rewritten into structured prompt rows.
+        const seenFingerprints = new Set<string>();
+        for (const line of lines) {
+          if (!isAgentPromptLine(line)) continue;
+          const decoded = decodeAgentPromptLine(line);
+          if (decoded?.fingerprint) seenFingerprints.add(decoded.fingerprint);
+        }
+
+        let queuedTasks: AgentTaskPayload[] = [];
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i] ?? '';
+          if (isAgentPromptLine(line)) continue;
+          const reply = isAgentReplyLine(line) ? decodeAgentReplyLine(line) : null;
+          const promptText = reply?.status !== 'pending' ? reply.replyText : line;
+          const thread = buildAgentThreadStart({
+            projectId: activeProjectId,
+            pageIndex: currentPageRef.current,
+            promptText,
+            activeAgents,
+          });
+          if (!thread) continue;
+          const fingerprint = thread.tasks[0]?.fingerprint ?? '';
+          if (!fingerprint || seenFingerprints.has(fingerprint)) continue;
+          seenFingerprints.add(fingerprint);
+          if (reply) {
+            lines.splice(i + 1, 0, thread.promptLine, ...thread.replyPlaceholderLines);
+            i += 1 + thread.replyPlaceholderLines.length;
+          } else {
+            lines = applyAgentThreadStart(lines, i, thread);
+            i += thread.replyPlaceholderLines.length;
+          }
+          queuedTasks = [...queuedTasks, ...thread.tasks];
+        }
+
+        if (queuedTasks.length > 0) {
+          await queueAgentTasks(syncSession, queuedTasks);
+          const cursor = getCursorInfoRef.current();
+          structuralUpdate(lines.join('\n'), cursor?.lineIndex ?? 0, cursor?.offset ?? 0, false);
+          showAgentNotice('live agent task queued');
+          return;
+        }
+
+        // Path 2: apply any stand-in replies ezWrite generated off-tick. All editor
+        // mutations happen here, inside the tick, so concurrent generations can't
+        // clobber each other's writes.
+        if (standinRepliesRef.current.length > 0) {
+          const buffered = standinRepliesRef.current;
+          standinRepliesRef.current = [];
+          for (const reply of buffered) {
+            standinInFlightRef.current.delete(standinKey(reply.promptId, reply.agentId));
+            lines = applyAgentReplyEvent(lines, reply);
+          }
+          const cursor = getCursorInfoRef.current();
+          structuralUpdate(lines.join('\n'), cursor?.lineIndex ?? 0, cursor?.offset ?? 0, false);
+          showAgentNotice('an agent replied on your canvas');
+          return;
+        }
+
+        // Generate stand-in replies for still-pending placeholders via the BYOK
+        // model layer. Fire-and-forget: each result lands in standinRepliesRef and
+        // a later tick applies it. This is what makes @agent work with no external
+        // agent loop running.
+        for (const task of collectPendingStandinTasks(lines)) {
+          const key = standinKey(task.promptId, task.agentId);
+          if (standinInFlightRef.current.has(key)) continue;
+          standinInFlightRef.current.add(key);
+          void generateStandinReply(task, (prompt) =>
+            completeScratchpadPrompt(prompt, undefined, getScratchpadLLMConfig()),
+          )
+            .then((reply) => { standinRepliesRef.current.push(reply); })
+            .catch(() => { standinInFlightRef.current.delete(key); });
+        }
+
+        const replies = (await listPendingAgentReplies(syncSession, activeProjectId))
+          .filter((reply) => reply.pageIndex === currentPageRef.current);
+        if (replies.length === 0) return;
+
+        for (const reply of replies) {
+          lines = applyAgentReplyEvent(lines, {
+            promptId: reply.promptId,
+            agentId: reply.agentId,
+            agentLabel: reply.agentLabel,
+            replyText: reply.replyText,
+            status: reply.status,
+          });
+        }
+        await consumeAgentReplyEvents(syncSession, replies.map((reply) => reply.eventId));
+        const cursor = getCursorInfoRef.current();
+        structuralUpdate(lines.join('\n'), cursor?.lineIndex ?? 0, cursor?.offset ?? 0, false);
+        showAgentNotice('an agent replied on your canvas');
+      } catch {
+        // Best effort; the next tick retries.
+      } finally {
+        liveAgentSessionBusyRef.current = false;
+      }
+    };
+
+    void tick();
+    const interval = setInterval(() => void tick(), 1500);
+    return () => {
+      stopped = true;
+      clearInterval(interval);
+    };
+  }, [activeLiveSessionAgents, activeProjectId, showAgentNotice, structuralUpdate, syncSession]);
 
   const handleOpenDocs = useCallback(() => {
     setScratchpadOpen(false);
@@ -2391,12 +2638,13 @@ const WritingInterface = () => {
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
   const touchHasSelection = useRef(false);
+
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
     touchHasSelection.current = false;
   };
-  const handleTouchMove = () => {
+  const handleTouchMove = (e: React.TouchEvent) => {
     if (window.getSelection()?.toString()) {
       touchHasSelection.current = true;
     }
@@ -2435,7 +2683,8 @@ const WritingInterface = () => {
   const wheelTimeout = useRef<ReturnType<typeof setTimeout>>();
   const wheelCooldown = useRef(false);
   const handleWheel = (e: React.WheelEvent) => {
-    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) * 2) return;
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX) * 2) return;
+
     if (Math.abs(e.deltaX) < 5) return;
     e.preventDefault();
     if (wheelCooldown.current) return;
@@ -2814,6 +3063,23 @@ const WritingInterface = () => {
       return;
     }
 
+    // Cheat code: //exp// reveals experimental features (Spaces, keyboard page insert).
+    const expCheatIdx = newContent.indexOf(EXP_CHEAT);
+    if (expCheatIdx !== -1) {
+      const stripped =
+        newContent.slice(0, expCheatIdx) +
+        newContent.slice(expCheatIdx + EXP_CHEAT.length);
+      const before = stripped.slice(0, expCheatIdx);
+      const lineIndex = (before.match(/\n/g) || []).length;
+      const offset = before.length - (before.lastIndexOf('\n') + 1);
+      toggleExpEnabled();
+      showAgentNotice(expEnabled ? 'experimental features hidden' : 'experimental features on');
+      setSlashPopup(null);
+      structuralUpdate(stripped, lineIndex, offset);
+      triggerTyping();
+      return;
+    }
+
     const prevContent = contentRef.current;
     if (!suppressInputHistoryRef.current && newContent.length < prevContent.length) {
       const tracked = pendingCursor.current ?? trackedCursor.current;
@@ -2910,6 +3176,25 @@ const WritingInterface = () => {
           return;
         }
       }
+      const mentionPrefix = visibleText.slice(0, info.offset);
+      const mentionMatch = mentionPrefix.match(/(?:^|\s)@([a-z0-9-]*)$/i);
+      if (mentionMatch && activeLiveSessionAgents.length > 0) {
+        const filter = mentionMatch[1] ?? '';
+        const matches = activeLiveSessionAgents.filter((agent) =>
+          (agent.label || '').toLowerCase().startsWith(filter.toLowerCase()),
+        );
+        if (matches.length > 0) {
+          const sel = window.getSelection();
+          if (sel && sel.rangeCount) {
+            const range = sel.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            if (!mentionPopup) setMentionHighlight(0);
+            setMentionPopup({ rect, filter, lineIndex: info.lineIndex });
+          }
+          return;
+        }
+      }
+
       // Check for /x at end of list item line
       const lineType = getLineType(lines, info.lineIndex);
       if (lineType === 'list-item' && trimmed.endsWith('/x')) {
@@ -2953,22 +3238,13 @@ const WritingInterface = () => {
     }
 
     if (slashPopup) setSlashPopup(null);
-  }, [bumpHistory, slashCommands, slashPopup, structuralUpdate, saveContent, scrollToLine]);
+    if (mentionPopup) setMentionPopup(null);
+  }, [activeLiveSessionAgents, bumpHistory, mentionPopup, slashCommands, slashPopup, structuralUpdate, saveContent, scrollToLine]);
 
   const applySlashCommand = useCallback((command: string, lineIndex: number) => {
     // Bug 7: use fresh DOM content instead of potentially stale contentRef
     const lines = editorRef.current ? extractContent(editorRef.current).split('\n') : contentRef.current.split('\n');
     if (lineIndex < 0 || lineIndex >= lines.length) return;
-    if (command === 'newpage') {
-      lines[lineIndex] = '';
-      const cleared = lines.join('\n');
-      pagesRef.current[currentPageRef.current] = cleared;
-      structuralUpdate(cleared, lineIndex, 0, false, false);
-      contentRef.current = cleared;
-      setSlashPopup(null);
-      insertPageAfter(currentPageRef.current);
-      return;
-    }
     pushUndo(true);
     if (command === 'help') {
       lines[lineIndex] = '';
@@ -3028,7 +3304,7 @@ const WritingInterface = () => {
       structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
     }
     setSlashPopup(null);
-  }, [handleToggleSideTab, handleOpenScratchpad, imagesEnabled, insertPageAfter, voicesEnabled, pushUndo, structuralUpdate]);
+  }, [handleToggleSideTab, handleOpenScratchpad, imagesEnabled, voicesEnabled, pushUndo, structuralUpdate]);
 
   // Slash command select
   const handleSlashSelect = useCallback((command: string) => {
@@ -3036,13 +3312,35 @@ const WritingInterface = () => {
     applySlashCommand(command, slashPopup.lineIndex);
   }, [applySlashCommand, slashPopup]);
 
+  const handleMentionSelect = useCallback((name: string) => {
+    if (!mentionPopup) return;
+    const lines = editorRef.current ? extractContent(editorRef.current).split('\n') : contentRef.current.split('\n');
+    const lineIndex = mentionPopup.lineIndex;
+    const currentLine = lines[lineIndex] || '';
+    lines[lineIndex] = currentLine.replace(/@([a-z0-9-]*)$/i, `@${name} `);
+    structuralUpdate(lines.join('\n'), lineIndex, lines[lineIndex].length);
+    setMentionPopup(null);
+  }, [mentionPopup, structuralUpdate]);
+
   const filteredCommands = slashPopup
     ? slashCommands.filter(c => c.name.startsWith(slashPopup.filter.toLowerCase()))
+    : [];
+  const filteredMentionAgents = mentionPopup
+    ? activeLiveSessionAgents
+      .filter((agent) => (agent.label || '').toLowerCase().startsWith(mentionPopup.filter.toLowerCase()))
+      .map((agent) => ({
+        name: agent.label || 'agent',
+        description: 'live session agent',
+      }))
     : [];
 
   useEffect(() => {
     if (slashPopup && filteredCommands.length === 0) setSlashPopup(null);
   }, [slashPopup, filteredCommands.length]);
+
+  useEffect(() => {
+    if (mentionPopup && filteredMentionAgents.length === 0) setMentionPopup(null);
+  }, [mentionPopup, filteredMentionAgents.length]);
 
   const openSlashPopup = useCallback((lineIndex: number, filter = '') => {
     requestAnimationFrame(() => {
@@ -3334,8 +3632,20 @@ const WritingInterface = () => {
       }
     }
 
+    // Experimental: keyboard page insert is gated behind the //exp// cheat.
+    if (expEnabled && (e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'ArrowRight') {
+      e.preventDefault();
+      insertPageAfter(currentPageRef.current);
+      return;
+    }
+    if (expEnabled && (e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'ArrowLeft') {
+      e.preventDefault();
+      insertPageBefore(currentPageRef.current);
+      return;
+    }
+
     // Cmd/Ctrl+Left/Right — switch page (optional; off = native sentence navigation)
-    if (cmdArrowPageNav && (e.metaKey || e.ctrlKey) && e.key === 'ArrowLeft') {
+    if (cmdArrowPageNav && (e.metaKey || e.ctrlKey) && e.key === 'ArrowLeft' && !e.shiftKey) {
       e.preventDefault();
       switchToPage(currentPageRef.current - 1);
       return;
@@ -3343,11 +3653,6 @@ const WritingInterface = () => {
     if (cmdArrowPageNav && (e.metaKey || e.ctrlKey) && e.key === 'ArrowRight' && !e.shiftKey) {
       e.preventDefault();
       switchToPage(currentPageRef.current + 1);
-      return;
-    }
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'ArrowRight') {
-      e.preventDefault();
-      insertPageAfter(currentPageRef.current);
       return;
     }
 
@@ -4566,7 +4871,7 @@ const WritingInterface = () => {
       </div>
 
 
-      {isTouchDevice && !scratchpadOpen && !slashPopup && (
+      {isTouchDevice && !scratchpadOpen && !slashPopup && !mentionPopup && (
         <MobileEditorDock
           canUndo={canContentUndo}
           canRedo={canContentRedo}
@@ -4600,6 +4905,18 @@ const WritingInterface = () => {
           onSelect={(name) => handleSlashSelect(name)}
           onClose={() => setSlashPopup(null)}
           rect={slashPopup.rect}
+          kbHeight={kbHeight}
+          isTouchDevice={isTouchDevice}
+        />
+      )}
+
+      {mentionPopup && filteredMentionAgents.length > 0 && (
+        <AgentMentionPopup
+          agents={filteredMentionAgents}
+          highlightIndex={mentionHighlight}
+          onSelect={(name) => handleMentionSelect(name)}
+          onClose={() => setMentionPopup(null)}
+          rect={mentionPopup.rect}
           kbHeight={kbHeight}
           isTouchDevice={isTouchDevice}
         />
@@ -4703,6 +5020,7 @@ const WritingInterface = () => {
       <Suspense fallback={null}>
         <NotesPanel
           open={notesOpen}
+          expEnabled={expEnabled}
           projects={projects}
           activeProjectId={activeProjectId}
           canExportPage={Boolean(contentRef.current.trim())}
@@ -4842,8 +5160,6 @@ const WritingInterface = () => {
               onToggleHelp={handleToggleHelp}
               settingsCommandEnabled={settingsCommandEnabled}
               onToggleSettingsCommand={handleToggleSettingsCommand}
-              newpageEnabled={newpageEnabled}
-              onToggleNewpage={handleToggleNewpage}
               polaroidFramesEnabled={polaroidFramesEnabled}
               onTogglePolaroidFrames={handleTogglePolaroidFrames}
               justifyText={justifyText}

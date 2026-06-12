@@ -10,15 +10,17 @@ import {
   FolderOpen,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   ArrowUpRight,
   Pencil,
   Cloud,
   CloudOff,
 } from 'lucide-react';
-import { type ProjectMeta, getProjectTitle, getProjectPreview, timeAgo } from '@/lib/projects';
+import { type ProjectMeta, getProjectTitle, getProjectPreview, timeAgo, getSpacesSorted, listUnfiledProjects, listProjectsInSpace, type SpaceMeta } from '@/lib/projects';
 
 interface Props {
   open: boolean;
+  expEnabled: boolean;
   projects: ProjectMeta[];
   activeProjectId: string | null;
   canExportPage: boolean;
@@ -32,6 +34,11 @@ interface Props {
   onRenameProject: (id: string, newTitle: string) => void;
   isProjectSynced: (id: string) => boolean;
   onToggleProjectSync: (id: string) => void;
+  onCreateSpace: () => void;
+  onDeleteSpace: (id: string) => void;
+  onRenameSpace: (id: string, newTitle: string) => void;
+  onNewProjectInSpace: (spaceId: string) => void;
+  onMoveProjectToSpace: (projectId: string, spaceId: string | null) => void;
   onOpenSettings: () => void;
   onOpenScratchpad: () => void;
   onExportPageMd: () => void;
@@ -42,10 +49,17 @@ interface Props {
   onClose: () => void;
 }
 
-type ExpandedSection = 'export' | 'notes' | null;
+type ExpandedSection = 'export' | 'spaces' | null;
 type ExportFormat = 'md' | 'pdf' | null;
 
 type DocMenuState = {
+  id: string;
+  title: string;
+  x: number;
+  y: number;
+} | null;
+
+type SpaceMenuState = {
   id: string;
   title: string;
   x: number;
@@ -56,6 +70,7 @@ const baseRowClass = 'w-full flex items-center gap-3 px-4 py-3 text-left font-mo
 
 const NotesPanel: React.FC<Props> = ({
   open,
+  expEnabled,
   projects,
   activeProjectId,
   canExportPage,
@@ -69,6 +84,11 @@ const NotesPanel: React.FC<Props> = ({
   onRenameProject,
   isProjectSynced,
   onToggleProjectSync,
+  onCreateSpace,
+  onDeleteSpace,
+  onRenameSpace,
+  onNewProjectInSpace,
+  onMoveProjectToSpace,
   onOpenSettings,
   onOpenScratchpad,
   onExportPageMd,
@@ -79,12 +99,21 @@ const NotesPanel: React.FC<Props> = ({
   onClose,
 }) => {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<ExpandedSection>(null);
+  // With //exp// off the "notebooks" section is the only way to reach notebooks,
+  // so open it by default (Spaces stays collapsed when on, matching before).
+  const [expanded, setExpanded] = useState<ExpandedSection>(expEnabled ? null : 'spaces');
   const [exportFormat, setExportFormat] = useState<ExportFormat>(null);
+  const [expandedSpaces, setExpandedSpaces] = useState<Set<string>>(new Set());
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [renamingSpaceId, setRenamingSpaceId] = useState<string | null>(null);
+  const [renameSpaceValue, setRenameSpaceValue] = useState('');
   const [docMenu, setDocMenu] = useState<DocMenuState>(null);
+  const [docMenuView, setDocMenuView] = useState<'main' | 'move'>('main');
+  const [spaceMenu, setSpaceMenu] = useState<SpaceMenuState>(null);
+  const [unfiledExpanded, setUnfiledExpanded] = useState(true);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
+  const renameSpaceInputRef = useRef<HTMLInputElement | null>(null);
   const clickTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -93,6 +122,13 @@ const NotesPanel: React.FC<Props> = ({
       renameInputRef.current.select();
     }
   }, [renamingId]);
+
+  useEffect(() => {
+    if (renamingSpaceId && renameSpaceInputRef.current) {
+      renameSpaceInputRef.current.focus();
+      renameSpaceInputRef.current.select();
+    }
+  }, [renamingSpaceId]);
 
   const cancelPendingClick = () => {
     if (clickTimerRef.current !== null) {
@@ -110,10 +146,22 @@ const NotesPanel: React.FC<Props> = ({
     setRenameValue(title);
   };
 
+  const startRenameSpace = (id: string, title: string) => {
+    setSpaceMenu(null);
+    setRenamingSpaceId(id);
+    setRenameSpaceValue(title);
+  };
+
   const openDocMenu = (id: string, title: string, x: number, y: number) => {
     cancelPendingClick();
     setRenamingId(null);
     setDocMenu({ id, title, x, y });
+    setDocMenuView('main');
+  };
+
+  const openSpaceMenu = (id: string, title: string, x: number, y: number) => {
+    setRenamingSpaceId(null);
+    setSpaceMenu({ id, title, x, y });
   };
 
   const commitRename = () => {
@@ -124,9 +172,22 @@ const NotesPanel: React.FC<Props> = ({
     setRenameValue('');
   };
 
+  const commitRenameSpace = () => {
+    if (!renamingSpaceId) return;
+    const trimmed = renameSpaceValue.trim();
+    if (trimmed) onRenameSpace(renamingSpaceId, trimmed);
+    setRenamingSpaceId(null);
+    setRenameSpaceValue('');
+  };
+
   const cancelRename = () => {
     setRenamingId(null);
     setRenameValue('');
+  };
+
+  const cancelRenameSpace = () => {
+    setRenamingSpaceId(null);
+    setRenameSpaceValue('');
   };
 
   const handleMenuDelete = (id: string) => {
@@ -139,11 +200,213 @@ const NotesPanel: React.FC<Props> = ({
     onToggleProjectSync(id);
   };
 
+  const handleMenuMoveToSpace = (projectId: string, spaceId: string | null) => {
+    setDocMenu(null);
+    onMoveProjectToSpace(projectId, spaceId);
+  };
+
+  const toggleSpace = (spaceId: string) => {
+    setExpandedSpaces((current) => {
+      const next = new Set(current);
+      if (next.has(spaceId)) {
+        next.delete(spaceId);
+      } else {
+        next.add(spaceId);
+      }
+      return next;
+    });
+  };
+
   if (!open) return null;
 
   const toggleSection = (section: Exclude<ExpandedSection, null>) => {
     setExpanded((current) => current === section ? null : section);
     setExportFormat(null);
+  };
+
+  const spaces = getSpacesSorted();
+  const unfiledProjects = listUnfiledProjects();
+
+  const renderProjectRow = (project: ProjectMeta, spaceId: string | null = null) => {
+    const title = getProjectTitle(project.id);
+    const preview = getProjectPreview(project.id);
+    const isActive = project.id === activeProjectId;
+    const isHovered = hoveredId === project.id;
+    const isRenaming = renamingId === project.id;
+    const isSynced = isProjectSynced(project.id);
+
+    const openProject = () => {
+      setDocMenu(null);
+      onSelectProject(project.id);
+      onClose();
+    };
+    const handleRowClick = () => {
+      if (isRenaming) return;
+      setDocMenu(null);
+      cancelPendingClick();
+      clickTimerRef.current = window.setTimeout(() => {
+        clickTimerRef.current = null;
+        openProject();
+      }, 360);
+    };
+    const handleRowDoubleClick = (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      startRename(project.id, title);
+    };
+    const handleRowContextMenu = (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openDocMenu(project.id, title, e.clientX, e.clientY);
+    };
+    const handleRowMouseDownCapture = (e: React.MouseEvent) => {
+      if (e.button === 2) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    const handleRowKeyDown = (e: React.KeyboardEvent) => {
+      if (isRenaming) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        cancelPendingClick();
+        openProject();
+      }
+    };
+
+    return (
+      <div
+        key={project.id}
+        className={`relative border-b border-border/20 transition-colors ${
+          isActive ? 'bg-muted/40' : isHovered ? 'bg-muted/20' : ''
+        }`}
+        onMouseEnter={() => setHoveredId(project.id)}
+        onMouseLeave={() => setHoveredId(null)}
+        onMouseDownCapture={handleRowMouseDownCapture}
+        onContextMenuCapture={handleRowContextMenu}
+      >
+        <div
+          onClick={handleRowClick}
+          onDoubleClick={handleRowDoubleClick}
+          onKeyDown={handleRowKeyDown}
+          className={`w-full text-left px-4 py-3 pr-10 ${isRenaming ? '' : 'cursor-pointer'}`}
+          role="button"
+          tabIndex={0}
+        >
+          {isRenaming ? (
+            <input
+              ref={renameInputRef}
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); commitRename(); }
+                else if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
+              }}
+              onBlur={commitRename}
+              className="w-full bg-transparent font-mono text-sm font-medium text-foreground leading-snug outline-none border-b border-foreground/30 focus:border-foreground/70"
+            />
+          ) : (
+            <div className="font-mono text-sm font-medium text-foreground truncate leading-snug">
+              {title}
+            </div>
+          )}
+          {preview && !isRenaming && (
+            <div className="font-mono text-xs text-muted-foreground/50 truncate mt-0.5 leading-snug">
+              {preview}
+            </div>
+          )}
+          <div className="font-mono text-[10px] text-muted-foreground/35 mt-1 flex items-center gap-1.5">
+            <span>{timeAgo(project.updatedAt)}</span>
+            {isSynced && <Cloud size={10} />}
+          </div>
+        </div>
+        {isHovered && !isRenaming && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setDocMenu(null); onDeleteProject(project.id); }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground/30 hover:text-destructive transition-colors"
+            aria-label="Delete doc"
+          >
+            <Trash2 size={13} />
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  const renderSpaceSection = (space: SpaceMeta) => {
+    const spaceProjects = listProjectsInSpace(space.id);
+    const isExpanded = expandedSpaces.has(space.id);
+    const isRenamingSpace = renamingSpaceId === space.id;
+
+    const handleSpaceHeaderClick = () => {
+      if (isRenamingSpace) return;
+      toggleSpace(space.id);
+    };
+
+    const handleSpaceHeaderDoubleClick = (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      startRenameSpace(space.id, space.title);
+    };
+
+    const handleSpaceHeaderContextMenu = (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openSpaceMenu(space.id, space.title, e.clientX, e.clientY);
+    };
+
+    return (
+      <div key={space.id} className="border-b border-border/30">
+        <div
+          onClick={handleSpaceHeaderClick}
+          onDoubleClick={handleSpaceHeaderDoubleClick}
+          onContextMenu={handleSpaceHeaderContextMenu}
+          className="w-full flex items-center gap-2 px-4 py-2.5 text-left font-mono text-xs text-foreground/70 hover:text-foreground hover:bg-muted/10 transition-colors cursor-pointer"
+        >
+          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          {isRenamingSpace ? (
+            <input
+              ref={renameSpaceInputRef}
+              value={renameSpaceValue}
+              onChange={(e) => setRenameSpaceValue(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); commitRenameSpace(); }
+                else if (e.key === 'Escape') { e.preventDefault(); cancelRenameSpace(); }
+              }}
+              onBlur={commitRenameSpace}
+              className="flex-1 bg-transparent font-mono text-xs font-medium text-foreground leading-snug outline-none border-b border-foreground/30 focus:border-foreground/70"
+            />
+          ) : (
+            <>
+              <span className="flex-1 font-medium truncate">{space.title}</span>
+              <div className="flex items-center gap-2">
+                <span 
+                  className="p-0.5 hover:bg-muted/30 rounded transition-colors text-muted-foreground/50 hover:text-foreground"
+                  onClick={(e) => { 
+                    e.stopPropagation(); 
+                    onNewProjectInSpace(space.id); 
+                    setExpandedSpaces(current => new Set(current).add(space.id));
+                  }}
+                  title="New Notebook"
+                >
+                  <Plus size={13} />
+                </span>
+                <span className="text-muted-foreground/50">{spaceProjects.length}</span>
+              </div>
+            </>
+          )}
+        </div>
+        {isExpanded && (
+          <div className="bg-muted/5">
+            {spaceProjects.map((project) => renderProjectRow(project, space.id))}
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -247,132 +510,70 @@ const NotesPanel: React.FC<Props> = ({
             </div>
           )}
 
-          <button onClick={() => toggleSection('notes')} className={`${baseRowClass} mt-1`}>
+          <button onClick={() => toggleSection('spaces')} className={`${baseRowClass} mt-1 group`}>
             <FolderOpen size={15} />
-            <span>notebooks</span>
-            <span className="ml-auto text-muted-foreground/50">{expanded === 'notes' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
+            <span>{expEnabled ? 'spaces' : 'notebooks'}</span>
+            <div className="ml-auto flex items-center gap-2">
+              <span
+                className="p-0.5 hover:bg-muted/30 rounded transition-colors text-muted-foreground/50 hover:text-foreground"
+                onClick={(e) => { e.stopPropagation(); if (expEnabled) { onCreateSpace(); } else { onNewProject(); } setExpanded('spaces'); }}
+                title={expEnabled ? 'New Space' : 'New Notebook'}
+              >
+                <Plus size={13} />
+              </span>
+              <span className="text-muted-foreground/50">
+                {expanded === 'spaces' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </span>
+            </div>
           </button>
         </div>
 
-        {expanded === 'notes' && (
+        {expanded === 'spaces' && (
           <div className="flex-1 overflow-y-auto">
-            <button
-              onClick={onNewProject}
-              className="w-full flex items-center gap-2 px-4 py-3 text-left font-mono text-xs text-muted-foreground hover:text-foreground hover:bg-muted/20 transition-colors"
-              aria-label="New notebook"
-            >
-              <Plus size={13} />
-              <span>new notebook</span>
-            </button>
-            {projects.map((project) => {
-              const title = getProjectTitle(project.id);
-              const preview = getProjectPreview(project.id);
-              const isActive = project.id === activeProjectId;
-              const isHovered = hoveredId === project.id;
-              const isRenaming = renamingId === project.id;
-              const isSynced = isProjectSynced(project.id);
+            {expEnabled ? (
+              <>
+                {(() => {
+                  try {
+                    return spaces.map((space) => renderSpaceSection(space));
+                  } catch (err) {
+                    console.error('Error rendering spaces:', err);
+                    return (
+                      <div className="px-4 py-3 text-xs text-red-500">
+                        Error loading spaces: {err instanceof Error ? err.message : String(err)}
+                      </div>
+                    );
+                  }
+                })()}
 
-              const openProject = () => {
-                setDocMenu(null);
-                onSelectProject(project.id);
-                onClose();
-              };
-              const handleRowClick = () => {
-                if (isRenaming) return;
-                setDocMenu(null);
-                cancelPendingClick();
-                clickTimerRef.current = window.setTimeout(() => {
-                  clickTimerRef.current = null;
-                  openProject();
-                }, 360);
-              };
-              const handleRowDoubleClick = (e: React.MouseEvent) => {
-                e.preventDefault();
-                e.stopPropagation();
-                startRename(project.id, title);
-              };
-              const handleRowContextMenu = (e: React.MouseEvent) => {
-                e.preventDefault();
-                e.stopPropagation();
-                openDocMenu(project.id, title, e.clientX, e.clientY);
-              };
-              const handleRowMouseDownCapture = (e: React.MouseEvent) => {
-                if (e.button === 2) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }
-              };
-              const handleRowKeyDown = (e: React.KeyboardEvent) => {
-                if (isRenaming) return;
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  cancelPendingClick();
-                  openProject();
-                }
-              };
-
-              return (
-                <div
-                  key={project.id}
-                  className={`relative border-b border-border/20 transition-colors ${
-                    isActive ? 'bg-muted/40' : isHovered ? 'bg-muted/20' : ''
-                  }`}
-                  onMouseEnter={() => setHoveredId(project.id)}
-                  onMouseLeave={() => setHoveredId(null)}
-                  onMouseDownCapture={handleRowMouseDownCapture}
-                  onContextMenuCapture={handleRowContextMenu}
-                >
-                  <div
-                    onClick={handleRowClick}
-                    onDoubleClick={handleRowDoubleClick}
-                    onKeyDown={handleRowKeyDown}
-                    className={`w-full text-left px-4 py-3 pr-10 ${isRenaming ? '' : 'cursor-pointer'}`}
-                    role="button"
-                    tabIndex={0}
+                <div className="border-t border-border/30 mt-2 pt-2">
+                  <button
+                    onClick={() => setUnfiledExpanded(!unfiledExpanded)}
+                    className="w-full flex items-center gap-2 px-4 py-2 text-left font-mono text-xs text-muted-foreground/70 hover:text-foreground hover:bg-muted/10 transition-colors group"
                   >
-                    {isRenaming ? (
-                      <input
-                        ref={renameInputRef}
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        onDoubleClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') { e.preventDefault(); commitRename(); }
-                          else if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
-                        }}
-                        onBlur={commitRename}
-                        className="w-full bg-transparent font-mono text-sm font-medium text-foreground leading-snug outline-none border-b border-foreground/30 focus:border-foreground/70"
-                      />
-                    ) : (
-                      <div className="font-mono text-sm font-medium text-foreground truncate leading-snug">
-                        {title}
-                      </div>
-                    )}
-                    {preview && !isRenaming && (
-                      <div className="font-mono text-xs text-muted-foreground/50 truncate mt-0.5 leading-snug">
-                        {preview}
-                      </div>
-                    )}
-                    <div className="font-mono text-[10px] text-muted-foreground/35 mt-1 flex items-center gap-1.5">
-                      <span>{timeAgo(project.updatedAt)}</span>
-                      {isSynced && <Cloud size={10} />}
+                    {unfiledExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    <span className="font-medium flex-1">unfiled notebooks</span>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="p-0.5 hover:bg-muted/30 rounded transition-colors text-muted-foreground/50 hover:text-foreground"
+                        onClick={(e) => { e.stopPropagation(); onNewProject(); setUnfiledExpanded(true); }}
+                        title="New Notebook"
+                      >
+                        <Plus size={13} />
+                      </span>
+                      <span className="text-muted-foreground/50">{unfiledProjects.length}</span>
                     </div>
-                  </div>
-                  {isHovered && !isRenaming && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setDocMenu(null); onDeleteProject(project.id); }}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground/30 hover:text-destructive transition-colors"
-                      aria-label="Delete doc"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  )}
+                  </button>
+                  {unfiledExpanded && unfiledProjects.map((project) => renderProjectRow(project))}
                 </div>
-              );
-            })}
+              </>
+            ) : (
+              // //exp// off: flat notebook list (all projects, no Spaces grouping).
+              projects.map((project) => renderProjectRow(project))
+            )}
           </div>
         )}
+
+        {expanded !== 'spaces' && <div className="flex-1" />}
 
         {docMenu && (
           <>
@@ -385,38 +586,116 @@ const NotesPanel: React.FC<Props> = ({
               className="fixed z-[60] min-w-40 rounded-md border border-border/50 bg-popover py-1 shadow-xl"
               style={{
                 left: Math.min(docMenu.x, window.innerWidth - 176),
-                top: Math.min(docMenu.y, window.innerHeight - 104),
+                top: Math.min(docMenu.y, window.innerHeight - 180),
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              {docMenuView === 'main' ? (
+                <>
+                  <button
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left font-mono text-xs text-foreground/85 hover:bg-muted/30 transition-colors"
+                    onClick={() => startRename(docMenu.id, docMenu.title)}
+                  >
+                    <Pencil size={13} />
+                    <span>rename doc</span>
+                  </button>
+                  <button
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left font-mono text-xs text-foreground/85 hover:bg-muted/30 transition-colors"
+                    onClick={() => handleMenuSync(docMenu.id)}
+                    disabled={!syncCanUse && !isProjectSynced(docMenu.id)}
+                  >
+                    {isProjectSynced(docMenu.id) ? <CloudOff size={13} /> : <Cloud size={13} />}
+                    <span>{isProjectSynced(docMenu.id) ? 'make local only' : 'sync doc'}</span>
+                  </button>
+                  {spaces.length > 0 && (
+                    <>
+                      <div className="my-1 border-t border-border/30" />
+                      <button
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left font-mono text-xs text-foreground/85 hover:bg-muted/30 transition-colors"
+                        onClick={(e) => { e.stopPropagation(); setDocMenuView('move'); }}
+                      >
+                        <FolderOpen size={13} />
+                        <span className="flex-1">move to</span>
+                        <ChevronRight size={13} />
+                      </button>
+                      <div className="my-1 border-t border-border/30" />
+                    </>
+                  )}
+                  <button
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left font-mono text-xs text-destructive hover:bg-destructive/10 transition-colors"
+                    onClick={() => handleMenuDelete(docMenu.id)}
+                  >
+                    <Trash2 size={13} />
+                    <span>delete doc</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left font-mono text-xs text-foreground/85 hover:bg-muted/30 transition-colors"
+                    onClick={(e) => { e.stopPropagation(); setDocMenuView('main'); }}
+                  >
+                    <ChevronLeft size={13} />
+                    <span>back</span>
+                  </button>
+                  <div className="my-1 border-t border-border/30" />
+                  <button
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left font-mono text-xs text-foreground/85 hover:bg-muted/30 transition-colors"
+                    onClick={() => handleMenuMoveToSpace(docMenu.id, null)}
+                  >
+                    <FolderOpen size={13} />
+                    <span className="truncate">unfiled</span>
+                  </button>
+                  {spaces.map((space) => (
+                    <button
+                      key={space.id}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left font-mono text-xs text-foreground/85 hover:bg-muted/30 transition-colors"
+                      onClick={() => handleMenuMoveToSpace(docMenu.id, space.id)}
+                    >
+                      <FolderOpen size={13} />
+                      <span className="truncate">{space.title}</span>
+                    </button>
+                  ))}
+                </>
+              )}
+            </div>
+          </>
+        )}
+
+        {spaceMenu && (
+          <>
+            <div
+              className="fixed inset-0 z-[55]"
+              onClick={() => setSpaceMenu(null)}
+              onContextMenu={(e) => { e.preventDefault(); setSpaceMenu(null); }}
+            />
+            <div
+              className="fixed z-[60] min-w-40 rounded-md border border-border/50 bg-popover py-1 shadow-xl"
+              style={{
+                left: Math.min(spaceMenu.x, window.innerWidth - 176),
+                top: Math.min(spaceMenu.y, window.innerHeight - 104),
               }}
               onClick={(e) => e.stopPropagation()}
               onContextMenu={(e) => e.preventDefault()}
             >
               <button
                 className="w-full flex items-center gap-2 px-3 py-2 text-left font-mono text-xs text-foreground/85 hover:bg-muted/30 transition-colors"
-                onClick={() => startRename(docMenu.id, docMenu.title)}
+                onClick={() => startRenameSpace(spaceMenu.id, spaceMenu.title)}
               >
                 <Pencil size={13} />
-                <span>rename doc</span>
-              </button>
-              <button
-                className="w-full flex items-center gap-2 px-3 py-2 text-left font-mono text-xs text-foreground/85 hover:bg-muted/30 transition-colors"
-                onClick={() => handleMenuSync(docMenu.id)}
-                disabled={!syncCanUse && !isProjectSynced(docMenu.id)}
-              >
-                {isProjectSynced(docMenu.id) ? <CloudOff size={13} /> : <Cloud size={13} />}
-                <span>{isProjectSynced(docMenu.id) ? 'make local only' : 'sync doc'}</span>
+                <span>rename space</span>
               </button>
               <button
                 className="w-full flex items-center gap-2 px-3 py-2 text-left font-mono text-xs text-destructive hover:bg-destructive/10 transition-colors"
-                onClick={() => handleMenuDelete(docMenu.id)}
+                onClick={() => { setSpaceMenu(null); onDeleteSpace(spaceMenu.id); }}
               >
                 <Trash2 size={13} />
-                <span>delete doc</span>
+                <span>delete space</span>
               </button>
             </div>
           </>
         )}
-
-        {expanded !== 'notes' && <div className="flex-1" />}
       </div>
     </>
   );

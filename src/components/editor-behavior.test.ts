@@ -19,6 +19,8 @@ import {
   normalizeClipboardPasteText,
   normalizeEditorContent,
   deletePageFromList,
+  insertPageAfterInList,
+  insertPageBeforeInList,
   indentPlainListLineForTab,
   renumberFollowingPlainNumberedListItems,
   renumberAllPlainNumberedLists,
@@ -222,6 +224,28 @@ test('restoreDeletedPageToList restores deleted pages at their original index', 
     {
       pages: ['one', 'two', 'three'],
       restoredPage: 1,
+    },
+  );
+});
+
+test('insertPageAfterInList inserts a blank page after the given index', () => {
+  assert.deepEqual(
+    insertPageAfterInList(['one', 'two', 'four'], 1),
+    {
+      pages: ['one', 'two', '', 'four'],
+      newPage: 2,
+      inserted: { index: 2, content: '' },
+    },
+  );
+});
+
+test('insertPageBeforeInList inserts a blank page before the given index', () => {
+  assert.deepEqual(
+    insertPageBeforeInList(['one', 'two', 'four'], 1),
+    {
+      pages: ['one', '', 'two', 'four'],
+      newPage: 1,
+      inserted: { index: 1, content: '' },
     },
   );
 });

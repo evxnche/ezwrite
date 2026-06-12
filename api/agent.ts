@@ -1,4 +1,5 @@
 import { handleAgentRequest, type AgentEnv } from '../lib/agent-upstream.js';
+import { rateLimitAllow, clientIp } from '../lib/rate-limit.js';
 
 export const config = {
   maxDuration: 30,
@@ -34,6 +35,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const result = await handleAgentRequest(
       { method: req.method ?? 'GET', header, body: req.body },
       readEnv(),
+      { rateLimitAllow, clientIp },
     );
     res.status(result.status).json(result.body);
   } catch (error) {

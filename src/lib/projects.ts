@@ -16,11 +16,92 @@ import {
   WELCOME_ROLLOUT_VERSION,
 } from './welcome-notebook';
 
+export interface SpaceMeta {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// --- Space API ---
+
+export function createSpace(title?: string): SpaceMeta {
+  const id = generateId();
+  const now = Date.now();
+  const space: SpaceMeta = {
+    id,
+    title: title?.trim() || 'untitled',
+    createdAt: now,
+    updatedAt: now,
+  };
+  const spaces = JSON.parse(localStorage.getItem(SPACES_KEY) || '[]') as SpaceMeta[];
+  spaces.push(space);
+  localStorage.setItem(SPACES_KEY, JSON.stringify(spaces));
+  return space;
+}
+
+export function deleteSpace(id: string): void {
+  const spaces = JSON.parse(localStorage.getItem(SPACES_KEY) || '[]') as SpaceMeta[];
+  const filtered = spaces.filter(s => s.id !== id);
+  localStorage.setItem(SPACES_KEY, JSON.stringify(filtered));
+  
+  // Remove spaceId from all projects in this space
+  const projects = listProjects();
+  const updated = projects.map(p => 
+    p.spaceId === id ? { ...p, spaceId: undefined } : p
+  );
+  saveProjects(updated);
+}
+
+export function renameSpace(id: string, newTitle: string): void {
+  const spaces = JSON.parse(localStorage.getItem(SPACES_KEY) || '[]') as SpaceMeta[];
+  const idx = spaces.findIndex(s => s.id === id);
+  if (idx >= 0) {
+    spaces[idx] = { ...spaces[idx], title: newTitle.trim(), updatedAt: Date.now() };
+    localStorage.setItem(SPACES_KEY, JSON.stringify(spaces));
+  }
+}
+
+export function setProjectSpace(projectId: string, spaceId: string | null): void {
+  const projects = listProjects();
+  const idx = projects.findIndex(p => p.id === projectId);
+  if (idx < 0) return;
+  projects[idx] = { ...projects[idx], spaceId: spaceId ?? undefined, updatedAt: Date.now() };
+  saveProjects(projects);
+}
+
+export function listSpaces(): SpaceMeta[] {
+  try {
+    const raw = localStorage.getItem(SPACES_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as SpaceMeta[];
+  } catch {
+    return [];
+  }
+}
+
+export function getSpacesSorted(): SpaceMeta[] {
+  return listSpaces().sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+export function listProjectsInSpace(spaceId: string): ProjectMeta[] {
+  return listProjects()
+    .filter(p => p.spaceId === spaceId)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+export function listUnfiledProjects(): ProjectMeta[] {
+  return listProjects()
+    .filter(p => !p.spaceId)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
 export interface ProjectMeta {
   id: string;
   title?: string;
   createdAt: number;
   updatedAt: number;
+  spaceId?: string;
   syncEnabled?: boolean;
   syncLastRemoteUpdatedAt?: number;
   syncLastPushedAt?: number;
@@ -30,6 +111,7 @@ export interface ProjectMeta {
 
 const PROJECTS_KEY = 'ezwrite-projects';
 const ACTIVE_KEY = 'ezwrite-active-project';
+const SPACES_KEY = 'ezwrite-spaces';
 
 function projectPagesKey(id: string) { return `ezwrite-project-${id}`; }
 function projectPagesBackupKey(id: string) { return `ezwrite-project-${id}-bak`; }

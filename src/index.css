@@ -261,22 +261,6 @@
   }
 }
 
-/* Custom animations for zen writing */
-@keyframes fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-fade-in {
-  animation: fade-in 0.5s ease-out forwards;
-}
-
 /* Remove default focus styles and scrollbars for clean look */
 *:focus {
   outline: none;
@@ -510,6 +494,23 @@
   padding-left: 1.5em;
   font-style: italic;
   opacity: 0.85;
+}
+
+.ce-agent-prompt,
+.ce-agent-reply {
+  margin: 0.15rem 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.85rem;
+}
+
+.ce-agent-prompt {
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted) / 0.25);
+}
+
+.ce-agent-reply {
+  border-left: 2px solid hsl(var(--accent-foreground) / 0.4);
+  background: hsl(var(--accent) / 0.12);
 }
 
 .ce-link {

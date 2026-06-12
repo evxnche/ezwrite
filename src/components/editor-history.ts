@@ -21,10 +21,23 @@ export type EditorHistoryPageDeleteRedoEntry = {
   deleted: DeletedPageSnapshot;
 };
 
+export type EditorHistoryPageInsertEntry = {
+  type: 'page-insert';
+  inserted: DeletedPageSnapshot;
+};
+
+/** State captured before undoing a page insert — used to redo the insert. */
+export type EditorHistoryPageInsertRedoEntry = {
+  type: 'page-insert-redo';
+  inserted: DeletedPageSnapshot;
+};
+
 export type EditorHistoryEntry =
   | EditorHistoryContentEntry
   | EditorHistoryPageDeleteEntry
-  | EditorHistoryPageDeleteRedoEntry;
+  | EditorHistoryPageDeleteRedoEntry
+  | EditorHistoryPageInsertEntry
+  | EditorHistoryPageInsertRedoEntry;
 
 export type EditorHistoryPresent = EditorHistorySnapshot & {
   pageIndex?: number;
@@ -124,6 +137,11 @@ export class EditorHistory {
     this.pushEntry({ type: 'page-delete', deleted }, { force: true });
   }
 
+  pushPageInsert(inserted: DeletedPageSnapshot): void {
+    this.shiftContentPageIndicesAbove(inserted.index, 1);
+    this.pushEntry({ type: 'page-insert', inserted }, { force: true });
+  }
+
   /** Drop text-undo steps for a page that was removed (page delete undo restores full page content). */
   private pruneContentEntriesForPage(pageIndex: number): void {
     const keep = (entry: EditorHistoryEntry) =>
@@ -174,6 +192,11 @@ export class EditorHistory {
         type: 'page-delete-redo',
         deleted: previous.deleted,
       };
+    } else if (previous.type === 'page-insert') {
+      this.redoStack[this.redoStack.length - 1] = {
+        type: 'page-insert-redo',
+        inserted: previous.inserted,
+      };
     }
     return previous;
   }
@@ -184,6 +207,8 @@ export class EditorHistory {
     const next = this.redoStack.pop()!;
     if (next.type === 'page-delete-redo') {
       this.undoStack.push({ type: 'page-delete', deleted: next.deleted });
+    } else if (next.type === 'page-insert-redo') {
+      this.undoStack.push({ type: 'page-insert', inserted: next.inserted });
     } else if (next.type === 'content') {
       this.undoStack.push(presentToContentEntry(present));
     } else {
