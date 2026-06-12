@@ -35,23 +35,25 @@ export const SCRATCHPAD_GROQ_MODEL = 'llama-3.3-70b-versatile';
 export const SCRATCHPAD_ANTHROPIC_BASE_URL = 'https://api.anthropic.com';
 export const SCRATCHPAD_ANTHROPIC_MODEL = 'claude-3-5-sonnet-20241022';
 export const SCRATCHPAD_OPENCODE_BASE_URL = 'https://opencode.ai/zen/v1';
-export const SCRATCHPAD_OPENCODE_MODEL = 'deepseek-v4-flash';
-export const SCRATCHPAD_OPENCODE_FREE_MODEL = 'deepseek-v4-flash-free';
+// mimo-v2.5 barely "reasons" (~10 tokens) so it answers in ~2-3s. deepseek/glm
+// are reasoning models that emit hundreds of hidden tokens first (10-40s) — too
+// slow for a scratchpad, so they sit behind mimo as fallbacks, not the default.
+export const SCRATCHPAD_OPENCODE_MODEL = 'mimo-v2.5';
+export const SCRATCHPAD_OPENCODE_FREE_MODEL = 'mimo-v2.5-free';
 
-/** With a key: fast paid default first, free models as resilient fallbacks. */
+/** With a key: fastest model first, heavier models as resilient fallbacks. */
 export const SCRATCHPAD_OPENCODE_MODEL_CHAIN = [
+  'mimo-v2.5',
   'deepseek-v4-flash',
   'glm-5',
-  'deepseek-v4-flash-free',
   'mimo-v2.5-free',
 ] as const;
 
 /** Keyless: OpenCode Zen serves its -free models without authentication. */
 export const SCRATCHPAD_OPENCODE_FREE_MODEL_CHAIN = [
-  'deepseek-v4-flash-free',
   'mimo-v2.5-free',
-  'qwen3.6-plus-free',
-  'minimax-m3-free',
+  'north-mini-code-free',
+  'deepseek-v4-flash-free',
 ] as const;
 
 function trimOptionalString(value?: string): string | undefined {
