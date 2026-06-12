@@ -160,13 +160,15 @@ export function resolveScratchpadLLMConfig(config?: ScratchpadLLMConfig): Resolv
 const FAST_MODEL_CHAIN: ScratchpadModelEntry[] = [
   { id: 'deepseek/deepseek-v4-flash:free', webSearch: false },
   { id: 'google/gemma-4-31b-it:free', webSearch: false },
-  { id: 'z-ai/glm-4.5-air:free', webSearch: false },
   { id: 'openrouter/free', webSearch: false },
 ];
 
-/** GLM + openrouter/free tolerate web search; DeepSeek/Gemma 500 with tools enabled. */
+/**
+ * openrouter/free tolerates the web_search tool and returns live results, so it
+ * leads. (z-ai/glm-4.5-air:free was removed — OpenRouter now 404s it.) The
+ * tool-less models are stale fallbacks only used if the live path is down.
+ */
 const WEB_SEARCH_MODEL_CHAIN: ScratchpadModelEntry[] = [
-  { id: 'z-ai/glm-4.5-air:free', webSearch: true },
   { id: 'openrouter/free', webSearch: true },
   { id: 'google/gemma-4-31b-it:free', webSearch: false },
   { id: 'deepseek/deepseek-v4-flash:free', webSearch: false },
@@ -197,6 +199,20 @@ export function scratchpadNeedsWebSearch(prompt: string): boolean {
 
 export function getScratchpadModelChain(prompt: string): readonly ScratchpadModelEntry[] {
   return scratchpadNeedsWebSearch(prompt) ? WEB_SEARCH_MODEL_CHAIN : FAST_MODEL_CHAIN;
+}
+
+/**
+ * Tighter than scratchpadNeedsWebSearch — only genuinely time-sensitive or
+ * fast-changing lookups. Used to auto-route a query off a provider that can't
+ * browse (OpenCode) onto the web-search chain, so we don't divert ordinary
+ * "what is X" definitional questions that the chosen model answers fine.
+ */
+export function scratchpadNeedsLiveData(prompt: string): boolean {
+  const lower = prompt.toLowerCase();
+  return (
+    /\b(today|yesterday|latest|current|currently|recent|recently|news|this week|this month|this year|right now|nowadays|so far|20[2-9]\d)\b/.test(lower)
+    || /\b(when did|when is|who won|who is the|how much|price of|release date|stock|weather|population of|score|standings)\b/.test(lower)
+  );
 }
 
 export function buildScratchpadSystemPrompt(model: string, webSearch: boolean): string {

@@ -3,6 +3,7 @@ import {
   formatScratchpadLlmReply,
   getScratchpadModelChain,
   resolveScratchpadLLMConfig,
+  scratchpadNeedsLiveData,
   SCRATCHPAD_OPENCODE_FREE_MODEL_CHAIN,
   SCRATCHPAD_OPENCODE_MODEL_CHAIN,
   SCRATCHPAD_WEB_SEARCH_TOOL,
@@ -294,6 +295,20 @@ export async function completeScratchpadPrompt(
   const resolved = resolveScratchpadLLMConfig(config);
   if (resolved.validationError) throw new Error(resolved.validationError);
   const explicitModel = config?.model?.trim() || undefined;
+
+  // OpenCode's models can't browse, so a real-time question ("latest X",
+  // "who won…") would answer from stale training data. Auto-route just those
+  // through ezwrite's free OpenRouter web-search chain — keeping OpenCode for
+  // everything else — so live answers work without changing any settings.
+  // Best-effort: if the web path is unavailable, fall through to OpenCode.
+  if (resolved.provider === 'opencode' && scratchpadNeedsLiveData(prompt)) {
+    for (const entry of getScratchpadModelChain(prompt)) {
+      const webResult = await requestCompletion(entry, prompt, signal, { provider: 'openrouter' });
+      if (webResult.ok) {
+        return { text: formatScratchpadLlmReply(webResult.content), model: entry.id };
+      }
+    }
+  }
 
   // Decide chain
   let chain: readonly ScratchpadModelEntry[];

@@ -4,6 +4,19 @@ import assert from 'node:assert/strict';
 import * as scratchpadLlm from './scratchpad-llm.ts';
 import { extractAssistantContent } from './openrouter.ts';
 
+test('live-data detection fires on time-sensitive prompts but not definitional ones', () => {
+  const needs = scratchpadLlm.scratchpadNeedsLiveData;
+  // These should auto-route off OpenCode (which can't browse) to web search.
+  assert.equal(needs('what is the latest anthropic model?'), true);
+  assert.equal(needs('who won the game yesterday'), true);
+  assert.equal(needs('current weather in tokyo'), true);
+  assert.equal(needs('news about the election'), true);
+  // These are answerable from the model's own knowledge — keep them on OpenCode.
+  assert.equal(needs('what is a haiku?'), false);
+  assert.equal(needs('rewrite this sentence to be punchier'), false);
+  assert.equal(needs('explain recursion'), false);
+});
+
 test('a normal reply uses message content', () => {
   assert.equal(
     extractAssistantContent({ message: { role: 'assistant', content: 'the answer' }, finish_reason: 'stop' }),
