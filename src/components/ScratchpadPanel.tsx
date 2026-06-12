@@ -403,8 +403,34 @@ const ScratchpadPanel: React.FC<Props> = ({
         (line, index) => index > lineIndex && line === SCRATCHPAD_LLM_LOADING_LINE,
       );
       if (loadingLineIndex < 0) return;
+
+      // Read the caret BEFORE mutating so we don't yank it away from the user.
+      const editorFocused = document.activeElement === editorRef.current;
+      const caret = editorFocused ? getCursorInfo() : null;
+      // "At this prompt" = caret on the … line or its prompt line just above it —
+      // i.e. the user is waiting here, so advancing to the answer is expected.
+      const userWaitingHere = !!caret
+        && (caret.lineIndex === loadingLineIndex || caret.lineIndex === loadingLineIndex - 1);
+
       fresh.splice(loadingLineIndex, 1, ...replacement);
-      structuralUpdate(fresh.join('\n'), loadingLineIndex + Math.max(replacement.length - 1, 0), 0);
+      const nextContent = fresh.join('\n');
+
+      if (!caret) {
+        // User is typing elsewhere on the page (or not focused) — update the
+        // text without stealing focus or moving their caret.
+        structuralUpdate(nextContent, undefined, undefined, false);
+      } else if (userWaitingHere) {
+        structuralUpdate(nextContent, loadingLineIndex + Math.max(replacement.length - 1, 0), 0);
+      } else {
+        // Caret is somewhere else in the scratchpad (e.g. typing a second
+        // prompt). Keep it exactly where it is, shifting down only by the lines
+        // the answer inserted above it.
+        const netLinesAdded = replacement.length - 1;
+        const shiftedLine = loadingLineIndex < caret.lineIndex
+          ? caret.lineIndex + netLinesAdded
+          : caret.lineIndex;
+        structuralUpdate(nextContent, shiftedLine, caret.offset);
+      }
     };
 
     try {
@@ -418,7 +444,7 @@ const ScratchpadPanel: React.FC<Props> = ({
     } finally {
       window.clearTimeout(timeout);
     }
-  }, [pushUndo, structuralUpdate, scratchpadLLMConfig]);
+  }, [pushUndo, structuralUpdate, scratchpadLLMConfig, getCursorInfo]);
 
   const applySlashCommand = useCallback((command: string, lineIndex: number) => {
     const lines = contentRef.current.split('\n');
