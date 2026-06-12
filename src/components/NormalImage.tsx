@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { loadImage } from '@/lib/imageStore';
+import { ScanText } from 'lucide-react';
 
 interface Props {
   imageId: string;
@@ -8,12 +9,14 @@ interface Props {
   onCaptionChange: (caption: string) => void;
   onWidthChange: (width: string) => void;
   onRemove: () => void;
+  onExtractText?: () => void;
+  isExtracting?: boolean;
 }
 
 const MIN_WIDTH = 100;
 const MAX_WIDTH = 1200;
 
-export default function NormalImage({ imageId, initialCaption, initialWidth, onCaptionChange, onWidthChange, onRemove }: Props) {
+export default function NormalImage({ imageId, initialCaption, initialWidth, onCaptionChange, onWidthChange, onRemove, onExtractText, isExtracting }: Props) {
   const [caption, setCaption] = useState(initialCaption);
   const [hovered, setHovered] = useState(false);
   const [imgWidth, setImgWidth] = useState(() => initialWidth ? parseInt(initialWidth) : 400);
@@ -133,6 +136,28 @@ export default function NormalImage({ imageId, initialCaption, initialWidth, onC
           }}
           draggable={false}
         />
+        {/* Extracting overlay */}
+        {isExtracting && (
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#fff',
+            fontFamily: 'inherit',
+            fontSize: '14px',
+            pointerEvents: 'none',
+            zIndex: 10,
+            borderRadius: 6,
+          }}>
+            extracting...
+          </div>
+        )}
       </div>
 
       {/* Caption — wraps, expands */}
@@ -165,6 +190,36 @@ export default function NormalImage({ imageId, initialCaption, initialWidth, onC
           lineHeight: '1.4',
         }}
       />
+
+      {/* Extract Text (OCR) — top-left, hover-only */}
+      {onExtractText && (
+        <button
+          onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); onExtractText(); }}
+          style={{
+            position: 'absolute',
+            top: 6,
+            left: 6,
+            width: 24,
+            height: 24,
+            borderRadius: '4px',
+            background: 'rgba(0,0,0,0.6)',
+            border: 'none',
+            color: '#fff',
+            cursor: isExtracting ? 'wait' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 0,
+            opacity: hovered || isExtracting ? 1 : 0,
+            transition: 'opacity 0.15s',
+            pointerEvents: (hovered || isExtracting) && !isExtracting ? 'auto' : 'none',
+            zIndex: 10,
+          }}
+          title="Extract text"
+        >
+          <ScanText size={14} />
+        </button>
+      )}
 
       {/* Delete — small, hover-only */}
       <button

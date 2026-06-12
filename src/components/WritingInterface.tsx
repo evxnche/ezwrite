@@ -42,6 +42,7 @@ import {
   normalizeEditorContent,
   deletePageFromList,
   type DeletedPageSnapshot,
+  insertPageAfterInList,
   indentPlainListLineForTab,
   renumberFollowingPlainNumberedListItems,
   renumberAllPlainNumberedLists,
@@ -93,7 +94,16 @@ import {
   markProjectSynced,
   updateProjectMeta,
   pageToTitle,
+  listSpaces,
+  createSpace,
+  deleteSpace,
+  renameSpace,
+  setProjectSpace,
+  getSpacesSorted,
+  listProjectsInSpace,
+  listUnfiledProjects,
   type ProjectMeta,
+  type SpaceMeta,
 } from '@/lib/projects';
 import {
   createSyncSession,
@@ -498,6 +508,7 @@ const WritingInterface = () => {
   // Color theme toggle — cycles: '' → 'blue' → 'green' → 'red' → ''
   const [colorTheme, setColorTheme] = useState<ColorTheme>(() => getInitialColorTheme());
   const [notesTransferMode, setNotesTransferMode] = useState<NotesTransferMode>(() => getInitialNotesTransferMode());
+  const [extractingImageId, setExtractingImageId] = useState<string | null>(null);
   const handleToggleNotesTransferMode = () => {
     setNotesTransferMode(v => {
       const next: NotesTransferMode = v === 'move' ? 'copy' : 'move';
@@ -1649,6 +1660,84 @@ const WritingInterface = () => {
     }
   }, [bumpHistory, persistPageStructure, showPageDeleteNotice, structuralUpdate, isTouchDevice]);
 
+  const insertPageAfter = useCallback((afterIndex: number) => {
+    if (editorRef.current) {
+      pagesRef.current[currentPageRef.current] = extractContent(editorRef.current);
+    }
+
+    const result = insertPageAfterInList(pagesRef.current, afterIndex);
+    pagesRef.current = result.pages;
+    editorHistory.current.pushPageInsert(result.inserted);
+    bumpHistory();
+
+    const newPage = result.newPage;
+    const newContent = result.pages[newPage] ?? '';
+    setPageCount(result.pages.length);
+    persistPageStructure(result.pages, newPage);
+    editingTimerLineRef.current = null;
+    setShowDots(true);
+    clearTimeout(dotsTimeoutRef.current);
+    dotsTimeoutRef.current = setTimeout(() => setShowDots(false), PAGE_SIGNIFIER_PERSIST_MS);
+    setPageTransition('slide-left');
+    contentRef.current = newContent;
+    currentPageRef.current = newPage;
+    setIsPageEmpty(newContent.trim() === '');
+    setCurrentPage(newPage);
+  }, [bumpHistory, persistPageStructure]);
+
+  const applyPageInsertUndo = useCallback((inserted: DeletedPageSnapshot) => {
+    if (editorRef.current) {
+      pagesRef.current[currentPageRef.current] = extractContent(editorRef.current);
+    }
+
+    const current = currentPageRef.current;
+    const result = deletePageFromList(pagesRef.current, inserted.index, current);
+    if (!result) return;
+
+    editorHistory.current.notifyPageDeleted(result.deleted);
+    pagesRef.current = result.pages;
+
+    const newPage = result.nextPage;
+    const newContent = result.pages[newPage] ?? '';
+    setPageCount(result.pages.length);
+    persistPageStructure(result.pages, newPage);
+    editingTimerLineRef.current = null;
+    setShowDots(true);
+    clearTimeout(dotsTimeoutRef.current);
+    dotsTimeoutRef.current = setTimeout(() => setShowDots(false), PAGE_SIGNIFIER_PERSIST_MS);
+    contentRef.current = newContent;
+    currentPageRef.current = newPage;
+    setIsPageEmpty(newContent.trim() === '');
+    setCurrentPage(newPage);
+    const { lineIndex, offset } = getPageEndCursor(newContent);
+    structuralUpdate(newContent, lineIndex, offset, !isTouchDevice, false);
+  }, [persistPageStructure, structuralUpdate, isTouchDevice]);
+
+  const applyPageInsertRedo = useCallback((inserted: DeletedPageSnapshot) => {
+    if (editorRef.current) {
+      pagesRef.current[currentPageRef.current] = extractContent(editorRef.current);
+    }
+
+    const restored = restoreDeletedPageToList(pagesRef.current, inserted);
+    pagesRef.current = restored.pages;
+    const restoredContent = restored.pages[restored.restoredPage] ?? '';
+
+    setPageCount(restored.pages.length);
+    persistPageStructure(restored.pages, restored.restoredPage);
+    editingTimerLineRef.current = null;
+    setShowDots(true);
+    clearTimeout(dotsTimeoutRef.current);
+    dotsTimeoutRef.current = setTimeout(() => setShowDots(false), PAGE_SIGNIFIER_PERSIST_MS);
+    setPageTransition('slide-left');
+    contentRef.current = restoredContent;
+    currentPageRef.current = restored.restoredPage;
+    setIsPageEmpty(restoredContent.trim() === '');
+    setCurrentPage(restored.restoredPage);
+    const { lineIndex, offset } = getPageEndCursor(restoredContent);
+    structuralUpdate(restoredContent, lineIndex, offset, !isTouchDevice, false);
+    editorHistory.current.onPageRestored(inserted.index);
+  }, [persistPageStructure, structuralUpdate, isTouchDevice]);
+
   const applyPageRestore = useCallback((deleted: DeletedPageSnapshot) => {
     if (editorRef.current) {
       pagesRef.current[currentPageRef.current] = extractContent(editorRef.current);
@@ -1755,8 +1844,16 @@ const WritingInterface = () => {
     }
     if (entry.type === 'page-delete-redo') {
       applyPageDeleteRedo(entry.deleted);
+      return;
     }
-  }, [applyContentHistoryEntry, applyPageDeleteRedo, applyPageRestore]);
+    if (entry.type === 'page-insert') {
+      applyPageInsertUndo(entry.inserted);
+      return;
+    }
+    if (entry.type === 'page-insert-redo') {
+      applyPageInsertRedo(entry.inserted);
+    }
+  }, [applyContentHistoryEntry, applyPageDeleteRedo, applyPageInsertRedo, applyPageInsertUndo, applyPageRestore]);
 
   const performUndo = useCallback(() => {
     const entry = editorHistory.current.undo(captureHistoryPresent());
@@ -1872,6 +1969,42 @@ const WritingInterface = () => {
       }
     }
   }, [scheduleSyncPush, structuralUpdate]);
+
+  // --- Space management handlers ---
+  const handleCreateSpace = useCallback(() => {
+    createSpace();
+    setProjects(listProjects());
+  }, []);
+
+  const handleDeleteSpace = useCallback((id: string) => {
+    deleteSpace(id);
+    setProjects(listProjects());
+  }, []);
+
+  const handleRenameSpace = useCallback((id: string, newTitle: string) => {
+    renameSpace(id, newTitle);
+    setProjects(listProjects());
+  }, []);
+
+  const handleNewProjectInSpace = useCallback((spaceId: string) => {
+    if (editorRef.current) {
+      const currentProjectId = activeProjectIdRef.current;
+      if (currentProjectId) {
+        pagesRef.current[currentPageRef.current] = extractContent(editorRef.current);
+        saveProjectPages(currentProjectId, pagesRef.current);
+        persistScratchpad(scratchpad, currentProjectId);
+      }
+    }
+    const meta = createProject('');
+    setProjectSpace(meta.id, spaceId);
+    setProjects(listProjects());
+    switchToProject(meta.id);
+  }, [persistScratchpad, scratchpad, switchToProject]);
+
+  const handleMoveProjectToSpace = useCallback((projectId: string, spaceId: string | null) => {
+    setProjectSpace(projectId, spaceId);
+    setProjects(listProjects());
+  }, []);
 
   // --- Agent shared canvas ---
   const showAgentNotice = useCallback((message: string, projectId: string | null = null) => {
@@ -2826,6 +2959,16 @@ const WritingInterface = () => {
     // Bug 7: use fresh DOM content instead of potentially stale contentRef
     const lines = editorRef.current ? extractContent(editorRef.current).split('\n') : contentRef.current.split('\n');
     if (lineIndex < 0 || lineIndex >= lines.length) return;
+    if (command === 'newpage') {
+      lines[lineIndex] = '';
+      const cleared = lines.join('\n');
+      pagesRef.current[currentPageRef.current] = cleared;
+      structuralUpdate(cleared, lineIndex, 0, false, false);
+      contentRef.current = cleared;
+      setSlashPopup(null);
+      insertPageAfter(currentPageRef.current);
+      return;
+    }
     pushUndo(true);
     if (command === 'help') {
       lines[lineIndex] = '';
@@ -2885,7 +3028,7 @@ const WritingInterface = () => {
       structuralUpdate(lines.join('\n'), lineIndex + 1, 0);
     }
     setSlashPopup(null);
-  }, [handleToggleSideTab, handleOpenScratchpad, imagesEnabled, voicesEnabled, pushUndo, structuralUpdate]);
+  }, [handleToggleSideTab, handleOpenScratchpad, imagesEnabled, insertPageAfter, voicesEnabled, pushUndo, structuralUpdate]);
 
   // Slash command select
   const handleSlashSelect = useCallback((command: string) => {
@@ -3197,9 +3340,14 @@ const WritingInterface = () => {
       switchToPage(currentPageRef.current - 1);
       return;
     }
-    if (cmdArrowPageNav && (e.metaKey || e.ctrlKey) && e.key === 'ArrowRight') {
+    if (cmdArrowPageNav && (e.metaKey || e.ctrlKey) && e.key === 'ArrowRight' && !e.shiftKey) {
       e.preventDefault();
       switchToPage(currentPageRef.current + 1);
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'ArrowRight') {
+      e.preventDefault();
+      insertPageAfter(currentPageRef.current);
       return;
     }
 
@@ -3552,6 +3700,34 @@ const WritingInterface = () => {
           if (newContent !== contentRef.current) structuralUpdate(newContent);
         });
     });
+  }, [pushUndo, structuralUpdate]);
+
+  const handleExtractText = useCallback(async (id: string) => {
+    const dataUrl = loadImage(id);
+    if (!dataUrl) return;
+
+    setExtractingImageId(id);
+    try {
+      const text = await recognizeImage(dataUrl);
+      const ls = contentRef.current.split('\n');
+      const idx = ls.findIndex(l => l.startsWith(`polaroid::${id}|`) || l.startsWith(`polaroid::${id}`));
+      
+      if (idx >= 0) {
+        pushUndo(true);
+        const linesToInsert = text ? text.split('\n') : [];
+        if (linesToInsert.length === 0) {
+          ls.splice(idx, 1);
+        } else {
+          ls.splice(idx, 1, ...linesToInsert);
+        }
+        if (ls.length === 0) ls.push('');
+        structuralUpdate(ls.join('\n'), Math.min(idx + Math.max(0, linesToInsert.length - 1), ls.length - 1), linesToInsert[linesToInsert.length - 1]?.length || 0);
+      }
+    } catch (e) {
+      console.error('Failed to extract text', e);
+    } finally {
+      setExtractingImageId(null);
+    }
   }, [pushUndo, structuralUpdate]);
 
   const handleImageCaptionChange = useCallback((id: string, newCaption: string) => {
@@ -4482,6 +4658,8 @@ const WritingInterface = () => {
             onCaptionChange={(newCaption) => handleImageCaptionChange(id, newCaption)}
             onWidthChange={(newWidth) => handleImageWidthChange(id, newWidth)}
             onRemove={handleRemove}
+            onExtractText={() => handleExtractText(id)}
+            isExtracting={extractingImageId === id}
           />,
           container
         );
@@ -4538,6 +4716,11 @@ const WritingInterface = () => {
           isProjectSynced={(id) => Boolean(getProjectMeta(id)?.syncEnabled)}
           syncCanUse={Boolean(syncSession)}
           onToggleProjectSync={handleToggleProjectSync}
+          onCreateSpace={handleCreateSpace}
+          onDeleteSpace={handleDeleteSpace}
+          onRenameSpace={handleRenameSpace}
+          onNewProjectInSpace={handleNewProjectInSpace}
+          onMoveProjectToSpace={handleMoveProjectToSpace}
           onOpenSettings={() => { setNotesOpen(false); setSettingsOpen(true); }}
           onOpenScratchpad={handleOpenScratchpad}
           onExportPageMd={saveAsMd}
@@ -4659,6 +4842,8 @@ const WritingInterface = () => {
               onToggleHelp={handleToggleHelp}
               settingsCommandEnabled={settingsCommandEnabled}
               onToggleSettingsCommand={handleToggleSettingsCommand}
+              newpageEnabled={newpageEnabled}
+              onToggleNewpage={handleToggleNewpage}
               polaroidFramesEnabled={polaroidFramesEnabled}
               onTogglePolaroidFrames={handleTogglePolaroidFrames}
               justifyText={justifyText}
