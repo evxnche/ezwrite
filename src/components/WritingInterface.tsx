@@ -5213,6 +5213,10 @@ const WritingInterface = () => {
               scratchpadLLMConfig={scratchpadLLMConfig}
               onScratchpadLLMConfigChange={handleScratchpadLLMConfigChange}
               byokUnlocked={byokUnlocked}
+              onToggleByok={toggleByokUnlocked}
+              expEnabled={expEnabled}
+              activeProjectId={activeProjectId}
+              activeProjectTitle={activeProjectId ? getProjectTitle(activeProjectId) : undefined}
             />
           </>
         )}

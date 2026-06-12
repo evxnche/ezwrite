@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Cloud, Copy, Eye, EyeOff, FolderOpen, Lock, RefreshCw } from 'lucide-react';
 import DialogSupportFooter from './DialogSupportFooter';
+import AgentPairingSection from './AgentPairingSection';
 import { BUG_REPORT_EMAIL } from '@/lib/bug-report';
 import { copyLandingPageUrl, getLandingPageDisplayLabel, getLandingPageUrl } from '@/lib/app-links';
 import type { ColorTheme } from './preferences';
@@ -24,8 +25,10 @@ const THEMES = [
   { id: 'red' as ColorTheme, label: 'red', swatch: 'bg-[#7C3232]' },
 ];
 
-const SETTINGS_TABS = ['storage', 'customization', 'about'] as const;
+const SETTINGS_TABS = ['storage', 'customization', 'about', 'experimental', 'agent'] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
+// 'experimental' and 'agent' only appear once the //exp// cheat is unlocked.
+const EXP_ONLY_TABS: ReadonlySet<SettingsTab> = new Set(['experimental', 'agent']);
 
 const SEGMENT_TRACK = 'flex gap-1 p-1 rounded-xl bg-muted/30 border border-border/60';
 const PANEL_SURFACE = 'rounded-xl border border-border/60';
@@ -147,6 +150,10 @@ interface Props {
   scratchpadLLMConfig?: ScratchpadLLMConfig;
   onScratchpadLLMConfigChange?: (config: ScratchpadLLMConfig) => void;
   byokUnlocked?: boolean;
+  onToggleByok?: () => void;
+  expEnabled?: boolean;
+  activeProjectId?: string | null;
+  activeProjectTitle?: string;
 }
 
 export const SettingsDialog: React.FC<Props> = ({
@@ -222,8 +229,13 @@ export const SettingsDialog: React.FC<Props> = ({
   scratchpadLLMConfig,
   onScratchpadLLMConfigChange,
   byokUnlocked,
+  onToggleByok,
+  expEnabled,
+  activeProjectId,
+  activeProjectTitle,
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('storage');
+  const visibleTabs = SETTINGS_TABS.filter(tab => (EXP_ONLY_TABS.has(tab) ? Boolean(expEnabled) : true));
   const [landingCopied, setLandingCopied] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showOrKey, setShowOrKey] = useState(false);
@@ -308,7 +320,7 @@ export const SettingsDialog: React.FC<Props> = ({
         </DialogHeader>
 
         <div className={SEGMENT_TRACK} role="tablist" aria-label="settings sections">
-          {SETTINGS_TABS.map(tab => (
+          {visibleTabs.map(tab => (
             <button
               key={tab}
               type="button"
@@ -768,6 +780,46 @@ export const SettingsDialog: React.FC<Props> = ({
                   share with friends to give them access as well.
                 </p>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'experimental' && expEnabled && (
+            <div role="tabpanel" className="space-y-6 pt-1">
+              <div className="space-y-3">
+                <div className="font-mono text-[10px] text-muted-foreground/50 uppercase tracking-widest border-b border-border/50 pb-1.5 mb-2">
+                  Experimental
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed lowercase">
+                  hidden, in-progress features. toggle them here instead of typing the cheat codes.
+                </p>
+                <SettingsToggle
+                  label="voice notes"
+                  checked={voicesEnabled}
+                  onToggle={onToggleVoices}
+                />
+                <SettingsToggle
+                  label="bring your own key"
+                  checked={byokUnlocked}
+                  onToggle={onToggleByok}
+                  hint={byokUnlocked ? <span className="text-[10px] text-muted-foreground/70 lowercase">config in storage tab</span> : undefined}
+                />
+                <p className="text-xs text-muted-foreground leading-relaxed lowercase">
+                  connect ai agents to your notebooks in the <span className="text-accent-foreground">agent</span> tab.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'agent' && expEnabled && (
+            <div role="tabpanel" className="pt-1">
+              <AgentPairingSection
+                accessToken={accessToken}
+                userId={userId}
+                syncConfigured={syncConfigured}
+                syncUnlocked={syncUnlocked}
+                activeProjectId={activeProjectId}
+                activeProjectTitle={activeProjectTitle}
+              />
             </div>
           )}
         </div>
