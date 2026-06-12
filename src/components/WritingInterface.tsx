@@ -136,6 +136,7 @@ import {
   decodeAgentReplyLine,
   isAgentPromptLine,
   isAgentReplyLine,
+  agentMentionScanText,
   type ActiveAgentOption,
 } from '@/lib/agent-live-session';
 import {
@@ -2192,7 +2193,9 @@ const WritingInterface = () => {
   }, [syncSession, agentPairings, showAgentNotice]);
 
   useEffect(() => {
-    if (!syncSession || !activeProjectId || activeLiveSessionAgents.length === 0) return;
+    // The local stand-in (Path 2) is fully client-side, so it runs without a sync
+    // session. syncSession only gates the external-agent queue/poll below.
+    if (!activeProjectId || activeLiveSessionAgents.length === 0) return;
     let stopped = false;
     const activeAgents: ActiveAgentOption[] = activeLiveSessionAgents
       .filter((agent) => Boolean(agent.label?.trim()))
@@ -2219,7 +2222,9 @@ const WritingInterface = () => {
           const line = lines[i] ?? '';
           if (isAgentPromptLine(line)) continue;
           const reply = isAgentReplyLine(line) ? decodeAgentReplyLine(line) : null;
-          const promptText = reply?.status !== 'pending' ? reply.replyText : line;
+          // agentMentionScanText is the unit-tested version of this decision (it must
+          // not throw on a raw line — that previously killed the whole tick silently).
+          const promptText = agentMentionScanText(line);
           const thread = buildAgentThreadStart({
             projectId: activeProjectId,
             pageIndex: currentPageRef.current,
@@ -2241,10 +2246,14 @@ const WritingInterface = () => {
         }
 
         if (queuedTasks.length > 0) {
-          await queueAgentTasks(syncSession, queuedTasks);
+          // Commit the prompt + "thinking…" placeholder immediately so the thread is
+          // visible and the local stand-in can answer it on the next tick — this must
+          // NOT depend on the external queue, which may be unavailable.
           const cursor = getCursorInfoRef.current();
           structuralUpdate(lines.join('\n'), cursor?.lineIndex ?? 0, cursor?.offset ?? 0, false);
-          showAgentNotice('live agent task queued');
+          showAgentNotice('agent thinking…');
+          // Best-effort: also enqueue for a real external agent. Never blocks the UI.
+          if (syncSession) void queueAgentTasks(syncSession, queuedTasks).catch(() => {});
           return;
         }
 
@@ -2279,6 +2288,8 @@ const WritingInterface = () => {
             .catch(() => { standinInFlightRef.current.delete(key); });
         }
 
+        // External-agent replies are only available when signed in with a sync session.
+        if (!syncSession) return;
         const replies = (await listPendingAgentReplies(syncSession, activeProjectId))
           .filter((reply) => reply.pageIndex === currentPageRef.current);
         if (replies.length === 0) return;

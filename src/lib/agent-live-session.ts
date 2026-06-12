@@ -164,6 +164,16 @@ export function isAgentReplyLine(line: string): boolean {
   return line.startsWith(AGENT_REPLY_PREFIX);
 }
 
+// Text to scan a stored editor line for @agent mentions. A *completed* reply line
+// contributes its reply text (so an agent's @handoff in a reply starts a new
+// thread); a raw user line or a pending placeholder contributes the line itself.
+// Crucially this must not assume a reply exists: a raw line decodes to null, and
+// reading `.replyText` off null silently throws and kills the live-session tick.
+export function agentMentionScanText(line: string): string {
+  const reply = isAgentReplyLine(line) ? decodeAgentReplyLine(line) : null;
+  return reply && reply.status !== 'pending' ? reply.replyText : line;
+}
+
 function newThreadId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 }

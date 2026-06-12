@@ -15,6 +15,7 @@ import {
   getTaggedActiveAgents,
   isAgentPromptLine,
   isAgentReplyLine,
+  agentMentionScanText,
 } from './agent-live-session.ts';
 
 const activeAgents = [
@@ -22,6 +23,22 @@ const activeAgents = [
   { id: 'pair-codex', label: 'Codex' },
   { id: 'pair-gemini', label: 'Gemini' },
 ];
+
+test('agentMentionScanText returns a raw user line unchanged (never throws on a non-reply line)', () => {
+  assert.equal(agentMentionScanText('@Claude what is the case for X?'), '@Claude what is the case for X?');
+  assert.equal(agentMentionScanText('plain text'), 'plain text');
+});
+
+test('agentMentionScanText returns reply text for a completed reply, but the raw line for a pending one', () => {
+  const [doneLine] = encodeAgentReplyLines({
+    promptId: 'p1', agentId: 'a1', agentLabel: 'Claude', replyText: 'follow up with @Codex', status: 'done',
+  });
+  const [pendingLine] = encodeAgentReplyLines({
+    promptId: 'p1', agentId: 'a1', agentLabel: 'Claude', replyText: 'thinking…', status: 'pending',
+  });
+  assert.equal(agentMentionScanText(doneLine), 'follow up with @Codex');
+  assert.equal(agentMentionScanText(pendingLine), pendingLine);
+});
 
 test('getTaggedActiveAgents finds active agents anywhere in the line and preserves tag order', () => {
   assert.deepEqual(
