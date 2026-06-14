@@ -5072,6 +5072,7 @@ const WritingInterface = () => {
           onMoveToEditor={handleInsertFromScratchpad}
           onResize={setScratchpadWidth}
           onClose={() => setScratchpadOpen(false)}
+          onBackToSidetab={() => { setScratchpadOpen(false); setNotesOpen(true); }}
           timerScope={`scratch:${activeProjectId ?? 'none'}`}
           onTimerComplete={handleTimerComplete}
           isTouchDevice={isTouchDevice}

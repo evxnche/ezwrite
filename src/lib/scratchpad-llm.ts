@@ -201,6 +201,11 @@ export function getScratchpadModelChain(prompt: string): readonly ScratchpadMode
   return scratchpadNeedsWebSearch(prompt) ? WEB_SEARCH_MODEL_CHAIN : FAST_MODEL_CHAIN;
 }
 
+/** Models that can actually retrieve current information. Never mix in stale fallbacks. */
+export function getScratchpadLiveSearchModelChain(): readonly ScratchpadModelEntry[] {
+  return WEB_SEARCH_MODEL_CHAIN.filter((entry) => entry.webSearch);
+}
+
 /**
  * Tighter than scratchpadNeedsWebSearch — only genuinely time-sensitive or
  * fast-changing lookups. Used to auto-route a query off a provider that can't
@@ -212,6 +217,7 @@ export function scratchpadNeedsLiveData(prompt: string): boolean {
   return (
     /\b(today|yesterday|latest|current|currently|recent|recently|news|this week|this month|this year|right now|nowadays|so far|20[2-9]\d)\b/.test(lower)
     || /\b(when did|when is|who won|who is the|how much|price of|release date|stock|weather|population of|score|standings)\b/.test(lower)
+    || /\b(prime minister|president|premier|chancellor|governor|mayor|chief executive|ceo|head of state|head of government)\b/.test(lower)
   );
 }
 
@@ -224,7 +230,12 @@ export function buildScratchpadSystemPrompt(model: string, webSearch: boolean): 
     '• First token is the answer. No warmup.',
   ];
   if (webSearch) {
-    lines.push('• Never mention searching, browsing, looking up, or tools. Search silently; only output findings.');
+    lines.push(
+      '• Your stored knowledge may be outdated. Retrieved evidence overrides memory.',
+      '• Before answering, compare your proposed answer against the retrieved evidence and use the newest dated, consistent evidence.',
+      '• If retrieved evidence conflicts, state the conflict briefly instead of choosing from memory.',
+      '• Never mention searching, browsing, looking up, tools, sources, or URLs. Search silently; only output findings.',
+    );
   }
   lines.push(
     '• No titles, headings, labels, or markdown (#, ##, **heading**).',

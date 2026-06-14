@@ -4,6 +4,7 @@ import {
   buildScratchpadSystemPrompt,
   formatScratchpadLlmReply,
   getScratchpadLLMConfig,
+  getScratchpadLiveSearchModelChain,
   getScratchpadModelChain,
   isScratchpadLlmLine,
   parseScratchpadLlmPrompt,
@@ -14,7 +15,7 @@ import {
   splitScratchpadLlmResponse,
 } from './scratchpad-llm.ts';
 
-test('fast chain is default; web-search chain puts GLM first', () => {
+test('fast chain is default; web-search chain puts the live router first', () => {
   assert.equal(SCRATCHPAD_LLM_MODEL, 'deepseek/deepseek-v4-flash:free');
   const fast = getScratchpadModelChain('rewrite this sentence');
   assert.equal(fast[0].id, 'deepseek/deepseek-v4-flash:free');
@@ -22,10 +23,18 @@ test('fast chain is default; web-search chain puts GLM first', () => {
 
   const search = getScratchpadModelChain('how does cursor model usage work?');
   assert.equal(scratchpadNeedsWebSearch('how does cursor model usage work?'), true);
-  assert.equal(search[0].id, 'z-ai/glm-4.5-air:free');
+  assert.equal(search[0].id, 'openrouter/free');
   assert.equal(search[0].webSearch, true);
-  assert.equal(search[1].id, 'openrouter/free');
+  assert.equal(search[1].id, 'google/gemma-4-31b-it:free');
   assert.equal(search[2].webSearch, false);
+});
+
+test('live lookups never fall back to a model without web search', () => {
+  assert.deepEqual(
+    getScratchpadLiveSearchModelChain().map((entry) => entry.id),
+    ['openrouter/free'],
+  );
+  assert.equal(getScratchpadLiveSearchModelChain().every((entry) => entry.webSearch), true);
 });
 
 test('parseScratchpadLlmPrompt reads // lines only when prompt is non-empty', () => {
@@ -46,6 +55,8 @@ test('system prompt demands zero preamble when web search enabled', () => {
   const prompt = buildScratchpadSystemPrompt('z-ai/glm-4.5-air:free', true);
   assert.match(prompt, /Never mention searching/i);
   assert.match(prompt, /First token is the answer/i);
+  assert.match(prompt, /retrieved evidence overrides/i);
+  assert.match(prompt, /compare.*answer.*retrieved/i);
 });
 
 test('formatScratchpadLlmReply strips boilerplate only', () => {

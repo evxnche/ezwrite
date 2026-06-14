@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { GripVertical, X, NotebookPen } from 'lucide-react';
+import { GripVertical, X, NotebookPen, ChevronLeft } from 'lucide-react';
 import type { NotesTransferMode } from './preferences';
 import SlashCommandPopup from './SlashCommandPopup';
 import TimerWidget from './TimerWidget';
@@ -58,6 +58,7 @@ interface Props {
   onChange: (value: string) => void;
   onMoveToEditor: (text: string) => void;
   onClose: () => void;
+  onBackToSidetab?: () => void;
   onResize: (width: number) => void;
   slashCommands: { name: string; description: string }[];
   /** Prefix for persisting timer runtime state (scoped to the active notebook). */
@@ -90,6 +91,7 @@ const ScratchpadPanel: React.FC<Props> = ({
   onChange,
   onMoveToEditor,
   onClose,
+  onBackToSidetab,
   onResize,
   slashCommands,
   timerScope,
@@ -98,6 +100,7 @@ const ScratchpadPanel: React.FC<Props> = ({
   scratchpadLLMConfig,
 }) => {
   const isResizingRef = useRef(false);
+  const panelRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef(scratchpadTextToContent(value));
   const lastEmittedTextRef = useRef(value);
@@ -219,6 +222,21 @@ const ScratchpadPanel: React.FC<Props> = ({
       setCursorPosition(editorRef.current, lineIndex, offset);
     });
   }, [open, structuralUpdate]);
+
+  // Escape closes the scratchpad unless a slash popup or timer-edit is active.
+  useEffect(() => {
+    if (!open) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (slashPopup) return;
+      if (editingTimerLineRef.current !== null) return;
+      onClose();
+    };
+    panel.addEventListener('keydown', handleKey, true);
+    return () => panel.removeEventListener('keydown', handleKey, true);
+  }, [open, slashPopup, onClose]);
 
   useEffect(() => {
     const handleMove = (e: MouseEvent) => {
@@ -1060,6 +1078,7 @@ const ScratchpadPanel: React.FC<Props> = ({
 
   return (
     <div
+      ref={panelRef}
       aria-hidden={!open}
       className={`fixed top-0 right-0 bottom-0 z-50 bg-popover border-l border-border shadow-2xl flex flex-col ${open ? '' : 'hidden'}`}
       style={{ width }}
@@ -1083,10 +1102,20 @@ const ScratchpadPanel: React.FC<Props> = ({
         </span>
       </button>
 
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border/50">
-        <div className="font-mono text-[10px] text-muted-foreground/50 uppercase tracking-widest">scratchpad</div>
+      <div
+        onClick={onBackToSidetab || onClose}
+        className="group flex items-center justify-between px-4 py-3 border-b border-border/50 cursor-pointer"
+        aria-label={onBackToSidetab ? 'Back to side tab' : 'Close scratchpad'}
+      >
+        <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground/50 uppercase tracking-widest group-hover:text-foreground transition-colors">
+          <ChevronLeft
+            size={13}
+            className="opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all"
+          />
+          <span>scratchpad</span>
+        </div>
         <button
-          onClick={onClose}
+          onClick={(e) => { e.stopPropagation(); onClose(); }}
           className="p-1.5 text-muted-foreground/40 hover:text-foreground transition-colors"
           aria-label="Close scratchpad"
         >

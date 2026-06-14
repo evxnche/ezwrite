@@ -17,6 +17,8 @@ import {
   CloudOff,
 } from 'lucide-react';
 import { type ProjectMeta, getProjectTitle, getProjectPreview, timeAgo, getSpacesSorted, listUnfiledProjects, listProjectsInSpace, type SpaceMeta } from '@/lib/projects';
+import AudioPlayer from './AudioPlayer';
+import ExportMenu from './ExportMenu';
 
 interface Props {
   open: boolean;
@@ -224,6 +226,73 @@ const NotesPanel: React.FC<Props> = ({
     setExportFormat(null);
   };
 
+  const renderExportOptions = () => (
+    <div className="px-4 pb-2 pt-1 space-y-1">
+      <button
+        onClick={onExportPng}
+        disabled={!canExportPage || isExportingPng}
+        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
+      >
+        <Image size={13} />
+        {isExportingPng ? 'preparing img...' : 'img'}
+      </button>
+      <button
+        onClick={() => setExportFormat((current) => current === 'md' ? null : 'md')}
+        disabled={!canExportPage && !canExportDoc}
+        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
+      >
+        <FileText size={13} />
+        <span>md</span>
+        <span className="ml-auto text-muted-foreground/50">{exportFormat === 'md' ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</span>
+      </button>
+      {exportFormat === 'md' && (
+        <div className="pl-5 space-y-1">
+          <button
+            onClick={onExportPageMd}
+            disabled={!canExportPage}
+            className="w-full px-3 py-1.5 rounded-md text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
+          >
+            page as md
+          </button>
+          <button
+            onClick={onExportDocMd}
+            disabled={!canExportDoc}
+            className="w-full px-3 py-1.5 rounded-md text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
+          >
+            notebook as md
+          </button>
+        </div>
+      )}
+      <button
+        onClick={() => setExportFormat((current) => current === 'pdf' ? null : 'pdf')}
+        disabled={!canExportDoc || isExportingPdf}
+        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
+      >
+        <FolderOpen size={13} />
+        <span>{isExportingPdf ? 'preparing pdf...' : 'pdf'}</span>
+        <span className="ml-auto text-muted-foreground/50">{exportFormat === 'pdf' ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</span>
+      </button>
+      {exportFormat === 'pdf' && (
+        <div className="pl-5 space-y-1">
+          <button
+            onClick={onExportPagePdf}
+            disabled={!canExportPage || isExportingPdf}
+            className="w-full px-3 py-1.5 rounded-md text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
+          >
+            page as pdf
+          </button>
+          <button
+            onClick={onExportDocPdf}
+            disabled={!canExportDoc || isExportingPdf}
+            className="w-full px-3 py-1.5 rounded-md text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
+          >
+            notebook as pdf
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
   const spaces = getSpacesSorted();
   const unfiledProjects = listUnfiledProjects();
 
@@ -423,157 +492,152 @@ const NotesPanel: React.FC<Props> = ({
           </button>
         </div>
 
-        <div className="py-3">
-          <button 
-            onClick={onOpenScratchpad} 
-            className={baseRowClass}
-          >
-            <NotebookPen size={15} />
-            <span>scratchpad</span>
-          </button>
+        <div className="flex flex-col flex-1 min-h-0">
+          <div className="py-3 shrink-0">
+            {expEnabled ? (
+              <>
+                <button onClick={onOpenScratchpad} className={baseRowClass}>
+                  <NotebookPen size={15} />
+                  <span>scratchpad</span>
+                  <ChevronRight size={14} className="ml-auto text-muted-foreground/50" />
+                </button>
 
-          <button onClick={onOpenSettings} className={baseRowClass}>
-            <Settings size={15} />
-            <span>settings</span>
-          </button>
+                <button onClick={() => toggleSection('spaces')} className={`${baseRowClass} mt-1 group`}>
+                  <FolderOpen size={15} />
+                  <span>notebooks</span>
+                  <div className="ml-auto flex items-center gap-2">
+                    <span
+                      className="p-0.5 opacity-0 group-hover:opacity-100 hover:bg-muted/30 rounded transition-all text-muted-foreground/50 hover:text-foreground"
+                      onClick={(e) => { e.stopPropagation(); onCreateSpace(); setExpanded('spaces'); }}
+                      title="New Space"
+                    >
+                      <Plus size={13} />
+                    </span>
+                    <span className="text-muted-foreground/50">
+                      {expanded === 'spaces' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    </span>
+                  </div>
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={onOpenScratchpad} className={baseRowClass}>
+                  <NotebookPen size={15} />
+                  <span>scratchpad</span>
+                </button>
 
-          <button onClick={() => toggleSection('export')} className={baseRowClass}>
-            <ArrowUpRight size={15} />
-            <span>export</span>
-            <span className="ml-auto text-muted-foreground/50">{expanded === 'export' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
-          </button>
+                <button onClick={onOpenSettings} className={baseRowClass}>
+                  <Settings size={15} />
+                  <span>settings</span>
+                </button>
 
-          {expanded === 'export' && (
-            <div className="px-4 pb-2 pt-1 space-y-1">
-              <button
-                onClick={onExportPng}
-                disabled={!canExportPage || isExportingPng}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
-              >
-                <Image size={13} />
-                {isExportingPng ? 'preparing img...' : 'img'}
-              </button>
-              <button
-                onClick={() => setExportFormat((current) => current === 'md' ? null : 'md')}
-                disabled={!canExportPage && !canExportDoc}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
-              >
-                <FileText size={13} />
-                <span>md</span>
-                <span className="ml-auto text-muted-foreground/50">{exportFormat === 'md' ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</span>
-              </button>
-              {exportFormat === 'md' && (
-                <div className="pl-5 space-y-1">
-                  <button
-                    onClick={onExportPageMd}
-                    disabled={!canExportPage}
-                    className="w-full px-3 py-1.5 rounded-md text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
-                  >
-                    page as md
-                  </button>
-                  <button
-                    onClick={onExportDocMd}
-                    disabled={!canExportDoc}
-                    className="w-full px-3 py-1.5 rounded-md text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
-                  >
-                    notebook as md
-                  </button>
-                </div>
-              )}
-              <button
-                onClick={() => setExportFormat((current) => current === 'pdf' ? null : 'pdf')}
-                disabled={!canExportDoc || isExportingPdf}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
-              >
-                <FolderOpen size={13} />
-                <span>{isExportingPdf ? 'preparing pdf...' : 'pdf'}</span>
-                <span className="ml-auto text-muted-foreground/50">{exportFormat === 'pdf' ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</span>
-              </button>
-              {exportFormat === 'pdf' && (
-                <div className="pl-5 space-y-1">
-                  <button
-                    onClick={onExportPagePdf}
-                    disabled={!canExportPage || isExportingPdf}
-                    className="w-full px-3 py-1.5 rounded-md text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
-                  >
-                    page as pdf
-                  </button>
-                  <button
-                    onClick={onExportDocPdf}
-                    disabled={!canExportDoc || isExportingPdf}
-                    className="w-full px-3 py-1.5 rounded-md text-left font-mono text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/20 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground transition-colors"
-                  >
-                    notebook as pdf
-                  </button>
-                </div>
+                <button onClick={() => toggleSection('export')} className={baseRowClass}>
+                  <ArrowUpRight size={15} />
+                  <span>export</span>
+                  <span className="ml-auto text-muted-foreground/50">{expanded === 'export' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
+                </button>
+
+                {expanded === 'export' && renderExportOptions()}
+
+                <button onClick={() => toggleSection('spaces')} className={`${baseRowClass} mt-1 group`}>
+                  <FolderOpen size={15} />
+                  <span>notebooks</span>
+                  <div className="ml-auto flex items-center gap-2">
+                    <span
+                      className="p-0.5 hover:bg-muted/30 rounded transition-colors text-muted-foreground/50 hover:text-foreground"
+                      onClick={(e) => { e.stopPropagation(); onNewProject(); setExpanded('spaces'); }}
+                      title="New Notebook"
+                    >
+                      <Plus size={13} />
+                    </span>
+                    <span className="text-muted-foreground/50">
+                      {expanded === 'spaces' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    </span>
+                  </div>
+                </button>
+              </>
+            )}
+          </div>
+
+          {expanded === 'spaces' && (
+            <div className="flex-1 overflow-y-auto">
+              {expEnabled ? (
+                <>
+                  {(() => {
+                    try {
+                      return spaces.map((space) => renderSpaceSection(space));
+                    } catch (err) {
+                      console.error('Error rendering spaces:', err);
+                      return (
+                        <div className="px-4 py-3 text-xs text-red-500">
+                          Error loading spaces: {err instanceof Error ? err.message : String(err)}
+                        </div>
+                      );
+                    }
+                  })()}
+
+                  <div className="border-t border-border/30 mt-2 pt-2">
+                    <button
+                      onClick={() => setUnfiledExpanded(!unfiledExpanded)}
+                      className="w-full flex items-center gap-2 px-4 py-2 text-left font-mono text-xs text-muted-foreground/70 hover:text-foreground hover:bg-muted/10 transition-colors group"
+                    >
+                      {unfiledExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      <span className="font-medium flex-1">unfiled notebooks</span>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="p-0.5 hover:bg-muted/30 rounded transition-colors text-muted-foreground/50 hover:text-foreground"
+                          onClick={(e) => { e.stopPropagation(); onNewProject(); setUnfiledExpanded(true); }}
+                          title="New Notebook"
+                        >
+                          <Plus size={13} />
+                        </span>
+                        <span className="text-muted-foreground/50">{unfiledProjects.length}</span>
+                      </div>
+                    </button>
+                    {unfiledExpanded && unfiledProjects.map((project) => renderProjectRow(project))}
+                  </div>
+                </>
+              ) : (
+                // //exp// off: flat notebook list (all projects, no Spaces grouping).
+                projects.map((project) => renderProjectRow(project))
               )}
             </div>
           )}
 
-          <button onClick={() => toggleSection('spaces')} className={`${baseRowClass} mt-1 group`}>
-            <FolderOpen size={15} />
-            <span>{expEnabled ? 'spaces' : 'notebooks'}</span>
-            <div className="ml-auto flex items-center gap-2">
-              <span
-                className="p-0.5 hover:bg-muted/30 rounded transition-colors text-muted-foreground/50 hover:text-foreground"
-                onClick={(e) => { e.stopPropagation(); if (expEnabled) { onCreateSpace(); } else { onNewProject(); } setExpanded('spaces'); }}
-                title={expEnabled ? 'New Space' : 'New Notebook'}
-              >
-                <Plus size={13} />
-              </span>
-              <span className="text-muted-foreground/50">
-                {expanded === 'spaces' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              </span>
+          {!expEnabled && expanded === 'export' && (
+            <div className="flex-1 overflow-y-auto">
+              {renderExportOptions()}
             </div>
-          </button>
+          )}
+
+          {!expEnabled && <div className="flex-1" />}
+
+          {expEnabled && (
+            <div className="mt-auto border-t border-border/40 shrink-0">
+              <AudioPlayer />
+              <div className="flex items-center justify-evenly px-4 h-14 border-t border-border/30">
+                <button
+                  onClick={onOpenSettings}
+                  className="p-2 text-muted-foreground/60 hover:text-foreground transition-colors"
+                  aria-label="Settings"
+                >
+                  <Settings size={18} />
+                </button>
+                <ExportMenu
+                  canExportPage={canExportPage}
+                  canExportDoc={canExportDoc}
+                  isExportingPdf={isExportingPdf}
+                  isExportingPng={isExportingPng}
+                  onExportPageMd={onExportPageMd}
+                  onExportDocMd={onExportDocMd}
+                  onExportPng={onExportPng}
+                  onExportPagePdf={onExportPagePdf}
+                  onExportDocPdf={onExportDocPdf}
+                />
+              </div>
+            </div>
+          )}
         </div>
-
-        {expanded === 'spaces' && (
-          <div className="flex-1 overflow-y-auto">
-            {expEnabled ? (
-              <>
-                {(() => {
-                  try {
-                    return spaces.map((space) => renderSpaceSection(space));
-                  } catch (err) {
-                    console.error('Error rendering spaces:', err);
-                    return (
-                      <div className="px-4 py-3 text-xs text-red-500">
-                        Error loading spaces: {err instanceof Error ? err.message : String(err)}
-                      </div>
-                    );
-                  }
-                })()}
-
-                <div className="border-t border-border/30 mt-2 pt-2">
-                  <button
-                    onClick={() => setUnfiledExpanded(!unfiledExpanded)}
-                    className="w-full flex items-center gap-2 px-4 py-2 text-left font-mono text-xs text-muted-foreground/70 hover:text-foreground hover:bg-muted/10 transition-colors group"
-                  >
-                    {unfiledExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                    <span className="font-medium flex-1">unfiled notebooks</span>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="p-0.5 hover:bg-muted/30 rounded transition-colors text-muted-foreground/50 hover:text-foreground"
-                        onClick={(e) => { e.stopPropagation(); onNewProject(); setUnfiledExpanded(true); }}
-                        title="New Notebook"
-                      >
-                        <Plus size={13} />
-                      </span>
-                      <span className="text-muted-foreground/50">{unfiledProjects.length}</span>
-                    </div>
-                  </button>
-                  {unfiledExpanded && unfiledProjects.map((project) => renderProjectRow(project))}
-                </div>
-              </>
-            ) : (
-              // //exp// off: flat notebook list (all projects, no Spaces grouping).
-              projects.map((project) => renderProjectRow(project))
-            )}
-          </div>
-        )}
-
-        {expanded !== 'spaces' && <div className="flex-1" />}
 
         {docMenu && (
           <>

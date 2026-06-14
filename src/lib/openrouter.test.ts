@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import * as scratchpadLlm from './scratchpad-llm.ts';
-import { extractAssistantContent } from './openrouter.ts';
+import { completeScratchpadPrompt, extractAssistantContent, extractWebEvidence } from './openrouter.ts';
 
 test('live-data detection fires on time-sensitive prompts but not definitional ones', () => {
   const needs = scratchpadLlm.scratchpadNeedsLiveData;
@@ -11,10 +11,93 @@ test('live-data detection fires on time-sensitive prompts but not definitional o
   assert.equal(needs('who won the game yesterday'), true);
   assert.equal(needs('current weather in tokyo'), true);
   assert.equal(needs('news about the election'), true);
+  assert.equal(needs('Prime Minister of Hungary'), true);
+  assert.equal(needs('CEO of Apple'), true);
   // These are answerable from the model's own knowledge — keep them on OpenCode.
   assert.equal(needs('what is a haiku?'), false);
   assert.equal(needs('rewrite this sentence to be punchier'), false);
   assert.equal(needs('explain recursion'), false);
+});
+
+test('a failed live lookup does not fall through to stale OpenCode answers', async () => {
+  const originalFetch = globalThis.fetch;
+  const requestedModels: string[] = [];
+  globalThis.fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body)) as { model: string };
+    requestedModels.push(body.model);
+    return new Response(JSON.stringify({ error: { message: 'search unavailable' } }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+
+  try {
+    await assert.rejects(
+      completeScratchpadPrompt('latest updates on the Iran war', undefined, { provider: 'opencode' }),
+      /live lookup failed/i,
+    );
+    assert.deepEqual(requestedModels, ['openrouter/free']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('live lookups synthesize from retrieved evidence instead of trusting a stale search answer', async () => {
+  const originalFetch = globalThis.fetch;
+  const requestedModels: string[] = [];
+  globalThis.fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body)) as { model: string };
+    requestedModels.push(body.model);
+    if (body.model === 'openrouter/free') {
+      return Response.json({
+        choices: [{
+          finish_reason: 'stop',
+          message: {
+            role: 'assistant',
+            content: 'Viktor Orbán',
+            annotations: [{
+              type: 'url_citation',
+              url_citation: {
+                title: 'Hungarian Government',
+                content: 'Péter Magyar has served as Prime Minister of Hungary since 9 May 2026.',
+              },
+            }],
+          },
+        }],
+      });
+    }
+    return Response.json({
+      choices: [{
+        finish_reason: 'stop',
+        message: { role: 'assistant', content: 'Péter Magyar, since 9 May 2026.' },
+      }],
+    });
+  };
+
+  try {
+    const result = await completeScratchpadPrompt(
+      'Prime Minister of Hungary',
+      undefined,
+      { provider: 'opencode' },
+    );
+    assert.equal(result.text, 'Péter Magyar, since 9 May 2026.');
+    assert.deepEqual(requestedModels, ['openrouter/free', 'google/gemma-4-31b-it:free']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('web evidence extraction keeps citation text and drops URLs', () => {
+  assert.equal(
+    extractWebEvidence({
+      role: 'assistant',
+      annotations: [{
+        type: 'url_citation',
+        url_citation: { title: 'Official page', url: 'https://example.com', content: 'Current fact.' },
+      }],
+    }),
+    'Official page\nCurrent fact.',
+  );
 });
 
 test('a normal reply uses message content', () => {

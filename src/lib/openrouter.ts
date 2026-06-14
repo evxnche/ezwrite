@@ -1,6 +1,7 @@
 import {
   buildScratchpadSystemPrompt,
   formatScratchpadLlmReply,
+  getScratchpadLiveSearchModelChain,
   getScratchpadModelChain,
   resolveScratchpadLLMConfig,
   scratchpadNeedsLiveData,
@@ -15,6 +16,7 @@ import {
 const OPENROUTER_CHAT_PATH = '/api/openrouter';
 const OPENCODE_CHAT_PATH = '/api/opencode';
 const OPENROUTER_DIRECT_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const LIVE_SEARCH_TIMEOUT_MS = 20_000;
 
 type OpencodeGateway = 'zen' | 'go';
 
@@ -36,6 +38,10 @@ interface OpenRouterMessage {
   reasoning?: string;
   /** OpenCode Zen reasoning models put their thinking here. */
   reasoning_content?: string;
+  annotations?: Array<{
+    type?: string;
+    url_citation?: { title?: string; url?: string; content?: string };
+  }>;
 }
 
 interface OpenRouterChoice {
@@ -54,6 +60,15 @@ interface OpenRouterChatResponse {
   choices?: OpenRouterChoice[];
   error?: { message?: string; code?: number };
 }
+
+type CompletionResult =
+  | { ok: true; content: string; evidence?: string }
+  | { ok: false; status: number; message: string };
+
+const LIVE_GROUNDING_MODEL_CHAIN: readonly ScratchpadModelEntry[] = [
+  { id: 'google/gemma-4-31b-it:free', webSearch: false },
+  { id: 'deepseek/deepseek-v4-flash:free', webSearch: false },
+];
 
 /** Fall through to the next model on rate limits, provider/upstream failures, and empty replies. */
 function shouldTryNextModel(status: number): boolean {
@@ -78,12 +93,26 @@ export function extractAssistantContent(choice?: OpenRouterChoice): string {
   return lines[lines.length - 1] ?? '';
 }
 
+/** Convert OpenRouter citation annotations into bounded, URL-free grounding text. */
+export function extractWebEvidence(message?: OpenRouterMessage): string {
+  const evidence = (message?.annotations ?? [])
+    .filter((annotation) => annotation.type === 'url_citation')
+    .map((annotation) => {
+      const title = annotation.url_citation?.title?.trim();
+      const content = annotation.url_citation?.content?.trim();
+      return [title, content].filter(Boolean).join('\n');
+    })
+    .filter(Boolean)
+    .join('\n\n');
+  return evidence.slice(0, 12_000);
+}
+
 async function requestCompletion(
   entry: ScratchpadModelEntry,
   prompt: string,
   signal?: AbortSignal,
   config?: ResolvedScratchpadLLMConfig,
-): Promise<{ ok: true; content: string } | { ok: false; status: number; message: string }> {
+): Promise<CompletionResult> {
   const apiKey = config?.apiKey;
   const isAnthropic = config?.provider === 'anthropic';
 
@@ -279,12 +308,75 @@ async function requestCompletion(
     return { ok: false, status, message };
   }
 
-  const content = extractAssistantContent(payload.choices?.[0]);
+  const choice = payload.choices?.[0];
+  const content = extractAssistantContent(choice);
   if (!content) {
     return { ok: false, status: 502, message: 'LLM returned an empty response' };
   }
 
-  return { ok: true, content };
+  const evidence = entry.webSearch ? extractWebEvidence(choice?.message) : '';
+  return { ok: true, content, ...(evidence ? { evidence } : {}) };
+}
+
+async function requestLiveCompletion(
+  entry: ScratchpadModelEntry,
+  prompt: string,
+  signal?: AbortSignal,
+  config?: ResolvedScratchpadLLMConfig,
+): Promise<CompletionResult> {
+  const controller = new AbortController();
+  const abortFromParent = () => controller.abort();
+  signal?.addEventListener('abort', abortFromParent, { once: true });
+  const timeout = setTimeout(() => controller.abort(), LIVE_SEARCH_TIMEOUT_MS);
+
+  try {
+    return await requestCompletion(entry, prompt, controller.signal, config);
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    if (controller.signal.aborted) {
+      return { ok: false, status: 408, message: 'Live lookup timed out after 20 seconds' };
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', abortFromParent);
+  }
+}
+
+async function groundLiveSearchResult(
+  prompt: string,
+  searchContent: string,
+  evidence: string | undefined,
+  signal?: AbortSignal,
+): Promise<ScratchpadLlmResult> {
+  if (!evidence) {
+    throw new Error('Live lookup returned no verifiable evidence. Try again shortly.');
+  }
+
+  const groundedPrompt = [
+    'Answer the question using only the retrieved evidence below.',
+    'Retrieved evidence overrides stored knowledge and the draft search answer.',
+    'Prefer newer dated evidence. If the evidence conflicts or is insufficient, say so briefly.',
+    'Do not mention sources, URLs, searching, browsing, or tools.',
+    '',
+    `Question: ${prompt}`,
+    `Draft search answer (untrusted): ${searchContent}`,
+    '',
+    'Retrieved evidence:',
+    evidence,
+  ].join('\n');
+
+  const errors: string[] = [];
+  for (const entry of LIVE_GROUNDING_MODEL_CHAIN) {
+    const result = await requestCompletion(entry, groundedPrompt, signal, { provider: 'openrouter' });
+    if (result.ok) {
+      return { text: formatScratchpadLlmReply(result.content), model: entry.id };
+    }
+    if (!shouldTryNextModel(result.status)) throw new Error(result.message);
+    errors.push(`${entry.id}: ${result.message}`);
+  }
+
+  throw new Error(`Live lookup grounding failed: ${errors.join(' → ') || 'all models failed'}. Try again shortly.`);
 }
 
 export async function completeScratchpadPrompt(
@@ -300,14 +392,17 @@ export async function completeScratchpadPrompt(
   // "who won…") would answer from stale training data. Auto-route just those
   // through ezwrite's free OpenRouter web-search chain — keeping OpenCode for
   // everything else — so live answers work without changing any settings.
-  // Best-effort: if the web path is unavailable, fall through to OpenCode.
+  // Never fall through to OpenCode here: it cannot substantiate a live answer.
   if (resolved.provider === 'opencode' && scratchpadNeedsLiveData(prompt)) {
-    for (const entry of getScratchpadModelChain(prompt)) {
-      const webResult = await requestCompletion(entry, prompt, signal, { provider: 'openrouter' });
+    const errors: string[] = [];
+    for (const entry of getScratchpadLiveSearchModelChain()) {
+      const webResult = await requestLiveCompletion(entry, prompt, signal, { provider: 'openrouter' });
       if (webResult.ok) {
-        return { text: formatScratchpadLlmReply(webResult.content), model: entry.id };
+        return groundLiveSearchResult(prompt, webResult.content, webResult.evidence, signal);
       }
+      errors.push(webResult.message);
     }
+    throw new Error(`Live lookup failed: ${errors.join(' → ') || 'no search model available'}. Try again shortly.`);
   }
 
   // Decide chain
@@ -321,7 +416,9 @@ export async function completeScratchpadPrompt(
   } else if (!resolved.apiKey) {
     chain = explicitModel
       ? [{ id: explicitModel, webSearch: false }]
-      : getScratchpadModelChain(prompt);
+      : scratchpadNeedsLiveData(prompt)
+        ? getScratchpadLiveSearchModelChain()
+        : getScratchpadModelChain(prompt);
   } else if (resolved.provider === 'openrouter') {
     chain = resolved.model
       ? [{ id: resolved.model, webSearch: false }]
@@ -333,9 +430,14 @@ export async function completeScratchpadPrompt(
   const errors: string[] = [];
 
   for (const entry of chain) {
-    const result = await requestCompletion(entry, prompt, signal, resolved);
+    const result = entry.webSearch && scratchpadNeedsLiveData(prompt)
+      ? await requestLiveCompletion(entry, prompt, signal, resolved)
+      : await requestCompletion(entry, prompt, signal, resolved);
 
     if (result.ok) {
+      if (entry.webSearch && scratchpadNeedsLiveData(prompt)) {
+        return groundLiveSearchResult(prompt, result.content, result.evidence, signal);
+      }
       return {
         text: formatScratchpadLlmReply(result.content),
         model: entry.id,
