@@ -10,9 +10,17 @@ function read(rel: string): string {
 test('the closed-beta gate renders instead of the editor until access is granted', () => {
   const source = read('src/App.tsx');
   assert.match(source, /import BetaAccessGate from ["']\.\/components\/BetaAccessGate["']/);
-  assert.match(source, /import \{ hasBetaAccess \} from ["']\.\/lib\/beta-access["']/);
-  assert.match(source, /useState\(\(\) => hasBetaAccess\(\)\)/);
+  assert.match(source, /import \{ hasBetaAccess, shouldBypassBetaAccess \} from ["']\.\/lib\/beta-access["']/);
+  assert.match(source, /shouldBypassBetaAccess\(window\.location\.hostname\) \|\| hasBetaAccess\(\)/);
   assert.match(source, /<BetaAccessGate onUnlock=\{\(\) => setUnlocked\(true\)\}/);
+});
+
+test('loopback development hosts bypass the production beta gate', async () => {
+  const { shouldBypassBetaAccess } = await import('../lib/beta-access.ts');
+  assert.equal(shouldBypassBetaAccess('localhost'), true);
+  assert.equal(shouldBypassBetaAccess('127.0.0.1'), true);
+  assert.equal(shouldBypassBetaAccess('::1'), true);
+  assert.equal(shouldBypassBetaAccess('ezwrite.xyz'), false);
 });
 
 test('BetaAccessGate matches the MobileSyncGate sign-in aesthetic', () => {

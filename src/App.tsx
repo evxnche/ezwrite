@@ -4,14 +4,16 @@ import { ThemeProvider } from "next-themes";
 import WritingInterface from "./components/WritingInterface";
 import UpdateBanner from "./components/UpdateBanner";
 import BetaAccessGate from "./components/BetaAccessGate";
-import { hasBetaAccess } from "./lib/beta-access";
+import { hasBetaAccess, shouldBypassBetaAccess } from "./lib/beta-access";
 
 const Analytics = lazy(() =>
   import("@vercel/analytics/react").then((module) => ({ default: module.Analytics })),
 );
 
 const App = () => {
-  const [unlocked, setUnlocked] = useState(() => hasBetaAccess());
+  const [unlocked, setUnlocked] = useState(
+    () => shouldBypassBetaAccess(window.location.hostname) || hasBetaAccess(),
+  );
   const [showDeferredUi, setShowDeferredUi] = useState(false);
 
   useEffect(() => {

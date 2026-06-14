@@ -3,11 +3,16 @@
 // local grant flag is stored so testers don't re-enter the code on every visit.
 // This is real per-tester gating: revoking a code in Supabase locks that tester
 // out on their next reload.
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+const ENV = import.meta.env as Record<string, string | undefined> | undefined;
+const SUPABASE_URL = ENV?.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = ENV?.VITE_SUPABASE_ANON_KEY;
 
 const STORAGE_KEY = 'ezwrite-beta-access';
 const GRANTED = 'granted';
+
+export function shouldBypassBetaAccess(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+}
 
 export function hasBetaAccess(): boolean {
   try {
