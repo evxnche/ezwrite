@@ -504,7 +504,7 @@ const NotesPanel: React.FC<Props> = ({
 
                 <button onClick={() => toggleSection('spaces')} className={`${baseRowClass} mt-1 group`}>
                   <FolderOpen size={15} />
-                  <span>notebooks</span>
+                  <span>spaces</span>
                   <div className="ml-auto flex items-center gap-2">
                     <span
                       className="p-0.5 opacity-0 group-hover:opacity-100 hover:bg-muted/30 rounded transition-all text-muted-foreground/50 hover:text-foreground"
